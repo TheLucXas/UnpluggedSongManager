@@ -238,10 +238,15 @@ class SettingsTab(ctk.CTkFrame):
                 self.notify_cb("Please set your Unplugged folder first.")
             return
 
-        # Look for source dll in app folder or scratch build
+        # Look for source dll in app folder, PyInstaller bundle, or scratch build
+        exe_dir = os.path.dirname(sys.executable)
+        meipass = getattr(sys, '_MEIPASS', '')
         dll_candidates = [
+            os.path.join(meipass, "UnpluggedCustomSongs.dll"),
+            os.path.join(meipass, "_internal", "UnpluggedCustomSongs.dll"),
+            os.path.join(exe_dir, "UnpluggedCustomSongs.dll"),
+            os.path.join(exe_dir, "_internal", "UnpluggedCustomSongs.dll"),
             os.path.join(os.path.dirname(__file__), "..", "UnpluggedCustomSongs.dll"),
-            r"C:/REDACTED\.gemini\antigravity\brain\058ab2b8-cdf4-4503-bfb8-1a3da2ebf3a9\scratch\UnpluggedCustomSongs\bin\Release\netstandard2.0\UnpluggedCustomSongs.dll",
             r"C:\SteamLibrary\steamapps\common\Unplugged\Mods\UnpluggedCustomSongs.dll"
         ]
 

@@ -59,6 +59,10 @@
       <HintPath>C:\SteamLibrary\steamapps\common\Unplugged\Unplugged_Data\Managed\UnityEngine.PhysicsModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="Oculus.VR">
+      <HintPath>C:\SteamLibrary\steamapps\common\Unplugged\Unplugged_Data\Managed\Oculus.VR.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
 </Project>

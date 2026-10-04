@@ -211,6 +211,12 @@ namespace UnpluggedCustomSongs
 
             DebugMode = PrefDebugMode?.Value ?? false;
             DiscordRpcManager.Init();
+
+            try
+            {
+                Application.runInBackground = true;
+            }
+            catch { }
             
             try
             {
@@ -305,6 +311,9 @@ namespace UnpluggedCustomSongs
                 PerformSongRefresh();
             }
 
+            // VR Thumbstick & Keyboard song carousel navigation (with hold-acceleration)
+            HandleSongMenuNavigation();
+
             if (Input.GetKeyDown(KeyCode.F1))
             {
                 DebugMode = !DebugMode;
@@ -342,6 +351,136 @@ namespace UnpluggedCustomSongs
         public override void OnApplicationQuit()
         {
             DiscordRpcManager.Shutdown();
+        }
+
+        private static int _navHoldDir = 0;
+        private static float _navHoldStartTime = 0f;
+        private static float _navNextStepTime = 0f;
+
+        private void HandleSongMenuNavigation()
+        {
+            if (StartSpace.I == null || !StartSpace.I.gameObject.activeInHierarchy)
+            {
+                _navHoldDir = 0;
+                return;
+            }
+
+            var sm = StartSpace.I.songMenu;
+            if (sm == null || !sm.gameObject.activeInHierarchy)
+            {
+                _navHoldDir = 0;
+                return;
+            }
+
+            if (GameManager.IsPlaying)
+            {
+                _navHoldDir = 0;
+                return;
+            }
+
+            // Check if there are at least 2 songs to navigate between
+            try
+            {
+                var songList = Traverse.Create(sm).Field("songList").GetValue<List<SongMappingMetaData>>();
+                if (songList == null || songList.Count <= 1)
+                {
+                    _navHoldDir = 0;
+                    return;
+                }
+            }
+            catch
+            {
+                return;
+            }
+
+            // Gather horizontal stick / key input
+            float stickX = 0f;
+
+            // 1. OVRInput (Oculus / Quest Touch Controllers thumbsticks)
+            try
+            {
+                Vector2 ovrL = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick, OVRInput.Controller.All);
+                if (Mathf.Abs(ovrL.x) > Mathf.Abs(stickX)) stickX = ovrL.x;
+
+                Vector2 ovrR = OVRInput.Get(OVRInput.Axis2D.SecondaryThumbstick, OVRInput.Controller.All);
+                if (Mathf.Abs(ovrR.x) > Mathf.Abs(stickX)) stickX = ovrR.x;
+            }
+            catch { }
+
+            // 2. Unity Input Horizontal Axis (SteamVR controllers, Gamepads)
+            try
+            {
+                float unityH = Input.GetAxisRaw("Horizontal");
+                if (Mathf.Abs(unityH) > Mathf.Abs(stickX)) stickX = unityH;
+            }
+            catch { }
+
+            // 3. Arrow keys on keyboard (Left / Right) for Desktop Debug mode
+            if (Input.GetKey(KeyCode.RightArrow))
+            {
+                if (stickX <= 0.2f) stickX = 1f;
+            }
+            else if (Input.GetKey(KeyCode.LeftArrow))
+            {
+                if (stickX >= -0.2f) stickX = -1f;
+            }
+
+            const float deadZone = 0.45f;
+            int currentDir = 0;
+            if (stickX > deadZone) currentDir = 1;      // Next song (Right)
+            else if (stickX < -deadZone) currentDir = -1; // Prev song (Left)
+
+            if (currentDir != 0)
+            {
+                if (_navHoldDir != currentDir)
+                {
+                    // New direction triggered: immediate single step
+                    _navHoldDir = currentDir;
+                    _navHoldStartTime = Time.unscaledTime;
+                    _navNextStepTime = Time.unscaledTime + 0.38f; // Initial delay to prevent accidental multi-steps
+
+                    TriggerSongStep(sm, currentDir);
+                }
+                else
+                {
+                    // Continued hold in the same direction: check repeat timer with acceleration
+                    if (Time.unscaledTime >= _navNextStepTime)
+                    {
+                        TriggerSongStep(sm, currentDir);
+
+                        float holdDuration = Time.unscaledTime - _navHoldStartTime;
+                        // Smoothly accelerate repeat rate from 0.22s down to 0.045s (~22 songs/sec)
+                        float factor = Mathf.Clamp01((holdDuration - 0.38f) / 2.0f);
+                        float interval = Mathf.Lerp(0.22f, 0.045f, factor);
+                        _navNextStepTime = Time.unscaledTime + interval;
+                    }
+                }
+            }
+            else
+            {
+                _navHoldDir = 0;
+                _navHoldStartTime = 0f;
+                _navNextStepTime = 0f;
+            }
+        }
+
+        private static void TriggerSongStep(SongMenu sm, int dir)
+        {
+            try
+            {
+                if (dir > 0)
+                {
+                    Traverse.Create(sm).Method("Next_Pressed").GetValue();
+                }
+                else
+                {
+                    Traverse.Create(sm).Method("Prev_Pressed").GetValue();
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[CustomSongs] Error navigating song: {ex.Message}");
+            }
         }
 
         public static SongMappingMetaData GetSafeSelectedSong()
@@ -728,6 +867,17 @@ namespace UnpluggedCustomSongs
                 {
                     LoggerInstance.Msg("[CustomSongs] Key [C]: Selecting Custom Songs Album...");
                     Traverse.Create(StartSpace.I).Method("AlbumSelected", new object[] { CustomSongLoader.CustomAlbumInstance }).GetValue();
+                }
+            }
+
+            // [Escape] or [P]: Unpause if in pause menu
+            if (Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.P))
+            {
+                var pause = UnityEngine.Object.FindObjectOfType<PauseSpace>();
+                if (pause != null && pause.gameObject.activeInHierarchy)
+                {
+                    LoggerInstance.Msg("[CustomSongs] Key [Escape/P]: Resuming game via PauseSpace.BeginContinue()...");
+                    Traverse.Create(pause).Method("BeginContinue").GetValue();
                 }
             }
         }
