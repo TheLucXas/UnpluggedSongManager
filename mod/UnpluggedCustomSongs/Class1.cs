@@ -188,6 +188,7 @@ namespace UnpluggedCustomSongs
         public static MelonPreferences_Entry<bool> PrefDiscordRPC;
         public static MelonPreferences_Entry<bool> PrefVerbose;
         public static MelonPreferences_Entry<string> PrefDiscordClientId;
+        public static MelonPreferences_Entry<bool> PrefDebugMode;
 
         public static bool ConfigDiscordRPC => PrefDiscordRPC?.Value ?? true;
         public static bool ConfigVerbose => PrefVerbose?.Value ?? false;
@@ -206,7 +207,9 @@ namespace UnpluggedCustomSongs
             PrefDiscordRPC = PrefsCategory.CreateEntry("EnableDiscordRPC", true, "Enable Discord Rich Presence");
             PrefVerbose = PrefsCategory.CreateEntry("VerboseLogging", false, "Enable Verbose Debug Logging");
             PrefDiscordClientId = PrefsCategory.CreateEntry("DiscordClientId", "1441987286022619299", "Discord Application Client ID");
+            PrefDebugMode = PrefsCategory.CreateEntry("EnableDebugMode", false, "Enable Desktop WASD/Mouse Look & Testing Controls");
 
+            DebugMode = PrefDebugMode?.Value ?? false;
             DiscordRpcManager.Init();
             
             try
