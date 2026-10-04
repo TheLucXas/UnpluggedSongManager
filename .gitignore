@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.spec
+build/
+dist/
+*.egg-info/
+venv/
+.venv/
+env/
+
+# Binaries & external large files
+*.exe
+*.dll
+*.pdb
+*.zip
+ffmpeg.exe
+ffmpeg-downloader/
+
+# .NET / C#
+bin/
+obj/
+.vs/
+*.user
+*.suo
+
+# System & IDE
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
