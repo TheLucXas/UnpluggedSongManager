@@ -35,7 +35,7 @@ namespace USM.Core.Services
             get => _maxConcurrentDownloads;
             set
             {
-                int clamped = Math.Clamp(value, 1, 10);
+                int clamped = Math.Clamp(value, 1, 99);
                 if (_maxConcurrentDownloads != clamped)
                 {
                     _maxConcurrentDownloads = clamped;
@@ -62,11 +62,11 @@ namespace USM.Core.Services
             {
                 if (mcdObj is JsonElement mcdElem && mcdElem.TryGetInt32(out int mcd))
                 {
-                    _maxConcurrentDownloads = Math.Clamp(mcd, 1, 10);
+                    _maxConcurrentDownloads = Math.Clamp(mcd, 1, 99);
                 }
                 else if (int.TryParse(mcdObj.ToString(), out int parsedMcd))
                 {
-                    _maxConcurrentDownloads = Math.Clamp(parsedMcd, 1, 10);
+                    _maxConcurrentDownloads = Math.Clamp(parsedMcd, 1, 99);
                 }
             }
 

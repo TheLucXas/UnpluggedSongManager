@@ -81,24 +81,49 @@ namespace USM.ViewModels
             set => SetProperty(ref _modStatusMessage, value);
         }
 
-        public int[] AvailableDownloadLimits { get; } = new[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+        private string _maxDownloadsText = "5";
+        public string MaxDownloadsText
+        {
+            get => _maxDownloadsText;
+            set
+            {
+                if (SetProperty(ref _maxDownloadsText, value))
+                {
+                    if (int.TryParse(value, out int parsed))
+                    {
+                        int clamped = Math.Clamp(parsed, 1, 99);
+                        if (_gameDetector.MaxConcurrentDownloads != clamped)
+                        {
+                            _gameDetector.MaxConcurrentDownloads = clamped;
+                            OnPropertyChanged(nameof(MaxConcurrentDownloads));
+                            _notifyCallback?.Invoke($"Maximum concurrent downloads set to {clamped}.");
+                        }
+                    }
+                }
+            }
+        }
 
         public int MaxConcurrentDownloads
         {
             get => _gameDetector.MaxConcurrentDownloads;
             set
             {
-                if (_gameDetector.MaxConcurrentDownloads != value)
+                int clamped = Math.Clamp(value, 1, 99);
+                if (_gameDetector.MaxConcurrentDownloads != clamped)
                 {
-                    _gameDetector.MaxConcurrentDownloads = value;
+                    _gameDetector.MaxConcurrentDownloads = clamped;
+                    _maxDownloadsText = clamped.ToString();
+                    OnPropertyChanged(nameof(MaxDownloadsText));
                     OnPropertyChanged(nameof(MaxConcurrentDownloads));
-                    _notifyCallback?.Invoke($"Maximum concurrent downloads set to {value}.");
+                    _notifyCallback?.Invoke($"Maximum concurrent downloads set to {clamped}.");
                 }
             }
         }
 
         public ICommand BrowseGamePathCommand { get; }
         public ICommand InstallModCommand { get; }
+        public ICommand IncrementDownloadsCommand { get; }
+        public ICommand DecrementDownloadsCommand { get; }
 
         public SettingsViewModel(GameDetector gameDetector, Action<string> notifyCallback)
         {
@@ -107,8 +132,30 @@ namespace USM.ViewModels
 
             BrowseGamePathCommand = new RelayCommand(BrowseGamePath);
             InstallModCommand = new RelayCommand(InstallMod);
+            IncrementDownloadsCommand = new RelayCommand(IncrementDownloads);
+            DecrementDownloadsCommand = new RelayCommand(DecrementDownloads);
 
             RefreshStatus();
+        }
+
+        private void IncrementDownloads()
+        {
+            int current = int.TryParse(MaxDownloadsText, out int v) ? v : 5;
+            if (current < 99)
+            {
+                current++;
+                MaxDownloadsText = current.ToString();
+            }
+        }
+
+        private void DecrementDownloads()
+        {
+            int current = int.TryParse(MaxDownloadsText, out int v) ? v : 5;
+            if (current > 1)
+            {
+                current--;
+                MaxDownloadsText = current.ToString();
+            }
         }
 
         public void RefreshStatus()
@@ -122,9 +169,11 @@ namespace USM.ViewModels
             var (disc, verb) = _gameDetector.ReadPreferences();
             _enableDiscordRpc = disc;
             _enableVerboseDebug = verb;
+            _maxDownloadsText = _gameDetector.MaxConcurrentDownloads.ToString();
             OnPropertyChanged(nameof(EnableDiscordRpc));
             OnPropertyChanged(nameof(EnableVerboseDebug));
             OnPropertyChanged(nameof(MaxConcurrentDownloads));
+            OnPropertyChanged(nameof(MaxDownloadsText));
         }
 
         private void BrowseGamePath()

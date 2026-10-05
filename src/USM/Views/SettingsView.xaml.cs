@@ -12,6 +12,42 @@ namespace USM.Views
         {
             InitializeComponent();
         }
+
+        private void MaxDownloads_PreviewTextInput(object sender, System.Windows.Input.TextCompositionEventArgs e)
+        {
+            e.Handled = !System.Text.RegularExpressions.Regex.IsMatch(e.Text, "^[0-9]+$");
+        }
+
+        private void MaxDownloads_Pasting(object sender, System.Windows.DataObjectPastingEventArgs e)
+        {
+            if (e.DataObject.GetDataPresent(typeof(string)))
+            {
+                string text = (string)e.DataObject.GetData(typeof(string));
+                if (!System.Text.RegularExpressions.Regex.IsMatch(text, "^[0-9]+$"))
+                {
+                    e.CancelCommand();
+                }
+            }
+            else
+            {
+                e.CancelCommand();
+            }
+        }
+
+        private void MaxDownloads_LostFocus(object sender, System.Windows.RoutedEventArgs e)
+        {
+            if (DataContext is ViewModels.SettingsViewModel vm)
+            {
+                if (!int.TryParse(vm.MaxDownloadsText, out int val) || val < 1)
+                {
+                    vm.MaxDownloadsText = "1";
+                }
+                else if (val > 99)
+                {
+                    vm.MaxDownloadsText = "99";
+                }
+            }
+        }
     }
 
     public class StatusTextConverter : IValueConverter

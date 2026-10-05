@@ -100,6 +100,7 @@ namespace USM.Core.Models
         public string Artist { get; set; } = string.Empty;
         public string Charter { get; set; } = string.Empty;
         public string? CoverPath { get; set; }
+        public System.Windows.Media.ImageSource? CoverImage { get; set; }
         public string? AudioPath { get; set; }
         public bool HasCover => !string.IsNullOrEmpty(CoverPath) && System.IO.File.Exists(CoverPath);
         public bool IsMultiTrack { get; set; } = false;

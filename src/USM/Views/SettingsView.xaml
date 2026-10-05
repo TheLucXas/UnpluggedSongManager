@@ -11,6 +11,30 @@
     <UserControl.Resources>
         <local:StatusTextConverter x:Key="StatusTextConv" />
         <local:StatusColorConverter x:Key="StatusColorConv" />
+
+        <Style x:Key="SpinnerBtn" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="btnBorder" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="btnBorder" Property="Background" Value="#33FFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="btnBorder" Property="Background" Value="#55FFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
     <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -174,24 +198,88 @@
                     <Grid Margin="0,4">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="260" />
-                            <ColumnDefinition Width="140" />
+                            <ColumnDefinition Width="100" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0"
-                                   Text="Max Concurrent Downloads:"
+                                   Text="Max Concurrent Downloads (1-99):"
                                    Foreground="{StaticResource BrushTextSecondary}"
                                    VerticalAlignment="Center" />
-                        <ComboBox Grid.Column="1"
-                                  ItemsSource="{Binding AvailableDownloadLimits}"
-                                  SelectedItem="{Binding MaxConcurrentDownloads}"
-                                  FontSize="13"
-                                  Padding="8,4" />
+
+                        <!-- Numeric Spinner Control (1 - 99) -->
+                        <Border Grid.Column="1"
+                                Background="{StaticResource BrushBgInput}"
+                                BorderBrush="{StaticResource BrushBorder}"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Height="34"
+                                VerticalAlignment="Center">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="26" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBox x:Name="MaxDownloadsBox"
+                                         Grid.Column="0"
+                                         Text="{Binding MaxDownloadsText, UpdateSourceTrigger=PropertyChanged}"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         Foreground="{StaticResource BrushTextPrimary}"
+                                         FontSize="14"
+                                         FontWeight="Bold"
+                                         HorizontalContentAlignment="Center"
+                                         VerticalContentAlignment="Center"
+                                         MaxLength="2"
+                                         Padding="0"
+                                         PreviewTextInput="MaxDownloads_PreviewTextInput"
+                                         DataObject.Pasting="MaxDownloads_Pasting"
+                                         LostFocus="MaxDownloads_LostFocus" />
+
+                                <Border Grid.Column="1"
+                                        BorderBrush="{StaticResource BrushBorder}"
+                                        BorderThickness="1,0,0,0">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="*" />
+                                            <RowDefinition Height="1" />
+                                            <RowDefinition Height="*" />
+                                        </Grid.RowDefinitions>
+
+                                        <Button Grid.Row="0"
+                                                Style="{StaticResource SpinnerBtn}"
+                                                Command="{Binding IncrementDownloadsCommand}"
+                                                ToolTip="Increase">
+                                            <TextBlock Text="▲"
+                                                       FontSize="8"
+                                                       Foreground="{StaticResource BrushTextSecondary}"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center" />
+                                        </Button>
+
+                                        <Rectangle Grid.Row="1" Fill="{StaticResource BrushBorder}" />
+
+                                        <Button Grid.Row="2"
+                                                Style="{StaticResource SpinnerBtn}"
+                                                Command="{Binding DecrementDownloadsCommand}"
+                                                ToolTip="Decrease">
+                                            <TextBlock Text="▼"
+                                                       FontSize="8"
+                                                       Foreground="{StaticResource BrushTextSecondary}"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center" />
+                                        </Button>
+                                    </Grid>
+                                </Border>
+                            </Grid>
+                        </Border>
+
                         <TextBlock Grid.Column="2"
-                                   Text="(Default: 5 - additional downloads automatically queue and resume)"
+                                   Text="(Default: 5 - parallel chart downloads from Chorus Encore)"
                                    Foreground="{StaticResource BrushTextMuted}"
                                    FontSize="12"
                                    VerticalAlignment="Center"
-                                   Margin="12,0,0,0" />
+                                   Margin="14,0,0,0" />
                     </Grid>
                 </StackPanel>
             </Border>

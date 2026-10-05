@@ -174,6 +174,9 @@ namespace USM.ViewModels
             string samplePath = Path.Combine(dir, "sample.mp3");
             if (!File.Exists(samplePath)) samplePath = Path.Combine(dir, "song.mp3");
 
+            string? finalCoverPath = File.Exists(coverPath) ? coverPath : null;
+            var coverImage = finalCoverPath != null ? LoadBitmapWithoutLock(finalCoverPath) : null;
+
             return new InstalledSong
             {
                 FolderName = folderName,
@@ -181,10 +184,70 @@ namespace USM.ViewModels
                 Title = title,
                 Artist = artist,
                 Charter = charter,
-                CoverPath = File.Exists(coverPath) ? coverPath : null,
+                CoverPath = finalCoverPath,
+                CoverImage = coverImage,
                 AudioPath = File.Exists(samplePath) ? samplePath : null,
                 IsMultiTrack = isMulti
             };
+        }
+
+        private static System.Windows.Media.Imaging.BitmapImage? LoadBitmapWithoutLock(string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath)) return null;
+            try
+            {
+                var bitmap = new System.Windows.Media.Imaging.BitmapImage();
+                using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                {
+                    bitmap.BeginInit();
+                    bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                    bitmap.StreamSource = stream;
+                    bitmap.EndInit();
+                }
+                bitmap.Freeze();
+                return bitmap;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static bool DeleteDirectorySafe(string path)
+        {
+            if (!Directory.Exists(path)) return true;
+            try
+            {
+                var di = new DirectoryInfo(path);
+                foreach (var file in di.GetFiles("*", SearchOption.AllDirectories))
+                {
+                    file.Attributes = FileAttributes.Normal;
+                }
+                foreach (var sub in di.GetDirectories("*", SearchOption.AllDirectories))
+                {
+                    sub.Attributes = FileAttributes.Normal;
+                }
+                di.Attributes = FileAttributes.Normal;
+
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+
+                Directory.Delete(path, recursive: true);
+                return true;
+            }
+            catch
+            {
+                System.Threading.Thread.Sleep(60);
+                try
+                {
+                    Directory.Delete(path, recursive: true);
+                    return true;
+                }
+                catch
+                {
+                    return false;
+                }
+            }
         }
 
         private void ApplyFilter()
@@ -254,17 +317,37 @@ namespace USM.ViewModels
             if (res == MessageBoxResult.Yes)
             {
                 AudioPlayerService.Instance.Stop();
+                int deletedCount = 0;
+                var failedSongs = new List<string>();
+
                 foreach (var song in selected)
                 {
-                    try
+                    if (DeleteDirectorySafe(song.FolderPath))
                     {
-                        if (Directory.Exists(song.FolderPath))
-                            Directory.Delete(song.FolderPath, recursive: true);
+                        deletedCount++;
                     }
-                    catch { }
+                    else
+                    {
+                        failedSongs.Add(song.Title);
+                    }
                 }
+
                 RefreshLibrary();
-                _notifyCallback?.Invoke($"Deleted {selected.Count} songs from CustomSongs.");
+
+                if (failedSongs.Count > 0)
+                {
+                    MessageBox.Show(
+                        $"Could not delete the following song(s) because they may be in use by another program:\n{string.Join("\n", failedSongs)}",
+                        "Deletion Warning",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning
+                    );
+                }
+
+                if (deletedCount > 0)
+                {
+                    _notifyCallback?.Invoke($"Deleted {deletedCount} song(s) from CustomSongs.");
+                }
             }
         }
 
@@ -282,14 +365,21 @@ namespace USM.ViewModels
             if (res == MessageBoxResult.Yes)
             {
                 AudioPlayerService.Instance.Stop();
-                try
+                if (DeleteDirectorySafe(song.FolderPath))
                 {
-                    if (Directory.Exists(song.FolderPath))
-                        Directory.Delete(song.FolderPath, recursive: true);
+                    RefreshLibrary();
+                    _notifyCallback?.Invoke($"Deleted: {song.Title}");
                 }
-                catch { }
-                RefreshLibrary();
-                _notifyCallback?.Invoke($"Deleted: {song.Title}");
+                else
+                {
+                    MessageBox.Show(
+                        $"Could not delete '{song.Title}'. The folder or files may be in use by another program.",
+                        "Deletion Failed",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning
+                    );
+                    RefreshLibrary();
+                }
             }
         }
 
