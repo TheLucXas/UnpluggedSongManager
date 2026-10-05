@@ -1,0 +1,123 @@
+<UserControl x:Class="USM.Views.ConverterView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:USM.ViewModels"
+             mc:Ignorable="d" 
+             d:DataContext="{d:DesignInstance vm:ConverterViewModel}"
+             Background="Transparent">
+    <Grid Margin="20,10,20,15">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- 1. Drag & Drop Zone Card -->
+        <Border Grid.Row="0"
+                x:Name="DropZoneBorder"
+                Background="{StaticResource BrushBgCard}"
+                BorderBrush="{StaticResource BrushAccentPink}"
+                BorderThickness="2"
+                CornerRadius="14"
+                Padding="20,18"
+                Margin="0,0,0,10"
+                AllowDrop="True"
+                Drop="DropZone_Drop"
+                DragOver="DropZone_DragOver">
+            <StackPanel HorizontalAlignment="Center">
+                <TextBlock Text="🎸  DRAG &amp; DROP YOUR CHARTS HERE"
+                           FontSize="18"
+                           FontWeight="Bold"
+                           Foreground="{StaticResource BrushTextPrimary}"
+                           HorizontalAlignment="Center" />
+                <TextBlock Text="Drop single or multiple .zip, .sng files, or uncompressed Clone Hero / Rock Band song folders"
+                           FontSize="12"
+                           Foreground="{StaticResource BrushTextSecondary}"
+                           HorizontalAlignment="Center"
+                           Margin="0,4,0,14" />
+
+                <!-- Action Buttons Row -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                    <Button Content="📁 Select Files (.zip / .sng)"
+                            Command="{Binding BrowseFilesCommand}"
+                            Style="{StaticResource PurpleButton}"
+                            Margin="0,0,10,0"
+                            Padding="16,9" />
+
+                    <Button Content="📂 Select Folder"
+                            Command="{Binding BrowseFolderCommand}"
+                            Style="{StaticResource SecondaryButton}"
+                            Margin="0,0,10,0"
+                            Padding="16,9" />
+
+                    <Button Content="Clear Queue"
+                            Command="{Binding ClearQueueCommand}"
+                            Style="{StaticResource SecondaryButton}"
+                            Padding="14,9" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- 2. Status & Cancel Bar -->
+        <Border Grid.Row="1"
+                Background="{StaticResource BrushBgCard}"
+                BorderBrush="{StaticResource BrushBorder}"
+                BorderThickness="1"
+                CornerRadius="10"
+                Padding="16,10"
+                Margin="0,0,0,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0"
+                           Text="{Binding StatusText}"
+                           FontSize="13"
+                           FontWeight="Bold"
+                           Foreground="{StaticResource BrushAccentBlue}"
+                           VerticalAlignment="Center" />
+
+                <Button Grid.Column="1"
+                        Content="⏹ Stop / Cancel"
+                        Command="{Binding CancelCommand}"
+                        Style="{StaticResource DangerButton}"
+                        IsEnabled="{Binding IsConverting}"
+                        Padding="16,7"
+                        FontSize="12" />
+            </Grid>
+        </Border>
+
+        <!-- 3. Overall Progress Bar -->
+        <ProgressBar Grid.Row="2"
+                     Value="{Binding OverallProgress}"
+                     Maximum="1.0"
+                     Height="8"
+                     Margin="0,0,0,8" />
+
+        <!-- 4. Real-time Conversion Log Console -->
+        <Border Grid.Row="3"
+                Background="{StaticResource BrushBgCard}"
+                BorderBrush="{StaticResource BrushBorder}"
+                BorderThickness="1"
+                CornerRadius="10"
+                Padding="12">
+            <TextBox x:Name="LogTextBox"
+                     Text="{Binding LogText, Mode=OneWay}"
+                     IsReadOnly="True"
+                     FontFamily="Consolas"
+                     FontSize="12"
+                     Background="Transparent"
+                     Foreground="{StaticResource BrushTextPrimary}"
+                     BorderThickness="0"
+                     VerticalScrollBarVisibility="Auto"
+                     HorizontalScrollBarVisibility="Auto"
+                     TextWrapping="Wrap"
+                     TextChanged="LogTextBox_TextChanged" />
+        </Border>
+    </Grid>
+</UserControl>

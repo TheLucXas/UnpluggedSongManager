@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/mod/">
+    <Project Path="mod/UnpluggedCustomSongs/UnpluggedCustomSongs.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/USM/USM.csproj" />
+  </Folder>
+</Solution>

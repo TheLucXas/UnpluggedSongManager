@@ -1,0 +1,158 @@
+<UserControl x:Class="USM.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:USM.ViewModels"
+             xmlns:local="clr-namespace:USM.Views"
+             mc:Ignorable="d" 
+             d:DataContext="{d:DesignInstance vm:SettingsViewModel}"
+             Background="Transparent">
+    <UserControl.Resources>
+        <local:StatusTextConverter x:Key="StatusTextConv" />
+        <local:StatusColorConverter x:Key="StatusColorConv" />
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="20,10,20,20">
+            <!-- 1. Game Path Card -->
+            <Border Background="{StaticResource BrushBgCard}"
+                    BorderBrush="{StaticResource BrushBorder}"
+                    BorderThickness="1"
+                    CornerRadius="12"
+                    Padding="18,16"
+                    Margin="0,0,0,12">
+                <StackPanel>
+                    <TextBlock Text="Unplugged VR Game Location"
+                               FontSize="16"
+                               FontWeight="Bold"
+                               Foreground="{StaticResource BrushTextPrimary}" />
+                    <TextBlock Text="Root folder where Unplugged.exe is installed on your PC:"
+                               FontSize="12"
+                               Foreground="{StaticResource BrushTextSecondary}"
+                               Margin="0,3,0,12" />
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBox Grid.Column="0"
+                                 Text="{Binding GamePath, Mode=OneWay}"
+                                 IsReadOnly="True"
+                                 FontSize="13"
+                                 Margin="0,0,10,0" />
+
+                        <Button Grid.Column="1"
+                                Content="Browse Folder"
+                                Command="{Binding BrowseGamePathCommand}"
+                                Padding="16,8"
+                                FontSize="12" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- 2. Mod & Installation Status Card -->
+            <Border Background="{StaticResource BrushBgCard}"
+                    BorderBrush="{StaticResource BrushBorder}"
+                    BorderThickness="1"
+                    CornerRadius="12"
+                    Padding="18,16"
+                    Margin="0,0,0,12">
+                <StackPanel>
+                    <Grid Margin="0,0,0,14">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0"
+                                   Text="Modding &amp; Installation Status"
+                                   FontSize="16"
+                                   FontWeight="Bold"
+                                   Foreground="{StaticResource BrushTextPrimary}"
+                                   VerticalAlignment="Center" />
+
+                        <Button Grid.Column="1"
+                                Content="⚡ Install / Update Mod Plugin"
+                                Command="{Binding InstallModCommand}"
+                                Background="{StaticResource BrushAccentGreen}"
+                                Foreground="#000000"
+                                FontWeight="Bold"
+                                Padding="16,8"
+                                FontSize="12" />
+                    </Grid>
+
+                    <!-- Status Rows -->
+                    <Grid Margin="0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="260" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Unplugged.exe Executable:" Foreground="{StaticResource BrushTextSecondary}" />
+                        <TextBlock Grid.Column="1" Text="{Binding IsGameFound, Converter={StaticResource StatusTextConv}}" Foreground="{Binding IsGameFound, Converter={StaticResource StatusColorConv}}" FontWeight="Bold" />
+                    </Grid>
+
+                    <Grid Margin="0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="260" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="MelonLoader (Mod Loader):" Foreground="{StaticResource BrushTextSecondary}" />
+                        <TextBlock Grid.Column="1" Text="{Binding IsMelonInstalled, Converter={StaticResource StatusTextConv}}" Foreground="{Binding IsMelonInstalled, Converter={StaticResource StatusColorConv}}" FontWeight="Bold" />
+                    </Grid>
+
+                    <Grid Margin="0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="260" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="UnpluggedCustomSongs.dll:" Foreground="{StaticResource BrushTextSecondary}" />
+                        <TextBlock Grid.Column="1" Text="{Binding IsModInstalled, Converter={StaticResource StatusTextConv}}" Foreground="{Binding IsModInstalled, Converter={StaticResource StatusColorConv}}" FontWeight="Bold" />
+                    </Grid>
+
+                    <Grid Margin="0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="260" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="CustomSongs Library Folder:" Foreground="{StaticResource BrushTextSecondary}" />
+                        <TextBlock Grid.Column="1" Text="{Binding IsCustomSongsReady, Converter={StaticResource StatusTextConv}}" Foreground="{Binding IsCustomSongsReady, Converter={StaticResource StatusColorConv}}" FontWeight="Bold" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- 3. Preferences & Debug Options Card -->
+            <Border Background="{StaticResource BrushBgCard}"
+                    BorderBrush="{StaticResource BrushBorder}"
+                    BorderThickness="1"
+                    CornerRadius="12"
+                    Padding="18,16">
+                <StackPanel>
+                    <TextBlock Text="In-Game VR Mod Settings (MelonPreferences.cfg)"
+                               FontSize="16"
+                               FontWeight="Bold"
+                               Foreground="{StaticResource BrushTextPrimary}" />
+                    <TextBlock Text="These options are executed exclusively by the in-game plugin (UnpluggedCustomSongs.dll) when playing in VR. USM does not run Discord RPC."
+                               FontSize="12"
+                               Foreground="{StaticResource BrushTextSecondary}"
+                               Margin="0,3,0,14" />
+
+                    <!-- Discord RPC Checkbox -->
+                    <CheckBox IsChecked="{Binding EnableDiscordRpc}"
+                              Content="Enable In-Game Discord Rich Presence (Shows custom song &amp; difficulty on Discord while playing)"
+                              Foreground="{StaticResource BrushTextPrimary}"
+                              FontSize="13"
+                              Margin="0,0,0,10" />
+
+                    <!-- Verbose Debug Checkbox -->
+                    <CheckBox IsChecked="{Binding EnableVerboseDebug}"
+                              Content="Verbose / Debug In-Game Logging (Log detailed chart &amp; audio loading in MelonLoader console)"
+                              Foreground="{StaticResource BrushTextPrimary}"
+                              FontSize="13" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
