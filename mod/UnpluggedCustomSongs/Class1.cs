@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Reflection.Emit;
 using System.Globalization;
 using System.Runtime.Serialization;
 using System.Xml;
@@ -407,22 +408,14 @@ namespace UnpluggedCustomSongs
             }
             catch { }
 
-            // 2. Unity Input Horizontal Axis (SteamVR controllers, Gamepads)
-            try
+            // 2. Keyboard keys: Arrow keys (Left/Right) and Z/X
+            if (Input.GetKey(KeyCode.RightArrow) || Input.GetKey(KeyCode.X))
             {
-                float unityH = Input.GetAxisRaw("Horizontal");
-                if (Mathf.Abs(unityH) > Mathf.Abs(stickX)) stickX = unityH;
+                stickX = 1f;
             }
-            catch { }
-
-            // 3. Arrow keys on keyboard (Left / Right) for Desktop Debug mode
-            if (Input.GetKey(KeyCode.RightArrow))
+            else if (Input.GetKey(KeyCode.LeftArrow) || Input.GetKey(KeyCode.Z))
             {
-                if (stickX <= 0.2f) stickX = 1f;
-            }
-            else if (Input.GetKey(KeyCode.LeftArrow))
-            {
-                if (stickX >= -0.2f) stickX = -1f;
+                stickX = -1f;
             }
 
             const float deadZone = 0.45f;
@@ -851,14 +844,6 @@ namespace UnpluggedCustomSongs
                 ShowButtonPanel = !ShowButtonPanel;
             }
 
-            // [Z]/[X]: rotate song turntable
-            if (StartSpace.I != null && StartSpace.I.songMenu != null && StartSpace.I.songMenu.isActiveAndEnabled)
-            {
-                if (Input.GetKeyDown(KeyCode.X))
-                    Traverse.Create(StartSpace.I.songMenu).Method("Next_Pressed").GetValue();
-                if (Input.GetKeyDown(KeyCode.Z))
-                    Traverse.Create(StartSpace.I.songMenu).Method("Prev_Pressed").GetValue();
-            }
 
             // [C]: Select Custom Songs in StartSpace
             if (Input.GetKeyDown(KeyCode.C))
@@ -1001,7 +986,8 @@ namespace UnpluggedCustomSongs
                         var src = mp.AudioSources[i];
                         if (src != null)
                         {
-                            LoggerInstance.Msg($"  Track [{(Mp3Player.SongTrackNames)i}]: isPlaying={src.isPlaying}, vol={src.volume:F2}, time={src.time:F2}, clip={src.clip?.name ?? "null"}");
+                            string mixer = src.outputAudioMixerGroup != null ? src.outputAudioMixerGroup.name : "none";
+                            LoggerInstance.Msg($"  Track [{(Mp3Player.SongTrackNames)i}]: isPlaying={src.isPlaying}, vol={src.volume:F2}, 2D={src.spatialBlend == 0f}, mixer={mixer}, time={src.time:F2}, clip={src.clip?.name ?? "null"}");
                         }
                     }
                 }
@@ -1344,6 +1330,8 @@ namespace UnpluggedCustomSongs
 
             MelonLogger.Msg($"[CustomSongs] LoadCustomAudio: '{data.SongName}', IsMultiTrack set to: {isMulti}");
 
+            var musicMixerGroup = player.MusicAudioSource != null ? player.MusicAudioSource.outputAudioMixerGroup : null;
+
             if (isMulti)
             {
                 // Clear any leftover clips
@@ -1358,25 +1346,43 @@ namespace UnpluggedCustomSongs
                 bool hasVocals = LoadTrack(player, folder, "song-vocals.mp3", Mp3Player.SongTrackNames.Vocals);
                 bool hasOther = LoadTrack(player, folder, "song-other.mp3", Mp3Player.SongTrackNames.Other);
 
-                AudioSource masterSrc = null;
-                int vocalsIdx = (int)Mp3Player.SongTrackNames.Vocals;
-                if (vocalsIdx < player.AudioSources.Count && player.AudioSources[vocalsIdx].clip != null)
+                // Configure EVERY AudioSource to be 2D stereo and route to the same music mixer group
+                for (int i = 0; i < player.AudioSources.Count; i++)
                 {
-                    masterSrc = player.AudioSources[vocalsIdx];
-                }
-                else
-                {
-                    for (int i = 0; i < player.AudioSources.Count; i++)
+                    var src = player.AudioSources[i];
+                    if (src != null)
                     {
-                        if (player.AudioSources[i] != null && player.AudioSources[i].clip != null)
-                        {
-                            masterSrc = player.AudioSources[i];
-                            break;
-                        }
+                        src.spatialBlend = 0f;
+                        src.spatialize = false;
+                        src.mute = false;
+                        src.enabled = true;
+                        if (musicMixerGroup != null) src.outputAudioMixerGroup = musicMixerGroup;
                     }
                 }
+
+                AudioSource masterSrc = null;
+                // Choose Drums, Other, Vocals or Bass as master sync clock (never Guitar so guitar muting never affects sync)
+                int[] syncCandidates = {
+                    (int)Mp3Player.SongTrackNames.Drums,
+                    (int)Mp3Player.SongTrackNames.Other,
+                    (int)Mp3Player.SongTrackNames.Vocals,
+                    (int)Mp3Player.SongTrackNames.Bass
+                };
+                foreach (int idx in syncCandidates)
+                {
+                    if (idx < player.AudioSources.Count && player.AudioSources[idx] != null && player.AudioSources[idx].clip != null)
+                    {
+                        masterSrc = player.AudioSources[idx];
+                        break;
+                    }
+                }
+                if (masterSrc == null)
+                {
+                    masterSrc = player.AudioSources.FirstOrDefault(s => s != null && s.clip != null);
+                }
+
                 player.MusicAudioSource = masterSrc;
-                MelonLogger.Msg($"[CustomSongs] MultiTrack stems loaded: Guitar={hasGuitar}, Bass={hasBass}, Drums={hasDrums}, Vocals={hasVocals}, Other={hasOther}. MasterSource={masterSrc?.clip?.name}");
+                MelonLogger.Msg($"[CustomSongs] MultiTrack stems loaded: Guitar={hasGuitar}, Bass={hasBass}, Drums={hasDrums}, Vocals={hasVocals}, Other={hasOther}. MasterSyncSource={masterSrc?.clip?.name}");
             }
             else
             {
@@ -1390,6 +1396,11 @@ namespace UnpluggedCustomSongs
                         clip.name = "song";
                         player.MusicAudioSource.clip = clip;
                         player.MusicAudioSource.volume = 1f;
+                        player.MusicAudioSource.spatialBlend = 0f;
+                        player.MusicAudioSource.spatialize = false;
+                        player.MusicAudioSource.mute = false;
+                        player.MusicAudioSource.enabled = true;
+                        if (musicMixerGroup != null) player.MusicAudioSource.outputAudioMixerGroup = musicMixerGroup;
                         MelonLogger.Msg($"[CustomSongs] SingleTrack master audio clip loaded: {masterPath}");
                     }
                 }
@@ -1524,7 +1535,7 @@ namespace UnpluggedCustomSongs
                 System.Threading.Thread.Sleep(10);
                 timeout++;
             }
-            return www.GetAudioClip(true, false, AudioType.MPEG);
+            return www.GetAudioClip(false, false, AudioType.MPEG);
         }
     }
 
@@ -1858,15 +1869,15 @@ namespace UnpluggedCustomSongs
     [HarmonyPatch(typeof(GuitarHandPoseRecognitionManager), "CheckHandPoseColliderMethod")]
     public static class Patch_GuitarHandPoseRecognitionManager_CheckHandPoseColliderMethod
     {
-        public static void Prefix(GuitarHandPoseRecognitionManager __instance, HandGuitarNote handGuitarNote)
+        public static void Prefix(GuitarHandPoseRecognitionManager __instance, HandGuitarNote closerNote)
         {
-            if (handGuitarNote == null) return;
+            if (closerNote == null) return;
             try
             {
-                if (handGuitarNote.Fingers == null || handGuitarNote.Fingers.Count == 0)
+                if (closerNote.Fingers == null || closerNote.Fingers.Count == 0)
                 {
-                    int tier = handGuitarNote.Tier;
-                    handGuitarNote.Fingers = tier switch
+                    int tier = closerNote.Tier;
+                    closerNote.Fingers = tier switch
                     {
                         0 => new List<TierFinger> { TierFinger.Index },
                         1 => new List<TierFinger> { TierFinger.Middle },
@@ -2051,6 +2062,64 @@ namespace UnpluggedCustomSongs
         }
     }
 
+    public static class VinylCoverHelper
+    {
+        public static void UpdateTurntableVinyl(SongMappingMetaData song)
+        {
+            if (song == null) return;
+            try
+            {
+                Texture2D tex = song.Thumbnail;
+                if (tex != null)
+                {
+                    if (StartSpace.I != null)
+                    {
+                        var r1 = StartSpace.I.StartSpaceLp?.GetComponent<Renderer>();
+                        if (r1 != null && r1.material != null)
+                        {
+                            r1.material.SetTexture("_MainTex", tex);
+                        }
+                        var r2 = StartSpace.I.StartSpaceAuxLp?.GetComponent<Renderer>();
+                        if (r2 != null && r2.material != null)
+                        {
+                            r2.material.SetTexture("_MainTex", tex);
+                        }
+                    }
+                    if (CustomSongLoader.CustomAlbumInstance != null)
+                    {
+                        CustomSongLoader.CustomAlbumInstance.VinylTexture = tex;
+                    }
+                    MelonLogger.Msg($"[CustomSongs] Vinyl cover updated to: {song.BandName} - {song.SongName} ({tex.width}x{tex.height})");
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"[CustomSongs] Error updating vinyl cover: {ex.Message}");
+            }
+        }
+    }
+
+    // Disable SongMenu's native Arrow key checks so that our mod has full, single-step and hold-accelerated control without doubling.
+    [HarmonyPatch(typeof(SongMenu), "Update")]
+    public static class Patch_SongMenu_Update
+    {
+        public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+        {
+            foreach (var inst in instructions)
+            {
+                if (inst.opcode == OpCodes.Call && inst.operand is MethodInfo mi && mi.Name == "GetKeyDown")
+                {
+                    yield return new CodeInstruction(OpCodes.Pop);
+                    yield return new CodeInstruction(OpCodes.Ldc_I4_0);
+                }
+                else
+                {
+                    yield return inst;
+                }
+            }
+        }
+    }
+
     [HarmonyPatch(typeof(SongMenu), "set_SelectedIndex")]
     public static class Patch_SongMenu_set_SelectedIndex
     {
@@ -2058,24 +2127,12 @@ namespace UnpluggedCustomSongs
         {
             try
             {
-                if (AlbumsManager.SelectedAlbum != null && AlbumsManager.SelectedAlbum.AlbumID == "CustomSongsAlbum" && CustomSongLoader.CustomAlbumInstance != null)
+                if (AlbumsManager.SelectedAlbum != null && AlbumsManager.SelectedAlbum.AlbumID == "CustomSongsAlbum")
                 {
-                    var songs = CustomSongLoader.CustomAlbumInstance.builtInSongsMetadata;
-                    if (songs != null && value >= 0 && value < songs.Count)
+                    var selected = __instance.SelectedSong;
+                    if (selected != null)
                     {
-                        var song = songs[value];
-                        Texture2D tex = song.Thumbnail;
-                        if (tex != null)
-                        {
-                            if (StartSpace.I != null)
-                            {
-                                var r1 = StartSpace.I.StartSpaceLp?.GetComponent<Renderer>();
-                                if (r1 != null && r1.material != null) r1.material.SetTexture("_MainTex", tex);
-                                var r2 = StartSpace.I.StartSpaceAuxLp?.GetComponent<Renderer>();
-                                if (r2 != null && r2.material != null) r2.material.SetTexture("_MainTex", tex);
-                            }
-                            CustomSongLoader.CustomAlbumInstance.VinylTexture = tex;
-                        }
+                        VinylCoverHelper.UpdateTurntableVinyl(selected);
                     }
                 }
             }
@@ -2086,11 +2143,25 @@ namespace UnpluggedCustomSongs
     [HarmonyPatch(typeof(StartSpace), "Start")]
     public static class Patch_StartSpace_Start
     {
+        private static bool _eventSubscribed = false;
+
         public static void Postfix(StartSpace __instance)
         {
             try
             {
                 DiscordRpcManager.UpdateMenu();
+
+                if (!_eventSubscribed)
+                {
+                    _eventSubscribed = true;
+                    SongMenu.SelectedSongChanged += (song) =>
+                    {
+                        if (song != null && AlbumsManager.SelectedAlbum != null && AlbumsManager.SelectedAlbum.AlbumID == "CustomSongsAlbum")
+                        {
+                            VinylCoverHelper.UpdateTurntableVinyl(song);
+                        }
+                    };
+                }
 
                 string lastAlbum = GamePreferences.Load(UnpluggedInfo.LastSongPlayedAlbum, "");
                 if (lastAlbum == "CustomSongsAlbum" && CustomSongLoader.CustomAlbumInstance != null)
@@ -2104,8 +2175,26 @@ namespace UnpluggedCustomSongs
                     MelonLogger.Msg($"[CustomSongs] StartSpace: Restored Custom Songs Album with song index {lastSong}!");
                 }
                 CustomSongLoader.UpdateAlbumCover(CustomSongLoader.CustomAlbumInstance);
+
+                if (__instance.songMenu != null && __instance.songMenu.SelectedSong != null && AlbumsManager.SelectedAlbum != null && AlbumsManager.SelectedAlbum.AlbumID == "CustomSongsAlbum")
+                {
+                    VinylCoverHelper.UpdateTurntableVinyl(__instance.songMenu.SelectedSong);
+                }
             }
             catch { }
+        }
+    }
+
+    [HarmonyPatch(typeof(DLCControllerNew), "OnEnable")]
+    public static class Patch_DLCControllerNew_OnEnable
+    {
+        public static Exception Finalizer(Exception __exception)
+        {
+            if (__exception is NullReferenceException)
+            {
+                return null; // Suppress harmless NRE on returning to menu from custom song
+            }
+            return __exception;
         }
     }
 
