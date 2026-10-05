@@ -1542,21 +1542,15 @@ namespace UnpluggedCustomSongs
     [HarmonyPatch(typeof(AlbumsManager), "Awake")]
     public static class Patch_AlbumsManager_Awake
     {
-        public static void Postfix(AlbumsManager __instance)
+        public static void Prefix(AlbumsManager __instance)
         {
-            CustomSongLoader.RegisterCustomAlbum(__instance);
             try
             {
-                string lastAlbum = GamePreferences.Load(UnpluggedInfo.LastSongPlayedAlbum, "");
-                if (lastAlbum == "CustomSongsAlbum" && CustomSongLoader.CustomAlbumInstance != null)
-                {
-                    __instance.SetSelectedAlbum(CustomSongLoader.CustomAlbumInstance);
-                    MelonLogger.Msg("[CustomSongs] AlbumsManager.Awake: SelectedAlbum set to CustomSongsAlbum!");
-                }
+                CustomSongLoader.RegisterCustomAlbum(__instance);
             }
             catch (Exception ex)
             {
-                MelonLogger.Error($"[CustomSongs] Error restoring SelectedAlbum in Awake: {ex}");
+                MelonLogger.Error($"[CustomSongs] Error registering custom album in Awake Prefix: {ex}");
             }
         }
     }
@@ -2064,11 +2058,20 @@ namespace UnpluggedCustomSongs
 
     public static class VinylCoverHelper
     {
-        public static void UpdateTurntableVinyl(SongMappingMetaData song)
+        private static string _lastCoverKey = null;
+
+        public static void UpdateTurntableVinyl(SongMappingMetaData song, bool force = false)
         {
             if (song == null) return;
             try
             {
+                string songKey = $"{song.BandName}_{song.SongName}";
+                if (!force && _lastCoverKey == songKey)
+                {
+                    return; // Already up-to-date, avoid redundant material texture sets and log spam
+                }
+                _lastCoverKey = songKey;
+
                 Texture2D tex = song.Thumbnail;
                 if (tex != null)
                 {
@@ -2120,26 +2123,6 @@ namespace UnpluggedCustomSongs
         }
     }
 
-    [HarmonyPatch(typeof(SongMenu), "set_SelectedIndex")]
-    public static class Patch_SongMenu_set_SelectedIndex
-    {
-        public static void Postfix(SongMenu __instance, int value)
-        {
-            try
-            {
-                if (AlbumsManager.SelectedAlbum != null && AlbumsManager.SelectedAlbum.AlbumID == "CustomSongsAlbum")
-                {
-                    var selected = __instance.SelectedSong;
-                    if (selected != null)
-                    {
-                        VinylCoverHelper.UpdateTurntableVinyl(selected);
-                    }
-                }
-            }
-            catch { }
-        }
-    }
-
     [HarmonyPatch(typeof(StartSpace), "Start")]
     public static class Patch_StartSpace_Start
     {
@@ -2166,13 +2149,16 @@ namespace UnpluggedCustomSongs
                 string lastAlbum = GamePreferences.Load(UnpluggedInfo.LastSongPlayedAlbum, "");
                 if (lastAlbum == "CustomSongsAlbum" && CustomSongLoader.CustomAlbumInstance != null)
                 {
-                    int lastSong = GamePreferences.Load(UnpluggedInfo.LastSongPlayed, 0);
-                    AlbumsManager.SelectedAlbum = CustomSongLoader.CustomAlbumInstance;
-                    if (__instance.songMenu != null)
+                    if (AlbumsManager.SelectedAlbum != CustomSongLoader.CustomAlbumInstance)
                     {
-                        __instance.songMenu.InitialOffset = lastSong;
+                        int lastSong = GamePreferences.Load(UnpluggedInfo.LastSongPlayed, 0);
+                        AlbumsManager.SelectedAlbum = CustomSongLoader.CustomAlbumInstance;
+                        if (__instance.songMenu != null)
+                        {
+                            __instance.songMenu.InitialOffset = lastSong;
+                        }
+                        MelonLogger.Msg($"[CustomSongs] StartSpace: Restored Custom Songs Album with song index {lastSong}!");
                     }
-                    MelonLogger.Msg($"[CustomSongs] StartSpace: Restored Custom Songs Album with song index {lastSong}!");
                 }
                 CustomSongLoader.UpdateAlbumCover(CustomSongLoader.CustomAlbumInstance);
 
