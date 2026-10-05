@@ -614,7 +614,7 @@ namespace UnpluggedCustomSongs
             }
 
             GUI.Label(new Rect(15, 12, Screen.width - 30, 22), "<b>[WASD/QE]</b> Moverse | <b>[Click Der + Mouse]</b> Mirar | <b>[Click Izq]</b> Click botón | <b>[Z/X o ←/→]</b> Cambiar canción" + currentSongText);
-            GUI.Label(new Rect(15, 34, Screen.width - 30, 22), $"<b>[1 o Enter]</b> Iniciar canción / Agarrar púa | <b>[2]</b> AutoPlay: {(AutoPlay ? "<color=green>ACTIVO</color>" : "<color=yellow>MANUAL</color>")} | <b>[Espacio]</b> Rasguear manual | <b>[3]</b> Vol: {vol} | <b>[C]</b> Álbum custom | <b>[Tab]</b> Botones");
+            GUI.Label(new Rect(15, 34, Screen.width - 30, 22), $"<b>[1 o Enter]</b> Iniciar | <b>[2]</b> AutoPlay: {(AutoPlay ? "<color=green>ACTIVO</color>" : "<color=yellow>MANUAL</color>")} | <b>[Espacio]</b> Rasguear | <b>[S]</b> Saltar Intro | <b>[End/N]</b> Terminar canción | <b>[3]</b> Vol: {vol} | <b>[Tab]</b> Botones");
 
             if (IntroSkipManager.CanSkip && !IntroSkipManager.HasSkipped)
             {
@@ -867,6 +867,63 @@ namespace UnpluggedCustomSongs
                 {
                     LoggerInstance.Msg("[CustomSongs] Key [C]: Selecting Custom Songs Album...");
                     Traverse.Create(StartSpace.I).Method("AlbumSelected", new object[] { CustomSongLoader.CustomAlbumInstance }).GetValue();
+                }
+            }
+
+            // [End] or [N]: Skip current song / finish immediately
+            if (Input.GetKeyDown(KeyCode.End) || Input.GetKeyDown(KeyCode.N))
+            {
+                if (GameManager.I != null && GameManager.IsPlaying)
+                {
+                    LoggerInstance.Msg("[CustomSongs] Key [End/N]: Skipping current song to end / Finish!");
+                    try
+                    {
+                        var mp = GameManager.I.musicPlayer;
+                        float songLen = 180f;
+                        if (mp != null && mp.MusicAudioSource != null && mp.MusicAudioSource.clip != null)
+                        {
+                            songLen = mp.MusicAudioSource.clip.length;
+                        }
+                        else if (mp != null && mp.AudioSources != null)
+                        {
+                            foreach (var s in mp.AudioSources)
+                            {
+                                if (s != null && s.clip != null && s.clip.length > 5f)
+                                {
+                                    songLen = s.clip.length;
+                                    break;
+                                }
+                            }
+                        }
+
+                        float target = Mathf.Max(2.5f, songLen - 0.5f);
+                        if (mp != null)
+                        {
+                            if (mp.MusicAudioSource != null && mp.MusicAudioSource.clip != null)
+                            {
+                                mp.MusicAudioSource.time = Mathf.Clamp(target, 0f, mp.MusicAudioSource.clip.length - 0.1f);
+                            }
+                            mp.CurrentTime = target;
+                            mp.SongTimeDelayCounter = GameManager.I.StartDelay + target;
+                            if (mp.AudioSources != null)
+                            {
+                                foreach (var s in mp.AudioSources)
+                                {
+                                    if (s != null && s.clip != null && s.clip.length > target)
+                                        s.time = target;
+                                }
+                            }
+                        }
+                        if (GameManager.I.TimelineManager != null)
+                        {
+                            GameManager.I.TimelineManager.SetTime(target);
+                        }
+                        Traverse.Create(GameManager.I).Method("Finish").GetValue();
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerInstance.Error($"[CustomSongs] Error skipping song to end: {ex.Message}");
+                    }
                 }
             }
 
@@ -2155,7 +2212,7 @@ namespace UnpluggedCustomSongs
         private static bool CheckSkipInput()
         {
             // Keyboard (PC / Desktop Debug)
-            if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.S) || Input.GetKeyDown(KeyCode.Tab))
+            if (Input.GetKeyDown(KeyCode.S) || Input.GetKeyDown(KeyCode.K) || Input.GetKeyDown(KeyCode.Tab))
             {
                 return true;
             }
@@ -2270,7 +2327,7 @@ namespace UnpluggedCustomSongs
                     _promptText.color = new Color(1f, 0.88f, 0.2f);
                     _promptText.outlineColor = Color.black;
                     _promptText.outlineWidth = 0.28f;
-                    _promptText.text = "⚡ PRESIONA AMBOS GATILLOS PARA SALTAR ⚡\n<size=70%>[S / Espacio en PC]</size>";
+                    _promptText.text = "⚡ PRESIONA AMBOS GATILLOS PARA SALTAR ⚡\n<size=70%>[S en PC]</size>";
                 }
 
                 Camera cam = CameraManager.Main != null ? CameraManager.Main : Camera.main;
