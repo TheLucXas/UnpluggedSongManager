@@ -1764,21 +1764,11 @@ namespace UnpluggedCustomSongs
     {
         public static void Postfix(Mp3Player __instance, Mp3Player.SongTrackNames track, float volume)
         {
-            // If the song is NOT multitrack, the entire song plays through MusicAudioSource.
-            // Mute the entire instrumental when missing notes, providing audio feedback!
-            if (!__instance.IsMultiTrack && track == Mp3Player.SongTrackNames.Guitar)
+            // For single-track songs (where all instruments and vocals are combined in one audio file),
+            // do not mute MusicAudioSource when missing notes so vocals and music keep playing naturally.
+            if (!__instance.IsMultiTrack && __instance.MusicAudioSource != null)
             {
-                if (__instance.MusicAudioSource != null)
-                {
-                    // During song intro before any notes have arrived, keep audible
-                    if (IntroSkipManager.FirstNoteTime > 1.0f && GameManager.SongTime < IntroSkipManager.FirstNoteTime - 0.5f)
-                    {
-                        __instance.MusicAudioSource.volume = 1f;
-                        return;
-                    }
-
-                    __instance.MusicAudioSource.volume = volume;
-                }
+                __instance.MusicAudioSource.volume = 1f;
             }
         }
     }
