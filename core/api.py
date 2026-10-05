@@ -1,7 +1,12 @@
 import urllib.request
+import urllib.error
 import json
 import os
 import time
+import socket
+
+# Ensure all raw socket operations have a fallback timeout so firewalls/antivirus don't hang threads
+socket.setdefaulttimeout(15)
 
 ENCHOR_SEARCH_URL = "https://api.enchor.us/search"
 ENCHOR_FILES_URL = "https://files.enchor.us"
@@ -44,7 +49,7 @@ class ChorusAPI:
         )
 
         try:
-            with urllib.request.urlopen(req, timeout=12) as response:
+            with urllib.request.urlopen(req, timeout=10) as response:
                 result = json.loads(response.read().decode("utf-8"))
                 charts = []
                 for item in result.get("data", []):
@@ -86,6 +91,12 @@ class ChorusAPI:
                     "total": result.get("total", len(charts)),
                     "charts": charts
                 }
+        except (socket.timeout, TimeoutError):
+            raise TimeoutError("Tiempo de espera agotado al conectar con Chorus (Comprueba tu Firewall o antivirus)")
+        except urllib.error.URLError as e:
+            if "timed out" in str(e).lower():
+                raise TimeoutError("Tiempo de espera agotado al conectar con Chorus (Comprueba tu Firewall o antivirus)")
+            raise Exception(f"Error de red: {e.reason}")
         except Exception as e:
             print(f"[ChorusAPI] Search error: {e}")
             raise e
