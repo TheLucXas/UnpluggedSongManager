@@ -81,6 +81,22 @@ namespace USM.ViewModels
             set => SetProperty(ref _modStatusMessage, value);
         }
 
+        public int[] AvailableDownloadLimits { get; } = new[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+
+        public int MaxConcurrentDownloads
+        {
+            get => _gameDetector.MaxConcurrentDownloads;
+            set
+            {
+                if (_gameDetector.MaxConcurrentDownloads != value)
+                {
+                    _gameDetector.MaxConcurrentDownloads = value;
+                    OnPropertyChanged(nameof(MaxConcurrentDownloads));
+                    _notifyCallback?.Invoke($"Maximum concurrent downloads set to {value}.");
+                }
+            }
+        }
+
         public ICommand BrowseGamePathCommand { get; }
         public ICommand InstallModCommand { get; }
 
@@ -108,6 +124,7 @@ namespace USM.ViewModels
             _enableVerboseDebug = verb;
             OnPropertyChanged(nameof(EnableDiscordRpc));
             OnPropertyChanged(nameof(EnableVerboseDebug));
+            OnPropertyChanged(nameof(MaxConcurrentDownloads));
         }
 
         private void BrowseGamePath()

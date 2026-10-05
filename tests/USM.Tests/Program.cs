@@ -139,6 +139,31 @@ namespace USM.Tests
                     }
                 }
 
+                // Test 5: Rejection of invalid files & ghost folder prevention
+                Console.WriteLine("\n[TEST 5] Testing rejection of invalid files (.url, .exe) and ghost folder prevention...");
+                string testOutDir5 = Path.Combine(testOutDir, "ValidationTest");
+                Directory.CreateDirectory(testOutDir5);
+
+                string dummyUrlFile = Path.Combine(testOutDir, "shortcut.url");
+                File.WriteAllText(dummyUrlFile, "[InternetShortcut]\nURL=https://google.com");
+
+                bool urlResult = await SongConverter.ConvertSongAsync(dummyUrlFile, testOutDir5, null, msg => Console.WriteLine($"  {msg}"));
+                int dirCountAfterUrl = Directory.GetDirectories(testOutDir5).Length;
+
+                string dummyEmptyFolder = Path.Combine(testOutDir, "empty_folder");
+                Directory.CreateDirectory(dummyEmptyFolder);
+                bool folderResult = await SongConverter.ConvertSongAsync(dummyEmptyFolder, testOutDir5, null, msg => Console.WriteLine($"  {msg}"));
+                int dirCountAfterFolder = Directory.GetDirectories(testOutDir5).Length;
+
+                if (!urlResult && !folderResult && dirCountAfterUrl == 0 && dirCountAfterFolder == 0)
+                {
+                    Console.WriteLine(">>> TEST 5 PASSED! (Invalid files rejected properly and zero ghost folders created!) <<<");
+                }
+                else
+                {
+                    throw new Exception($"Test 5 failed: urlResult={urlResult}, folderResult={folderResult}, dirs={dirCountAfterFolder}");
+                }
+
                 Console.WriteLine("\n=============================================");
                 Console.WriteLine(">>> ALL CONVERSION TESTS COMPLETED SUCCESSFULLY! <<<");
                 Console.WriteLine("=============================================");

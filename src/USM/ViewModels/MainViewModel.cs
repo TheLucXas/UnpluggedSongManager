@@ -1,5 +1,8 @@
 using System;
+using System.Diagnostics;
 using System.IO;
+using System.Windows;
+using System.Windows.Input;
 using USM.Core.Services;
 
 namespace USM.ViewModels
@@ -36,6 +39,8 @@ namespace USM.ViewModels
 
         public string GameStatusText => IsGameConnected ? "Game Connected" : "Game Not Detected";
 
+        public ICommand LaunchGameCommand { get; }
+
         public MainViewModel()
         {
             GameDetector = new GameDetector();
@@ -45,6 +50,57 @@ namespace USM.ViewModels
             ConverterVM = new ConverterViewModel(GameDetector, Notify);
             LibraryVM = new LibraryViewModel(GameDetector, Notify);
             SettingsVM = new SettingsViewModel(GameDetector, Notify);
+
+            LaunchGameCommand = new RelayCommand(LaunchGame);
+        }
+
+        private void LaunchGame()
+        {
+            try
+            {
+                var processes = Process.GetProcessesByName("Unplugged");
+                if (processes.Length > 0)
+                {
+                    Notify("Unplugged VR is already running!");
+                    MessageBox.Show("Unplugged VR is already running on your PC.", "Game Already Running", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                Notify("Launching Unplugged VR via Steam...");
+
+                // 1. Try launching through Steam URL protocol (App ID 1457820)
+                try
+                {
+                    Process.Start(new ProcessStartInfo("steam://rungameid/1457820")
+                    {
+                        UseShellExecute = true
+                    });
+                    return;
+                }
+                catch { }
+
+                // 2. Fallback to direct executable if configured
+                string? gamePath = GameDetector.GamePath;
+                if (!string.IsNullOrEmpty(gamePath))
+                {
+                    string exePath = Path.Combine(gamePath, "Unplugged.exe");
+                    if (File.Exists(exePath))
+                    {
+                        Process.Start(new ProcessStartInfo(exePath)
+                        {
+                            WorkingDirectory = gamePath,
+                            UseShellExecute = true
+                        });
+                        return;
+                    }
+                }
+
+                MessageBox.Show("Could not launch Unplugged VR. Ensure Steam is running or check the game folder path in Settings.", "Launch Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to launch game: {ex.Message}", "Launch Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         public void Notify(string message)

@@ -153,6 +153,48 @@
                               FontSize="13" />
                 </StackPanel>
             </Border>
+
+            <!-- 4. Song Manager Download Preferences Card -->
+            <Border Background="{StaticResource BrushBgCard}"
+                    BorderBrush="{StaticResource BrushBorder}"
+                    BorderThickness="1"
+                    CornerRadius="12"
+                    Padding="18,16"
+                    Margin="0,12,0,0">
+                <StackPanel>
+                    <TextBlock Text="Song Manager Download Preferences"
+                               FontSize="16"
+                               FontWeight="Bold"
+                               Foreground="{StaticResource BrushTextPrimary}" />
+                    <TextBlock Text="Configure parallel download and queue limits for Chorus Encore charts."
+                               FontSize="12"
+                               Foreground="{StaticResource BrushTextSecondary}"
+                               Margin="0,3,0,14" />
+
+                    <Grid Margin="0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="260" />
+                            <ColumnDefinition Width="140" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0"
+                                   Text="Max Concurrent Downloads:"
+                                   Foreground="{StaticResource BrushTextSecondary}"
+                                   VerticalAlignment="Center" />
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding AvailableDownloadLimits}"
+                                  SelectedItem="{Binding MaxConcurrentDownloads}"
+                                  FontSize="13"
+                                  Padding="8,4" />
+                        <TextBlock Grid.Column="2"
+                                   Text="(Default: 5 - additional downloads automatically queue and resume)"
+                                   Foreground="{StaticResource BrushTextMuted}"
+                                   FontSize="12"
+                                   VerticalAlignment="Center"
+                                   Margin="12,0,0,0" />
+                    </Grid>
+                </StackPanel>
+            </Border>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

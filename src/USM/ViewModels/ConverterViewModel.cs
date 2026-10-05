@@ -64,13 +64,51 @@ namespace USM.ViewModels
             CancelCommand = new RelayCommand(CancelConversion);
         }
 
+        private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".zip", ".sng"
+        };
+
         public void AddFilesToQueue(IEnumerable<string> paths)
         {
             foreach (var p in paths)
             {
-                if ((File.Exists(p) || Directory.Exists(p)) && !Queue.Contains(p))
+                if (Directory.Exists(p))
                 {
-                    Queue.Add(p);
+                    try
+                    {
+                        bool hasChart = Directory.GetFiles(p, "*.*", SearchOption.AllDirectories)
+                            .Any(f =>
+                            {
+                                string fn = Path.GetFileName(f).ToLowerInvariant();
+                                return fn == "notes.chart" || fn == "notes.mid" || fn == "song.chart";
+                            });
+
+                        if (hasChart)
+                        {
+                            if (!Queue.Contains(p)) Queue.Add(p);
+                        }
+                        else
+                        {
+                            AppendLog($"[SKIP] Ignored folder '{Path.GetFileName(p)}': No notes.chart or notes.mid found.");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        AppendLog($"[SKIP] Error inspecting folder '{Path.GetFileName(p)}': {ex.Message}");
+                    }
+                }
+                else if (File.Exists(p))
+                {
+                    string ext = Path.GetExtension(p);
+                    if (AllowedExtensions.Contains(ext))
+                    {
+                        if (!Queue.Contains(p)) Queue.Add(p);
+                    }
+                    else
+                    {
+                        AppendLog($"[SKIP] Ignored unsupported file '{Path.GetFileName(p)}' (Only .zip and .sng archives are supported).");
+                    }
                 }
             }
 
@@ -85,7 +123,7 @@ namespace USM.ViewModels
             var dlg = new OpenFileDialog
             {
                 Title = "Select Chart Packages (.zip or .sng)",
-                Filter = "All Supported Charts (*.zip;*.sng)|*.zip;*.sng|Clone Hero SNG (*.sng)|*.sng|Zip Archives (*.zip)|*.zip|All Files (*.*)|*.*",
+                Filter = "Supported Chart Packages (*.zip;*.sng)|*.zip;*.sng|Clone Hero SNG (*.sng)|*.sng|Zip Archives (*.zip)|*.zip",
                 Multiselect = true
             };
 

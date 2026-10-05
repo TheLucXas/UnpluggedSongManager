@@ -124,7 +124,7 @@
                                                 Content="{Binding StatusText}"
                                                 Command="{Binding DataContext.DownloadCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                 CommandParameter="{Binding}"
-                                                IsEnabled="{Binding IsInstalled, Converter={StaticResource InverseBool}}"
+                                                IsEnabled="{Binding CanDownload}"
                                                 Height="34"
                                                 Padding="10,0"
                                                 FontSize="12"
@@ -132,12 +132,12 @@
 
                                         <!-- Preview Button -->
                                         <Button Grid.Column="1"
-                                                Content="▶"
+                                                Content="{Binding PreviewButtonIcon}"
                                                 Command="{Binding DataContext.PreviewCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource IconButton}"
                                                 Margin="6,0,0,0"
-                                                ToolTip="Preview Audio Stream" />
+                                                ToolTip="Preview Audio (Deezer / iTunes 30s Stream)" />
                                     </Grid>
 
                                     <!-- Progress bar when downloading/converting -->

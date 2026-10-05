@@ -29,6 +29,23 @@ namespace USM.Core.Services
 
         public string? GamePath { get; private set; }
 
+        private int _maxConcurrentDownloads = 5;
+        public int MaxConcurrentDownloads
+        {
+            get => _maxConcurrentDownloads;
+            set
+            {
+                int clamped = Math.Clamp(value, 1, 10);
+                if (_maxConcurrentDownloads != clamped)
+                {
+                    _maxConcurrentDownloads = clamped;
+                    SaveConfig("max_concurrent_downloads", _maxConcurrentDownloads);
+                    MaxConcurrentDownloadsChanged?.Invoke(_maxConcurrentDownloads);
+                }
+            }
+        }
+        public event Action<int>? MaxConcurrentDownloadsChanged;
+
         public GameDetector()
         {
             _config = LoadConfig();
@@ -38,6 +55,18 @@ namespace USM.Core.Services
                 if (!string.IsNullOrEmpty(p) && IsValidGamePath(p))
                 {
                     GamePath = Path.GetFullPath(p);
+                }
+            }
+
+            if (_config.TryGetValue("max_concurrent_downloads", out var mcdObj))
+            {
+                if (mcdObj is JsonElement mcdElem && mcdElem.TryGetInt32(out int mcd))
+                {
+                    _maxConcurrentDownloads = Math.Clamp(mcd, 1, 10);
+                }
+                else if (int.TryParse(mcdObj.ToString(), out int parsedMcd))
+                {
+                    _maxConcurrentDownloads = Math.Clamp(parsedMcd, 1, 10);
                 }
             }
 

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Threading;
@@ -18,6 +19,11 @@ namespace USM.ViewModels
         private string _searchQuery = string.Empty;
         private bool _isSearching;
         private string _statusText = "Type a song or artist name to search Chorus Encore / Clone Hero database.";
+
+        private ChorusChart? _activePreviewChart;
+        private readonly ConcurrentQueue<ChorusChart> _downloadQueue = new();
+        private int _activeDownloads = 0;
+        private readonly object _queueLock = new();
 
         public string SearchQuery
         {
@@ -49,8 +55,22 @@ namespace USM.ViewModels
             _notifyCallback = notifyCallback;
 
             SearchCommand = new AsyncRelayCommand(PerformSearchAsync);
-            DownloadCommand = new AsyncRelayCommand(ExecuteDownloadAsync);
+            DownloadCommand = new RelayCommand(EnqueueDownload);
             PreviewCommand = new RelayCommand(ExecutePreview);
+
+            _gameDetector.MaxConcurrentDownloadsChanged += _ => ProcessDownloadQueue();
+
+            AudioPlayerService.Instance.PlaybackStopped += () =>
+            {
+                Application.Current?.Dispatcher?.Invoke(() =>
+                {
+                    if (_activePreviewChart != null)
+                    {
+                        _activePreviewChart.IsPreviewPlaying = false;
+                        _activePreviewChart = null;
+                    }
+                });
+            };
         }
 
         private async Task PerformSearchAsync()
@@ -102,9 +122,9 @@ namespace USM.ViewModels
             }
         }
 
-        private async Task ExecuteDownloadAsync(object? param)
+        private void EnqueueDownload(object? param)
         {
-            if (param is not ChorusChart chart || chart.IsDownloading || chart.IsInstalled) return;
+            if (param is not ChorusChart chart || !chart.CanDownload) return;
 
             string? customSongsDir = _gameDetector.GetCustomSongsDir();
             if (string.IsNullOrEmpty(customSongsDir))
@@ -119,10 +139,60 @@ namespace USM.ViewModels
                 return;
             }
 
-            chart.IsDownloading = true;
-            chart.DownloadProgress = 0.05;
-            chart.StatusText = "Downloading .sng...";
-            OnPropertyChanged(nameof(Results));
+            chart.IsQueued = true;
+            chart.StatusText = "⏳ Queued...";
+            _downloadQueue.Enqueue(chart);
+
+            ProcessDownloadQueue();
+        }
+
+        private void ProcessDownloadQueue()
+        {
+            lock (_queueLock)
+            {
+                int maxConcurrent = _gameDetector.MaxConcurrentDownloads;
+                while (_activeDownloads < maxConcurrent && _downloadQueue.TryDequeue(out var nextChart))
+                {
+                    _activeDownloads++;
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await RunDownloadAndConversionAsync(nextChart);
+                        }
+                        finally
+                        {
+                            lock (_queueLock)
+                            {
+                                _activeDownloads--;
+                            }
+                            ProcessDownloadQueue();
+                        }
+                    });
+                }
+            }
+        }
+
+        private async Task RunDownloadAndConversionAsync(ChorusChart chart)
+        {
+            Application.Current?.Dispatcher?.Invoke(() =>
+            {
+                chart.IsQueued = false;
+                chart.IsDownloading = true;
+                chart.DownloadProgress = 0.05;
+                chart.StatusText = "Downloading...";
+            });
+
+            string? customSongsDir = _gameDetector.GetCustomSongsDir();
+            if (string.IsNullOrEmpty(customSongsDir) || string.IsNullOrEmpty(chart.DownloadUrl))
+            {
+                Application.Current?.Dispatcher?.Invoke(() =>
+                {
+                    chart.IsDownloading = false;
+                    chart.StatusText = "Failed: Missing dir/URL";
+                });
+                return;
+            }
 
             string tempSng = Path.Combine(Path.GetTempPath(), $"{chart.Md5}_{Guid.NewGuid():N}.sng");
 
@@ -136,7 +206,7 @@ namespace USM.ViewModels
 
                 await ChorusClient.DownloadFileAsync(chart.DownloadUrl, tempSng, progress);
 
-                chart.StatusText = "Converting to Unplugged VR...";
+                chart.StatusText = "Converting to VR...";
                 var convProgress = new Progress<ConversionProgress>(cp =>
                 {
                     chart.DownloadProgress = 0.5 + (cp.Fraction * 0.5);
@@ -144,24 +214,34 @@ namespace USM.ViewModels
                 });
 
                 bool success = await SongConverter.ConvertSongAsync(tempSng, customSongsDir, convProgress);
-                if (success)
+                Application.Current?.Dispatcher?.Invoke(() =>
                 {
-                    chart.IsInstalled = true;
-                    chart.StatusText = "✓ Installed in CustomSongs";
-                    _notifyCallback?.Invoke($"Song '{chart.Title}' downloaded and installed successfully!");
-                }
-                else
-                {
-                    chart.StatusText = "Conversion failed";
-                }
+                    if (success)
+                    {
+                        chart.IsInstalled = true;
+                        chart.StatusText = "✓ Installed in CustomSongs";
+                        _notifyCallback?.Invoke($"Song '{chart.Title}' downloaded and installed successfully!");
+                    }
+                    else
+                    {
+                        chart.StatusText = "Conversion failed";
+                    }
+                });
             }
             catch (Exception ex)
             {
-                chart.StatusText = $"Error: {ex.Message}";
+                Application.Current?.Dispatcher?.Invoke(() =>
+                {
+                    chart.StatusText = $"Error: {ex.Message}";
+                });
             }
             finally
             {
-                chart.IsDownloading = false;
+                Application.Current?.Dispatcher?.Invoke(() =>
+                {
+                    chart.IsDownloading = false;
+                });
+
                 if (File.Exists(tempSng))
                 {
                     try { File.Delete(tempSng); } catch { }
@@ -169,21 +249,57 @@ namespace USM.ViewModels
             }
         }
 
-        private void ExecutePreview(object? param)
+        private async void ExecutePreview(object? param)
         {
             if (param is not ChorusChart chart) return;
 
             var player = AudioPlayerService.Instance;
-            if (player.IsPlaying && player.CurrentSource == chart.DownloadUrl)
+
+            // If this chart is currently playing, clicking stops it
+            if (chart.IsPreviewPlaying)
             {
                 player.Stop();
+                chart.IsPreviewPlaying = false;
+                _activePreviewChart = null;
+                return;
+            }
+
+            // If another chart was playing, stop it
+            if (_activePreviewChart != null && _activePreviewChart != chart)
+            {
+                _activePreviewChart.IsPreviewPlaying = false;
+                player.Stop();
+                _activePreviewChart = null;
+            }
+
+            // Resolve preview URL if not already cached
+            if (string.IsNullOrEmpty(chart.PreviewUrl))
+            {
+                chart.IsPreviewLoading = true;
+                try
+                {
+                    string? url = await ChorusClient.ResolvePreviewUrlAsync(chart.Artist, chart.Title);
+                    chart.PreviewUrl = url;
+                }
+                catch
+                {
+                    chart.PreviewUrl = null;
+                }
+                finally
+                {
+                    chart.IsPreviewLoading = false;
+                }
+            }
+
+            if (!string.IsNullOrEmpty(chart.PreviewUrl))
+            {
+                _activePreviewChart = chart;
+                chart.IsPreviewPlaying = true;
+                player.Play(chart.PreviewUrl);
             }
             else
             {
-                if (!string.IsNullOrEmpty(chart.DownloadUrl))
-                {
-                    player.Play(chart.DownloadUrl);
-                }
+                _notifyCallback?.Invoke($"No preview audio stream found for '{chart.Title}'.");
             }
         }
     }

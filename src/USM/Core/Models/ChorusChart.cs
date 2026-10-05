@@ -31,15 +31,42 @@ namespace USM.Core.Models
         public bool IsInstalled
         {
             get => _isInstalled;
-            set => SetProperty(ref _isInstalled, value);
+            set
+            {
+                if (SetProperty(ref _isInstalled, value))
+                {
+                    OnPropertyChanged(nameof(CanDownload));
+                }
+            }
         }
 
         private bool _isDownloading;
         public bool IsDownloading
         {
             get => _isDownloading;
-            set => SetProperty(ref _isDownloading, value);
+            set
+            {
+                if (SetProperty(ref _isDownloading, value))
+                {
+                    OnPropertyChanged(nameof(CanDownload));
+                }
+            }
         }
+
+        private bool _isQueued;
+        public bool IsQueued
+        {
+            get => _isQueued;
+            set
+            {
+                if (SetProperty(ref _isQueued, value))
+                {
+                    OnPropertyChanged(nameof(CanDownload));
+                }
+            }
+        }
+
+        public bool CanDownload => !IsInstalled && !IsDownloading && !IsQueued;
 
         private double _downloadProgress;
         public double DownloadProgress
@@ -54,6 +81,41 @@ namespace USM.Core.Models
             get => string.IsNullOrEmpty(_statusText) ? "📥 Download" : _statusText;
             set => SetProperty(ref _statusText, value);
         }
+
+        private string? _previewUrl;
+        public string? PreviewUrl
+        {
+            get => _previewUrl;
+            set => SetProperty(ref _previewUrl, value);
+        }
+
+        private bool _isPreviewLoading;
+        public bool IsPreviewLoading
+        {
+            get => _isPreviewLoading;
+            set
+            {
+                if (SetProperty(ref _isPreviewLoading, value))
+                {
+                    OnPropertyChanged(nameof(PreviewButtonIcon));
+                }
+            }
+        }
+
+        private bool _isPreviewPlaying;
+        public bool IsPreviewPlaying
+        {
+            get => _isPreviewPlaying;
+            set
+            {
+                if (SetProperty(ref _isPreviewPlaying, value))
+                {
+                    OnPropertyChanged(nameof(PreviewButtonIcon));
+                }
+            }
+        }
+
+        public string PreviewButtonIcon => IsPreviewPlaying ? "⏹" : (IsPreviewLoading ? "⌛" : "▶");
     }
 
     public class SongIni

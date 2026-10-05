@@ -55,24 +55,36 @@
                                Margin="12,2,0,0" />
                 </StackPanel>
 
-                <!-- Game Connection Badge -->
-                <Border Grid.Column="2"
-                        Background="{StaticResource BrushBgInput}"
-                        CornerRadius="8"
-                        Padding="12,6"
-                        VerticalAlignment="Center">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="●"
-                                   FontSize="14"
-                                   Foreground="{Binding IsGameConnected, Converter={StaticResource StatusColorConv}}"
-                                   Margin="0,0,6,0" />
-                        <TextBlock Text="{Binding GameStatusText}"
-                                   FontSize="12"
-                                   FontWeight="Bold"
-                                   Foreground="{StaticResource BrushTextSecondary}"
-                                   VerticalAlignment="Center" />
-                    </StackPanel>
-                </Border>
+                <!-- Actions & Connection Badge -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="🚀 Launch Unplugged"
+                            Command="{Binding LaunchGameCommand}"
+                            Background="{StaticResource BrushAccentGreen}"
+                            Foreground="#0a0a0f"
+                            FontWeight="Bold"
+                            FontSize="12"
+                            Padding="14,6"
+                            Margin="0,0,12,0"
+                            ToolTip="Launch Unplugged VR via Steam" />
+
+                    <!-- Game Connection Badge -->
+                    <Border Background="{StaticResource BrushBgInput}"
+                            CornerRadius="8"
+                            Padding="12,6"
+                            VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="●"
+                                       FontSize="14"
+                                       Foreground="{Binding IsGameConnected, Converter={StaticResource StatusColorConv}}"
+                                       Margin="0,0,6,0" />
+                            <TextBlock Text="{Binding GameStatusText}"
+                                       FontSize="12"
+                                       FontWeight="Bold"
+                                       Foreground="{StaticResource BrushTextSecondary}"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
             </Grid>
         </Border>
 
