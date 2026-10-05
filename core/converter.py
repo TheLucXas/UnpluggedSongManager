@@ -637,17 +637,22 @@ class SongConverter:
                 with open(os.path.join(out_dir, 'song.ini'), 'w', encoding='utf-8') as f:
                     f.write(f"[song]\nname = {ini_info['name']}\nartist = {ini_info['artist']}\ncharter = {ini_info['charter']}\n")
 
+            def clean_xml_str(val):
+                if not val: return ""
+                v = re.sub(r'<[^>]+>', '', str(val))
+                return v.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+
             # data.xml
             xml_data = f"""<?xml version="1.0" encoding="utf-8"?>
 <SongLevelData xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://schemas.datacontract.org/2004/07/">
-  <BandName>{ini_info['artist']}</BandName>
+  <BandName>{clean_xml_str(ini_info['artist'])}</BandName>
   <FileName>{folder_name}</FileName>
   <InitialDelay>{ini_info['delay']}</InitialDelay>
   <IsBuiltIn>false</IsBuiltIn>
   <IsMultiTrack>{'true' if has_multitrack else 'false'}</IsMultiTrack>
-  <LevelAuthorName>{ini_info['charter']}</LevelAuthorName>
+  <LevelAuthorName>{clean_xml_str(ini_info['charter'])}</LevelAuthorName>
   <SongID>CUSTOM_{folder_name}</SongID>
-  <SongName>{ini_info['name']}</SongName>
+  <SongName>{clean_xml_str(ini_info['name'])}</SongName>
 </SongLevelData>"""
             with open(os.path.join(out_dir, 'data.xml'), 'w', encoding='utf-8') as f:
                 f.write(xml_data)
