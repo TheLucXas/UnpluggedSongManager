@@ -610,21 +610,21 @@ namespace UnpluggedCustomSongs
             SongMappingMetaData sel = GetSafeSelectedSong();
             if (sel != null)
             {
-                currentSongText = $" | Disco: <color=cyan><b>{sel.BandName} - {sel.SongName}</b></color>";
+                currentSongText = $" | Vinyl: <color=cyan><b>{sel.BandName} - {sel.SongName}</b></color>";
             }
 
-            GUI.Label(new Rect(15, 12, Screen.width - 30, 22), "<b>[WASD/QE]</b> Moverse | <b>[Click Der + Mouse]</b> Mirar | <b>[Click Izq]</b> Click botón | <b>[Z/X o ←/→]</b> Cambiar canción" + currentSongText);
-            GUI.Label(new Rect(15, 34, Screen.width - 30, 22), $"<b>[1 o Enter]</b> Iniciar | <b>[2]</b> AutoPlay: {(AutoPlay ? "<color=green>ACTIVO</color>" : "<color=yellow>MANUAL</color>")} | <b>[Espacio]</b> Rasguear | <b>[S]</b> Saltar Intro | <b>[End/N]</b> Terminar canción | <b>[3]</b> Vol: {vol} | <b>[Tab]</b> Botones");
+            GUI.Label(new Rect(15, 12, Screen.width - 30, 22), "<b>[WASD/QE]</b> Move | <b>[Right Click + Mouse]</b> Look | <b>[Left Click]</b> Press Button | <b>[Z/X or ←/→]</b> Change Song" + currentSongText);
+            GUI.Label(new Rect(15, 34, Screen.width - 30, 22), $"<b>[1 or Enter]</b> Start | <b>[2]</b> AutoPlay: {(AutoPlay ? "<color=green>ON</color>" : "<color=yellow>MANUAL</color>")} | <b>[Space]</b> Strum | <b>[S]</b> Skip Intro | <b>[End/N]</b> Finish Song | <b>[3]</b> Vol: {vol} | <b>[Tab]</b> Buttons");
 
             if (IntroSkipManager.CanSkip && !IntroSkipManager.HasSkipped)
             {
-                float bw = 580f;
+                float bw = 640f;
                 float bh = 38f;
                 Rect skipRect = new Rect((Screen.width - bw) / 2f, Screen.height - 75f, bw, bh);
                 GUI.Box(skipRect, "");
                 var oldC = GUI.color;
                 GUI.color = new Color(1f, 0.88f, 0.2f);
-                GUI.Label(skipRect, "<b>⚡ PRESIONA AMBOS GATILLOS (L2 + R2) O [S / TAB] PARA SALTAR AL INICIO ⚡</b>");
+                GUI.Label(skipRect, "<b>⚡ PRESS BOTH TRIGGERS (L2 + R2) OR [S] TO SKIP INTRO SILENCE ⚡</b>");
                 GUI.color = oldC;
             }
 
@@ -636,7 +636,7 @@ namespace UnpluggedCustomSongs
                 float w = 260f;
                 float h = Mathf.Min(40f + visible.Count * 26f, Screen.height - 110f);
                 panelRect = new Rect(Screen.width - w - 10f, 70f, w, h);
-                GUI.Box(panelRect, "Botones detectados (click)");
+                GUI.Box(panelRect, "Detected Buttons (click)");
                 Rect view = new Rect(0, 0, w - 20f, visible.Count * 26f);
                 panelScroll = GUI.BeginScrollView(new Rect(panelRect.x + 5f, panelRect.y + 25f, w - 10f, h - 30f), panelScroll, view);
                 for (int i = 0; i < visible.Count; i++)
@@ -2327,7 +2327,7 @@ namespace UnpluggedCustomSongs
                     _promptText.color = new Color(1f, 0.88f, 0.2f);
                     _promptText.outlineColor = Color.black;
                     _promptText.outlineWidth = 0.28f;
-                    _promptText.text = "⚡ PRESIONA AMBOS GATILLOS PARA SALTAR ⚡\n<size=70%>[S en PC]</size>";
+                    _promptText.text = "⚡ PRESS BOTH TRIGGERS (L2 + R2) TO SKIP INTRO ⚡\n<size=65%>Fast-forward intro silence to 2.5s before first note [or press S on PC]</size>";
                 }
 
                 Camera cam = CameraManager.Main != null ? CameraManager.Main : Camera.main;
