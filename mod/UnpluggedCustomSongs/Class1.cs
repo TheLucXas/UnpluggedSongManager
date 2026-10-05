@@ -248,6 +248,28 @@ namespace UnpluggedCustomSongs
             };
 
             CustomSongLoader.Init();
+
+            try
+            {
+                if (Params.Global != null)
+                {
+                    Params.Global.DisableControllerMode = false;
+                    LoggerInstance.Msg("[CustomSongs] Set Params.Global.DisableControllerMode = false");
+                }
+            }
+            catch { }
+        }
+
+        public override void OnSceneWasLoaded(int buildIndex, string sceneName)
+        {
+            try
+            {
+                if (Params.Global != null)
+                {
+                    Params.Global.DisableControllerMode = false;
+                }
+            }
+            catch { }
         }
         // ===================== DESKTOP TEST CONTROLS =====================
         public static bool ShowButtonPanel = false; // Closed by default
@@ -334,22 +356,6 @@ namespace UnpluggedCustomSongs
 
         public override void OnLateUpdate()
         {
-            if (!DebugMode) return;
-
-            // Persistent guitar volume override (key [3]) - applied after the game's own Update
-            if (ForcedGuitarVolume >= 0f && GameManager.IsPlaying)
-            {
-                var guitarMgr = UnityEngine.Object.FindObjectOfType<GuitarGameManager>();
-                if (guitarMgr != null)
-                {
-                    guitarMgr.InstrumentVolumeTarget = ForcedGuitarVolume;
-                    guitarMgr.InstrumentVolumeSmooth = ForcedGuitarVolume;
-                }
-                if (GameManager.I != null && GameManager.I.musicPlayer != null)
-                {
-                    GameManager.I.musicPlayer.SetTrackVolume(Mp3Player.SongTrackNames.Guitar, ForcedGuitarVolume);
-                }
-            }
         }
 
         public override void OnApplicationQuit()
@@ -614,7 +620,7 @@ namespace UnpluggedCustomSongs
             }
 
             GUI.Label(new Rect(15, 12, Screen.width - 30, 22), "<b>[WASD/QE]</b> Move | <b>[Right Click + Mouse]</b> Look | <b>[Left Click]</b> Press Button | <b>[Z/X or ←/→]</b> Change Song" + currentSongText);
-            GUI.Label(new Rect(15, 34, Screen.width - 30, 22), $"<b>[1 or Enter]</b> Start | <b>[2]</b> AutoPlay: {(AutoPlay ? "<color=green>ON</color>" : "<color=yellow>MANUAL</color>")} | <b>[Space]</b> Strum | <b>[S]</b> Skip Intro | <b>[End/N]</b> Finish Song | <b>[3]</b> Vol: {vol} | <b>[Tab]</b> Buttons");
+            GUI.Label(new Rect(15, 34, Screen.width - 30, 22), $"<b>[1 or Enter]</b> Start | <b>[2]</b> AutoPlay: {(AutoPlay ? "<color=green>ON</color>" : "<color=yellow>MANUAL</color>")} | <b>[Space]</b> Strum | <b>[3]</b> Skip Intro | <b>[End/N]</b> Finish Song | <b>[Tab]</b> Buttons | <b>[F1]</b> Debug");
 
             if (IntroSkipManager.CanSkip && !IntroSkipManager.HasSkipped)
             {
@@ -624,7 +630,7 @@ namespace UnpluggedCustomSongs
                 GUI.Box(skipRect, "");
                 var oldC = GUI.color;
                 GUI.color = new Color(1f, 0.88f, 0.2f);
-                GUI.Label(skipRect, "<b>⚡ PRESS BOTH TRIGGERS (L2 + R2) OR [S] TO SKIP INTRO SILENCE ⚡</b>");
+                GUI.Label(skipRect, "<b>⚡ PRESS BOTH TRIGGERS (L2 + R2) OR [3] TO SKIP INTRO SILENCE ⚡</b>");
                 GUI.color = oldC;
             }
 
@@ -783,6 +789,36 @@ namespace UnpluggedCustomSongs
             }
         }
 
+        // =========================================================================
+        // CENTRALIZED DEBUG & CONTROLLER KEYBINDS REFERENCE (NON-CONFLICTING)
+        // =========================================================================
+        // Camera & Movement:
+        //   - [W] [A] [S] [D]  : Fly camera Forward / Left / Backward / Right
+        //   - [E] / [Q] [Ctrl] : Fly camera Up / Down
+        //   - [Mouse Right]    : Hold and drag to rotate camera view
+        //   - [Mouse Left]     : Click on 3D in-game buttons
+        //
+        // Song Carousel Navigation (Turntable):
+        //   - [Z] / [LeftArrow]  : Previous Song
+        //   - [X] / [RightArrow] : Next Song
+        //   - [C]                : Select Custom Songs Album
+        //
+        // Gameplay & Song Flow:
+        //   - [1] / [Enter]    : Confirm floating pick / Start Song
+        //   - [2]              : Toggle AutoPlay Bot (Green = ON, Yellow = MANUAL)
+        //   - [3]              : Skip Intro Silence (fast-forward to 2.5s before 1st note)
+        //   - [Space] / [Down] : Strum guitar (test hit)
+        //   - [End] / [N]      : Finish / Skip current song to score screen
+        //   - [Esc] / [P]      : Pause / Resume song
+        //
+        // Tools & Diagnostics:
+        //   - [4]              : Reset Audio Settings to Windows Default
+        //   - [5]              : Print Debug Status to MelonLoader console
+        //   - [6]              : Toggle projected 2D button markers
+        //   - [Tab]            : Toggle clickable button list panel
+        //   - [F1]             : Toggle Debug Mode & HUD on/off
+        //   - [F5]             : Refresh and reload custom songs from disk
+        // =========================================================================
         private void HandleActionKeybinds()
         {
             // [1] or [Enter]: Confirm Preparation / Start Song
@@ -814,16 +850,18 @@ namespace UnpluggedCustomSongs
                 LoggerInstance.Msg($"[CustomSongs] Key [2]: AutoPlay Bot is now {(AutoPlay ? "ENABLED" : "DISABLED (Manual Strumming)")}");
             }
 
-            // [3]: Persistent guitar volume override: normal -> 10% -> normal
+            // [3]: Skip Intro Silence (fast-forwards to 2.5s before first note)
             if (Input.GetKeyDown(KeyCode.Alpha3) || Input.GetKeyDown(KeyCode.Keypad3))
             {
-                ForcedGuitarVolume = ForcedGuitarVolume < 0f ? 0.1f : -1f;
-                if (ForcedGuitarVolume < 0f)
+                if (IntroSkipManager.CanSkip && !IntroSkipManager.HasSkipped)
                 {
-                    var guitarMgr = UnityEngine.Object.FindObjectOfType<GuitarGameManager>();
-                    if (guitarMgr != null) { guitarMgr.InstrumentVolumeTarget = 1f; guitarMgr.InstrumentVolumeSmooth = 1f; }
+                    LoggerInstance.Msg("[CustomSongs] Key [3]: Skip Intro requested!");
+                    IntroSkipManager.PerformSkip();
                 }
-                LoggerInstance.Msg($"[CustomSongs] Key [3]: Guitar volume override = {(ForcedGuitarVolume < 0f ? "OFF (game controls volume)" : ForcedGuitarVolume.ToString("F2"))}");
+                else
+                {
+                    LoggerInstance.Msg("[CustomSongs] Key [3]: Skip Intro not available (not in intro or already skipped).");
+                }
             }
 
             // [4]: Reset Audio Settings to Windows Default
@@ -1331,61 +1369,75 @@ namespace UnpluggedCustomSongs
             using var reader = XmlReader.Create(stream, new XmlReaderSettings { ConformanceLevel = ConformanceLevel.Fragment });
             reader.Read();
             var mapping = (SongMapping)serializer.ReadObject(reader, false);
-            mapping.IsHandTrackingMapping = isHandTracking;
+            bool handModePref = GamePreferences.Load(UnpluggedInfo.IndexHandsMode, defaultValue: false);
+            bool actualHandTracking = isHandTracking && handModePref;
+            mapping.IsHandTrackingMapping = actualHandTracking;
 
-                        // DUAL-TRACK GUARANTEE: Ensure GuitarControllerGame exists for controllers / PC desktop!
             if (mapping.Keys != null)
             {
-                bool hasHand = mapping.Keys.Any(k => k is GuitarGame);
-                bool hasController = mapping.Keys.Any(k => k is GuitarControllerGame);
-
-                if (hasHand && !hasController)
+                if (!actualHandTracking)
                 {
-                    var handGame = mapping.Keys.OfType<GuitarGame>().FirstOrDefault();
-                    if (handGame != null)
+                    // CONTROLLER MODE:
+                    // 1. Synthesize GuitarControllerGame from GuitarGame if missing:
+                    if (!mapping.Keys.Any(k => k is GuitarControllerGame))
                     {
-                        var ctrlGame = new GuitarControllerGame
+                        var handGame = mapping.Keys.OfType<GuitarGame>().FirstOrDefault();
+                        if (handGame != null)
                         {
-                            Duration = handGame.Duration,
-                            Time = handGame.Time,
-                            PrewarmTime = handGame.PrewarmTime,
-                            Notes = new List<ControllerGuitarNote>()
-                        };
-                        var notes = handGame.GetNotes();
-                        if (notes != null)
-                        {
-                            foreach (var k in notes)
+                            var ctrlGame = new GuitarControllerGame
                             {
-                                if (k is GuitarNote n)
+                                Duration = handGame.Duration,
+                                Time = handGame.Time,
+                                PrewarmTime = handGame.PrewarmTime,
+                                Notes = new List<ControllerGuitarNote>()
+                            };
+                            var notes = handGame.GetNotes();
+                            if (notes != null)
+                            {
+                                foreach (var k in notes)
                                 {
-                                    bool hasTrigger = n.Tier < 2;
-                                    bool hasGrip = n.Tier >= 2;
-                                    if (n is HandGuitarNote hn && hn.Fingers != null && hn.Fingers.Count > 0)
+                                    if (k is GuitarNote n)
                                     {
-                                        bool hasLow = hn.Fingers.Contains(TierFinger.Index) || hn.Fingers.Contains(TierFinger.Middle);
-                                        bool hasHigh = hn.Fingers.Contains(TierFinger.Ring) || hn.Fingers.Contains(TierFinger.Pinky);
-                                        if (hasLow && hasHigh) { hasTrigger = true; hasGrip = true; }
-                                        else if (hasHigh) { hasTrigger = false; hasGrip = true; }
-                                        else { hasTrigger = true; hasGrip = false; }
-                                    }
+                                        bool hasTrigger = n.Tier < 2;
+                                        bool hasGrip = n.Tier >= 2;
+                                        if (n is HandGuitarNote hn && hn.Fingers != null && hn.Fingers.Count > 0)
+                                        {
+                                            bool hasLow = hn.Fingers.Contains(TierFinger.Index) || hn.Fingers.Contains(TierFinger.Middle);
+                                            bool hasHigh = hn.Fingers.Contains(TierFinger.Ring) || hn.Fingers.Contains(TierFinger.Pinky);
+                                            if (hasLow && hasHigh) { hasTrigger = true; hasGrip = true; }
+                                            else if (hasHigh) { hasTrigger = false; hasGrip = true; }
+                                            else { hasTrigger = true; hasGrip = false; }
+                                        }
 
-                                    ctrlGame.Notes.Add(new ControllerGuitarNote
-                                    {
-                                        Time = n.Time,
-                                        Duration = n.Duration,
-                                        Tier = n.Tier,
-                                        CursableProbability = n.CursableProbability,
-                                        IsBlind = n.IsBlind,
-                                        Buttons = new List<bool> { hasTrigger, hasGrip },
-                                        ChordRotation = 0,
-                                        Intensity = 0
-                                    });
+                                        ctrlGame.Notes.Add(new ControllerGuitarNote
+                                        {
+                                            Time = n.Time,
+                                            Duration = n.Duration,
+                                            Tier = n.Tier,
+                                            CursableProbability = n.CursableProbability,
+                                            IsBlind = n.IsBlind,
+                                            Buttons = new List<bool> { hasTrigger, hasGrip },
+                                            ChordRotation = 0,
+                                            Intensity = 0
+                                        });
+                                    }
                                 }
                             }
+                            mapping.Keys.Add(ctrlGame);
+                            MelonLogger.Msg($"[CustomSongs] Converted {ctrlGame.Notes.Count} notes to GuitarControllerGame!");
                         }
-                        mapping.Keys.Add(ctrlGame);
-                        MelonLogger.Msg($"[CustomSongs] Converted {ctrlGame.Notes.Count} notes to GuitarControllerGame!");
                     }
+
+                    // 2. GUARANTEE: Remove ALL GuitarGame objects so no finger notes (yellow/red) can ever appear!
+                    int removedHand = mapping.Keys.RemoveAll(k => k is GuitarGame);
+                    MelonLogger.Msg($"[CustomSongs] Controller mode active: Isolated GuitarControllerGame track ({removedHand} GuitarGame removed).");
+                }
+                else
+                {
+                    // HAND TRACKING MODE:
+                    // Remove GuitarControllerGame so only GuitarGame is loaded
+                    int removedCtrl = mapping.Keys.RemoveAll(k => k is GuitarControllerGame);
+                    MelonLogger.Msg($"[CustomSongs] Hand tracking mode active: Loaded GuitarGame track ({removedCtrl} GuitarControllerGame removed).");
                 }
             }
 
@@ -1687,6 +1739,54 @@ namespace UnpluggedCustomSongs
                 return false;
             }
             return true;
+        }
+    }
+
+    [HarmonyPatch(typeof(VRPlatformBase), "IsHandTrackingEnabled", MethodType.Getter)]
+    public static class Patch_VRPlatformBase_IsHandTrackingEnabled
+    {
+        public static bool Prefix(ref bool __result)
+        {
+            bool indexHands = GamePreferences.Load(UnpluggedInfo.IndexHandsMode, defaultValue: false);
+            if (!indexHands)
+            {
+                __result = false;
+                return false;
+            }
+            return true;
+        }
+    }
+
+    [HarmonyPatch(typeof(VRPlatformOculus), "IsHandTrackingEnabled", MethodType.Getter)]
+    public static class Patch_VRPlatformOculus_IsHandTrackingEnabled
+    {
+        public static bool Prefix(ref bool __result)
+        {
+            bool indexHands = GamePreferences.Load(UnpluggedInfo.IndexHandsMode, defaultValue: false);
+            if (!indexHands)
+            {
+                __result = false;
+                return false;
+            }
+            try
+            {
+                __result = OVRPlugin.GetHandTrackingEnabled();
+            }
+            catch
+            {
+                __result = false;
+            }
+            return false;
+        }
+    }
+
+    [HarmonyPatch(typeof(VRPlatformSteam), "IsHandTrackingEnabled", MethodType.Getter)]
+    public static class Patch_VRPlatformSteam_IsHandTrackingEnabled
+    {
+        public static bool Prefix(ref bool __result)
+        {
+            __result = GamePreferences.Load(UnpluggedInfo.IndexHandsMode, defaultValue: false);
+            return false;
         }
     }
 
@@ -2182,11 +2282,44 @@ namespace UnpluggedCustomSongs
 
             try
             {
-                if (GameManager.CurrentSong == null || GameManager.CurrentSong.Keys == null)
+                if (GameManager.CurrentSong == null)
                     return;
 
-                var playableNotes = GameManager.CurrentSong.Keys
-                    .Where(k => !(k is BeatLineKey) && k.Time > 0.5f)
+                List<KeyTime> allNotes = new List<KeyTime>();
+
+                if (GameManager.CurrentSong.Keys != null)
+                {
+                    foreach (var key in GameManager.CurrentSong.Keys)
+                    {
+                        if (key is MiniGame mg)
+                        {
+                            var notes = mg.GetNotes();
+                            if (notes != null) allNotes.AddRange(notes);
+                        }
+                        else if (!(key is BeatLineKey))
+                        {
+                            allNotes.Add(key);
+                        }
+                    }
+                }
+
+                if (GameManager.I != null && GameManager.I.TimelineManager != null && GameManager.I.TimelineManager.Timelines != null)
+                {
+                    try
+                    {
+                        foreach (var tl in GameManager.I.TimelineManager.Timelines)
+                        {
+                            if (tl != null && tl.AllNotesInTimeLine != null)
+                            {
+                                allNotes.AddRange(tl.AllNotesInTimeLine);
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                var playableNotes = allNotes
+                    .Where(k => k != null && !(k is BeatLineKey) && k.Time > 0.5f)
                     .OrderBy(k => k.Time)
                     .ToList();
 
@@ -2201,6 +2334,14 @@ namespace UnpluggedCustomSongs
                         CanSkip = true;
                         MelonLogger.Msg($"[CustomSongs] Intro skip available: First note at {FirstNoteTime:F2}s -> Skip target: {SkipTargetTime:F2}s");
                     }
+                    else
+                    {
+                        MelonLogger.Msg($"[CustomSongs] Intro skip not needed: First note is at {FirstNoteTime:F2}s (< 5.0s)");
+                    }
+                }
+                else
+                {
+                    MelonLogger.Msg("[CustomSongs] Intro skip: No playable notes found with Time > 0.5s");
                 }
             }
             catch (Exception ex)
@@ -2237,8 +2378,8 @@ namespace UnpluggedCustomSongs
 
         private static bool CheckSkipInput()
         {
-            // Keyboard (PC / Desktop Debug)
-            if (Input.GetKeyDown(KeyCode.S) || Input.GetKeyDown(KeyCode.K) || Input.GetKeyDown(KeyCode.Tab))
+            // Keyboard (PC / Desktop Debug) -> Key [3] / Keypad [3]
+            if (Input.GetKeyDown(KeyCode.Alpha3) || Input.GetKeyDown(KeyCode.Keypad3))
             {
                 return true;
             }
@@ -2353,7 +2494,7 @@ namespace UnpluggedCustomSongs
                     _promptText.color = new Color(1f, 0.88f, 0.2f);
                     _promptText.outlineColor = Color.black;
                     _promptText.outlineWidth = 0.28f;
-                    _promptText.text = "⚡ PRESS BOTH TRIGGERS (L2 + R2) TO SKIP INTRO ⚡\n<size=65%>Fast-forward intro silence to 2.5s before first note [or press S on PC]</size>";
+                    _promptText.text = "⚡ PRESS BOTH TRIGGERS (L2 + R2) TO SKIP INTRO ⚡\n<size=65%>Fast-forward intro silence to 2.5s before first note [or press 3 on PC]</size>";
                 }
 
                 Camera cam = CameraManager.Main != null ? CameraManager.Main : Camera.main;
