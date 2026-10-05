@@ -91,7 +91,6 @@
                     <Setter Property="FontWeight" Value="SemiBold" />
                     <Setter Property="Padding" Value="16,10" />
                     <Setter Property="Margin" Value="4,0" />
-                    <Setter Property="Cursor" Value="Hand" />
                     <Setter Property="Template">
                         <Setter.Value>
                             <ControlTemplate TargetType="TabItem">
@@ -100,7 +99,8 @@
                                         CornerRadius="8,8,0,0"
                                         BorderThickness="0,0,0,2"
                                         BorderBrush="Transparent"
-                                        Padding="{TemplateBinding Padding}">
+                                        Padding="{TemplateBinding Padding}"
+                                        Cursor="Hand">
                                     <ContentPresenter ContentSource="Header"
                                                       HorizontalAlignment="Center"
                                                       VerticalAlignment="Center" />

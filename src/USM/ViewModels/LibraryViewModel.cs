@@ -55,11 +55,25 @@ namespace USM.ViewModels
             }
         }
 
+        public string SelectAllText => DisplayedSongs.Count > 0 && DisplayedSongs.All(s => s.IsSelected)
+            ? "Deselect All"
+            : "Select All";
+
+        public string DeleteSelectedText
+        {
+            get
+            {
+                int count = DisplayedSongs.Count(s => s.IsSelected);
+                return count > 0 ? $"🗑 Delete Selected ({count})" : "🗑 Delete Selected";
+            }
+        }
+
         public ObservableCollection<InstalledSong> DisplayedSongs { get; } = new();
 
         public ICommand RefreshCommand { get; }
         public ICommand OpenCustomSongsCommand { get; }
         public ICommand ToggleSelectAllCommand { get; }
+        public ICommand ToggleSongSelectionCommand { get; }
         public ICommand DeleteSelectedCommand { get; }
         public ICommand DeleteSongCommand { get; }
         public ICommand OpenSongFolderCommand { get; }
@@ -73,6 +87,7 @@ namespace USM.ViewModels
             RefreshCommand = new RelayCommand(RefreshLibrary);
             OpenCustomSongsCommand = new RelayCommand(OpenCustomSongsFolder);
             ToggleSelectAllCommand = new RelayCommand(ToggleSelectAll);
+            ToggleSongSelectionCommand = new RelayCommand(ToggleSongSelection);
             DeleteSelectedCommand = new RelayCommand(DeleteSelectedPrompt);
             DeleteSongCommand = new RelayCommand(DeleteSingleSong);
             OpenSongFolderCommand = new RelayCommand(OpenSongFolder);
@@ -191,22 +206,43 @@ namespace USM.ViewModels
             }
 
             SongCountText = $"{DisplayedSongs.Count} of {_allSongs.Count} songs";
+            UpdateSelectionState();
+        }
+
+        public void UpdateSelectionState()
+        {
+            OnPropertyChanged(nameof(SelectAllText));
+            OnPropertyChanged(nameof(DeleteSelectedText));
+        }
+
+        public void ToggleSongSelection(object? param)
+        {
+            if (param is InstalledSong song)
+            {
+                song.IsSelected = !song.IsSelected;
+                UpdateSelectionState();
+            }
         }
 
         private void ToggleSelectAll()
         {
+            if (DisplayedSongs.Count == 0) return;
             bool target = !DisplayedSongs.All(s => s.IsSelected);
             foreach (var s in DisplayedSongs)
             {
                 s.IsSelected = target;
             }
-            OnPropertyChanged(nameof(DisplayedSongs));
+            UpdateSelectionState();
         }
 
         private void DeleteSelectedPrompt()
         {
             var selected = DisplayedSongs.Where(s => s.IsSelected).ToList();
-            if (selected.Count == 0) return;
+            if (selected.Count == 0)
+            {
+                MessageBox.Show("No songs selected! Click on any song card to select it first.", "USM", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
 
             var res = MessageBox.Show(
                 $"Are you sure you want to delete {selected.Count} selected song(s)? This will remove them from your VR turntable.",

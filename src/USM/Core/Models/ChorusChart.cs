@@ -1,9 +1,10 @@
 using System;
 using System.Text.Json.Serialization;
+using USM.ViewModels;
 
 namespace USM.Core.Models
 {
-    public class ChorusChart
+    public class ChorusChart : ViewModelBase
     {
         public string Id { get; set; } = string.Empty;
         public string Md5 { get; set; } = string.Empty;
@@ -26,10 +27,33 @@ namespace USM.Core.Models
 
         public string MetaDisplay => $"Charter: {Charter} | Duration: {Duration} | {(DiffGuitar >= 0 ? $"Guitar: Tier {DiffGuitar}" : "Guitar: Yes")}";
 
-        public bool IsInstalled { get; set; } = false;
-        public bool IsDownloading { get; set; } = false;
-        public double DownloadProgress { get; set; } = 0.0;
-        public string StatusText { get; set; } = string.Empty;
+        private bool _isInstalled;
+        public bool IsInstalled
+        {
+            get => _isInstalled;
+            set => SetProperty(ref _isInstalled, value);
+        }
+
+        private bool _isDownloading;
+        public bool IsDownloading
+        {
+            get => _isDownloading;
+            set => SetProperty(ref _isDownloading, value);
+        }
+
+        private double _downloadProgress;
+        public double DownloadProgress
+        {
+            get => _downloadProgress;
+            set => SetProperty(ref _downloadProgress, value);
+        }
+
+        private string _statusText = "📥 Download";
+        public string StatusText
+        {
+            get => string.IsNullOrEmpty(_statusText) ? "📥 Download" : _statusText;
+            set => SetProperty(ref _statusText, value);
+        }
     }
 
     public class SongIni
@@ -41,7 +65,7 @@ namespace USM.Core.Models
         public double Delay { get; set; } = 3.0;
     }
 
-    public class InstalledSong
+    public class InstalledSong : ViewModelBase
     {
         public string FolderName { get; set; } = string.Empty;
         public string FolderPath { get; set; } = string.Empty;
@@ -52,8 +76,20 @@ namespace USM.Core.Models
         public string? AudioPath { get; set; }
         public bool HasCover => !string.IsNullOrEmpty(CoverPath) && System.IO.File.Exists(CoverPath);
         public bool IsMultiTrack { get; set; } = false;
-        public bool IsSelected { get; set; } = false;
-        public bool IsPlaying { get; set; } = false;
+
+        private bool _isSelected;
+        public bool IsSelected
+        {
+            get => _isSelected;
+            set => SetProperty(ref _isSelected, value);
+        }
+
+        private bool _isPlaying;
+        public bool IsPlaying
+        {
+            get => _isPlaying;
+            set => SetProperty(ref _isPlaying, value);
+        }
     }
 
     public class ConversionProgress

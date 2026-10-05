@@ -17,6 +17,18 @@ namespace USM.Views
             InitializeComponent();
         }
 
+        private void SongCard_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (sender is System.Windows.FrameworkElement fe && fe.DataContext is USM.Core.Models.InstalledSong song)
+            {
+                song.IsSelected = !song.IsSelected;
+                if (DataContext is USM.ViewModels.LibraryViewModel vm)
+                {
+                    vm.UpdateSelectionState();
+                }
+            }
+        }
+
         private class MultiTrackTextConv : IValueConverter
         {
             public object Convert(object value, Type targetType, object parameter, CultureInfo culture)

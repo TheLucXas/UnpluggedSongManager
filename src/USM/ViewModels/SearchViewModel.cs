@@ -76,6 +76,14 @@ namespace USM.ViewModels
                             chart.IsInstalled = true;
                             chart.StatusText = "✓ Installed";
                         }
+                        else
+                        {
+                            chart.StatusText = "📥 Download";
+                        }
+                    }
+                    else
+                    {
+                        chart.StatusText = "📥 Download";
                     }
                     Results.Add(chart);
                 }
