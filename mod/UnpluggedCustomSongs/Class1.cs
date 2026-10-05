@@ -11,6 +11,7 @@ using System.Runtime.Serialization;
 using System.Xml;
 using System.Linq;
 using UnityEngine;
+using TMPro;
 using HarmonyLib;
 using MelonLoader;
 using Unplugged.Model;
@@ -2210,6 +2211,58 @@ namespace UnpluggedCustomSongs
                 }
             }
             catch { }
+        }
+    }
+
+    [HarmonyPatch(typeof(SongMenuItem), "SetSong")]
+    public static class Patch_SongMenuItem_SetSong
+    {
+        public static void Postfix(SongMenuItem __instance)
+        {
+            ApplyOutlines(__instance);
+        }
+
+        public static void ApplyOutlines(SongMenuItem item)
+        {
+            if (item == null) return;
+            try
+            {
+                ApplyOutline(item.SongName);
+                ApplyOutline(item.BandName);
+                ApplyOutline(item.FileName);
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"[CustomSongs] Error applying text outline: {ex}");
+            }
+        }
+
+        private static void ApplyOutline(TextMeshPro tmp)
+        {
+            if (tmp == null) return;
+            try
+            {
+                var mat = tmp.fontMaterial ?? tmp.fontSharedMaterial;
+                if (mat != null)
+                {
+                    mat.EnableKeyword(ShaderUtilities.Keyword_Outline);
+                    mat.SetColor(ShaderUtilities.ID_OutlineColor, Color.black);
+                    mat.SetFloat(ShaderUtilities.ID_OutlineWidth, 0.22f);
+                }
+                tmp.outlineColor = Color.black;
+                tmp.outlineWidth = 0.22f;
+                tmp.UpdateMeshPadding();
+            }
+            catch { }
+        }
+    }
+
+    [HarmonyPatch(typeof(SongMenuItem), "Start")]
+    public static class Patch_SongMenuItem_Start
+    {
+        public static void Postfix(SongMenuItem __instance)
+        {
+            Patch_SongMenuItem_SetSong.ApplyOutlines(__instance);
         }
     }
 
