@@ -1759,6 +1759,30 @@ namespace UnpluggedCustomSongs
         }
     }
 
+    [HarmonyPatch(typeof(Mp3Player), "SetTrackVolume")]
+    public static class Patch_Mp3Player_SetTrackVolume
+    {
+        public static void Postfix(Mp3Player __instance, Mp3Player.SongTrackNames track, float volume)
+        {
+            // If the song is NOT multitrack, the entire song plays through MusicAudioSource.
+            // Mute the entire instrumental when missing notes, providing audio feedback!
+            if (!__instance.IsMultiTrack && track == Mp3Player.SongTrackNames.Guitar)
+            {
+                if (__instance.MusicAudioSource != null)
+                {
+                    // During song intro before any notes have arrived, keep audible
+                    if (IntroSkipManager.FirstNoteTime > 1.0f && GameManager.SongTime < IntroSkipManager.FirstNoteTime - 0.5f)
+                    {
+                        __instance.MusicAudioSource.volume = 1f;
+                        return;
+                    }
+
+                    __instance.MusicAudioSource.volume = volume;
+                }
+            }
+        }
+    }
+
     [HarmonyPatch(typeof(LocalizationManager), "GetFallBackLanguage")]
     public static class Patch_LocalizationManager_GetFallBackLanguage
     {
@@ -2062,6 +2086,18 @@ namespace UnpluggedCustomSongs
                 return false;
             }
             return true;
+        }
+
+        public static void Postfix()
+        {
+            try
+            {
+                if (GameManager.I != null && GameManager.I.musicPlayer != null && GameManager.I.musicPlayer.MusicAudioSource != null)
+                {
+                    GameManager.I.musicPlayer.MusicAudioSource.volume = 1f;
+                }
+            }
+            catch { }
         }
     }
 
