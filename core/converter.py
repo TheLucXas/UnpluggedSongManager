@@ -472,7 +472,8 @@ class SongConverter:
         if drum_files:
             stems_found['drums'] = drum_files
 
-        has_multitrack = ('guitar' in stems_found)
+        # Multitrack requires guitar AND at least one other backing stem
+        has_multitrack = ('guitar' in stems_found and len(stems_found) > 1)
 
         if has_multitrack:
             self.log("  [Audio] Multitrack stems detected. Processing channels in parallel...")
@@ -506,23 +507,15 @@ class SongConverter:
                 for f in futures:
                     f.result()
 
-            guitar_mp3 = os.path.join(out_dir, 'song-guitar.mp3')
-            for target_name in ['song-bass.mp3', 'song-vocals.mp3', 'song-drums.mp3', 'song-other.mp3']:
-                p = os.path.join(out_dir, target_name)
-                if not os.path.exists(p) and os.path.exists(guitar_mp3):
-                    shutil.copy2(guitar_mp3, p)
-
-            # Master mix
-            self._run_ffmpeg([
-                '-y', '-threads', '0',
-                '-i', os.path.join(out_dir, 'song-guitar.mp3'),
-                '-i', os.path.join(out_dir, 'song-bass.mp3'),
-                '-i', os.path.join(out_dir, 'song-drums.mp3'),
-                '-i', os.path.join(out_dir, 'song-vocals.mp3'),
-                '-i', os.path.join(out_dir, 'song-other.mp3'),
-                '-filter_complex', 'amix=inputs=5:dropout_transition=0:normalize=0',
-                '-b:a', '192k', os.path.join(out_dir, 'song.mp3')
-            ])
+            # Master mix for sample preview: mix only the actual generated stems
+            generated_stems = [os.path.join(out_dir, t[2]) for t in tasks if os.path.exists(os.path.join(out_dir, t[2]))]
+            if len(generated_stems) > 1:
+                cmd = ['-y', '-threads', '0']
+                for s in generated_stems: cmd.extend(['-i', s])
+                cmd.extend(['-filter_complex', f'amix=inputs={len(generated_stems)}:dropout_transition=0:normalize=0', '-b:a', '192k', os.path.join(out_dir, 'song.mp3')])
+                self._run_ffmpeg(cmd)
+            elif len(generated_stems) == 1:
+                shutil.copy2(generated_stems[0], os.path.join(out_dir, 'song.mp3'))
 
         else:
             self.log("  [Audio] Standard stereo audio track detected. Converting...")
