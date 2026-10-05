@@ -20,7 +20,6 @@ namespace USM.ViewModels
         private bool _isSearching;
         private string _statusText = "Type a song or artist name to search Chorus Encore / Clone Hero database.";
 
-        private ChorusChart? _activePreviewChart;
         private readonly ConcurrentQueue<ChorusChart> _downloadQueue = new();
         private int _activeDownloads = 0;
         private readonly object _queueLock = new();
@@ -47,7 +46,6 @@ namespace USM.ViewModels
 
         public ICommand SearchCommand { get; }
         public ICommand DownloadCommand { get; }
-        public ICommand PreviewCommand { get; }
 
         public SearchViewModel(GameDetector gameDetector, Action<string> notifyCallback)
         {
@@ -56,21 +54,8 @@ namespace USM.ViewModels
 
             SearchCommand = new AsyncRelayCommand(PerformSearchAsync);
             DownloadCommand = new RelayCommand(EnqueueDownload);
-            PreviewCommand = new RelayCommand(ExecutePreview);
 
             _gameDetector.MaxConcurrentDownloadsChanged += _ => ProcessDownloadQueue();
-
-            AudioPlayerService.Instance.PlaybackStopped += () =>
-            {
-                Application.Current?.Dispatcher?.Invoke(() =>
-                {
-                    if (_activePreviewChart != null)
-                    {
-                        _activePreviewChart.IsPreviewPlaying = false;
-                        _activePreviewChart = null;
-                    }
-                });
-            };
         }
 
         private async Task PerformSearchAsync()
@@ -246,60 +231,6 @@ namespace USM.ViewModels
                 {
                     try { File.Delete(tempSng); } catch { }
                 }
-            }
-        }
-
-        private async void ExecutePreview(object? param)
-        {
-            if (param is not ChorusChart chart) return;
-
-            var player = AudioPlayerService.Instance;
-
-            // If this chart is currently playing, clicking stops it
-            if (chart.IsPreviewPlaying)
-            {
-                player.Stop();
-                chart.IsPreviewPlaying = false;
-                _activePreviewChart = null;
-                return;
-            }
-
-            // If another chart was playing, stop it
-            if (_activePreviewChart != null && _activePreviewChart != chart)
-            {
-                _activePreviewChart.IsPreviewPlaying = false;
-                player.Stop();
-                _activePreviewChart = null;
-            }
-
-            // Resolve preview URL if not already cached
-            if (string.IsNullOrEmpty(chart.PreviewUrl))
-            {
-                chart.IsPreviewLoading = true;
-                try
-                {
-                    string? url = await ChorusClient.ResolvePreviewUrlAsync(chart.Artist, chart.Title);
-                    chart.PreviewUrl = url;
-                }
-                catch
-                {
-                    chart.PreviewUrl = null;
-                }
-                finally
-                {
-                    chart.IsPreviewLoading = false;
-                }
-            }
-
-            if (!string.IsNullOrEmpty(chart.PreviewUrl))
-            {
-                _activePreviewChart = chart;
-                chart.IsPreviewPlaying = true;
-                player.Play(chart.PreviewUrl);
-            }
-            else
-            {
-                _notifyCallback?.Invoke($"No preview audio stream found for '{chart.Title}'.");
             }
         }
     }

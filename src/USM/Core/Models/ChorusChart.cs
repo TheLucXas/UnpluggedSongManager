@@ -81,41 +81,6 @@ namespace USM.Core.Models
             get => string.IsNullOrEmpty(_statusText) ? "📥 Download" : _statusText;
             set => SetProperty(ref _statusText, value);
         }
-
-        private string? _previewUrl;
-        public string? PreviewUrl
-        {
-            get => _previewUrl;
-            set => SetProperty(ref _previewUrl, value);
-        }
-
-        private bool _isPreviewLoading;
-        public bool IsPreviewLoading
-        {
-            get => _isPreviewLoading;
-            set
-            {
-                if (SetProperty(ref _isPreviewLoading, value))
-                {
-                    OnPropertyChanged(nameof(PreviewButtonIcon));
-                }
-            }
-        }
-
-        private bool _isPreviewPlaying;
-        public bool IsPreviewPlaying
-        {
-            get => _isPreviewPlaying;
-            set
-            {
-                if (SetProperty(ref _isPreviewPlaying, value))
-                {
-                    OnPropertyChanged(nameof(PreviewButtonIcon));
-                }
-            }
-        }
-
-        public string PreviewButtonIcon => IsPreviewPlaying ? "⏹" : (IsPreviewLoading ? "⌛" : "▶");
     }
 
     public class SongIni
