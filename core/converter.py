@@ -520,11 +520,26 @@ class SongConverter:
         else:
             self.log("  [Audio] Standard stereo audio track detected. Converting...")
             audio_src = None
-            for fn in ['song.ogg', 'song.opus', 'song.mp3', 'song.wav', 'guitar.ogg', 'guitar.mp3']:
-                p = os.path.join(src_dir, fn)
-                if os.path.exists(p):
-                    audio_src = p
-                    break
+            if len(stems_found) == 1:
+                single_val = list(stems_found.values())[0]
+                if isinstance(single_val, str) and os.path.exists(single_val):
+                    audio_src = single_val
+                elif isinstance(single_val, list) and single_val and os.path.exists(single_val[0]):
+                    audio_src = single_val[0]
+
+            if not audio_src:
+                for fn in ['song.opus', 'song.ogg', 'song.mp3', 'song.wav', 'guitar.opus', 'guitar.ogg', 'guitar.mp3', 'guitar.wav', 'rhythm.opus', 'rhythm.ogg', 'rhythm.mp3']:
+                    p = os.path.join(src_dir, fn)
+                    if os.path.exists(p):
+                        audio_src = p
+                        break
+
+            if not audio_src:
+                for f in os.listdir(src_dir):
+                    if f.lower().endswith(('.opus', '.ogg', '.mp3', '.wav', '.flac', '.m4a')):
+                        audio_src = os.path.join(src_dir, f)
+                        break
+
             if audio_src:
                 self._encode_or_copy(audio_src, os.path.join(out_dir, 'song.mp3'))
             else:

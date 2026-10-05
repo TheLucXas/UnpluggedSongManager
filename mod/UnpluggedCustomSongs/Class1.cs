@@ -322,6 +322,8 @@ namespace UnpluggedCustomSongs
                 LoggerInstance.Msg($"[CustomSongs] Debug Mode is now {(DebugMode ? "ENABLED" : "DISABLED")}");
             }
 
+            IntroSkipManager.Update();
+
             if (!DebugMode) return;
 
             HandleCameraAndMovement();
@@ -613,6 +615,18 @@ namespace UnpluggedCustomSongs
 
             GUI.Label(new Rect(15, 12, Screen.width - 30, 22), "<b>[WASD/QE]</b> Moverse | <b>[Click Der + Mouse]</b> Mirar | <b>[Click Izq]</b> Click botón | <b>[Z/X o ←/→]</b> Cambiar canción" + currentSongText);
             GUI.Label(new Rect(15, 34, Screen.width - 30, 22), $"<b>[1 o Enter]</b> Iniciar canción / Agarrar púa | <b>[2]</b> AutoPlay: {(AutoPlay ? "<color=green>ACTIVO</color>" : "<color=yellow>MANUAL</color>")} | <b>[Espacio]</b> Rasguear manual | <b>[3]</b> Vol: {vol} | <b>[C]</b> Álbum custom | <b>[Tab]</b> Botones");
+
+            if (IntroSkipManager.CanSkip && !IntroSkipManager.HasSkipped)
+            {
+                float bw = 580f;
+                float bh = 38f;
+                Rect skipRect = new Rect((Screen.width - bw) / 2f, Screen.height - 75f, bw, bh);
+                GUI.Box(skipRect, "");
+                var oldC = GUI.color;
+                GUI.color = new Color(1f, 0.88f, 0.2f);
+                GUI.Label(skipRect, "<b>⚡ PRESIONA AMBOS GATILLOS (L2 + R2) O [S / TAB] PARA SALTAR AL INICIO ⚡</b>");
+                GUI.color = oldC;
+            }
 
             // ---- Button list panel (opened with Tab) ----
             panelRect = new Rect(0, 0, 0, 0);
@@ -1976,11 +1990,18 @@ namespace UnpluggedCustomSongs
     [HarmonyPatch(typeof(GameManager), "Finish")]
     public static class Patch_GameManager_Finish
     {
+        private static float _lastSuppressedLog = 0f;
+
         public static bool Prefix()
         {
+            IntroSkipManager.HidePrompt();
             if (GameManager.SongTime < 2.0f && GameManager.IsPlaying)
             {
-                MelonLogger.Msg($"[CustomSongs] Suppressed early Finish() at time={GameManager.SongTime:F2}s");
+                if (Time.unscaledTime - _lastSuppressedLog > 2.0f)
+                {
+                    _lastSuppressedLog = Time.unscaledTime;
+                    MelonLogger.Msg($"[CustomSongs] Suppressed early Finish() at time={GameManager.SongTime:F2}s");
+                }
                 return false;
             }
             return true;
@@ -2048,11 +2069,227 @@ namespace UnpluggedCustomSongs
                     {
                         CustomSongLoader.UpdateAlbumCover(CustomSongLoader.CustomAlbumInstance);
                     }
+
+                    IntroSkipManager.OnSongStarted();
                 }
             }
             catch (Exception ex)
             {
                 if (ModMain.ConfigVerbose) MelonLogger.Error($"[DiscordRPC/Cover] Error in StartSong Postfix: {ex}");
+            }
+        }
+    }
+
+    public static class IntroSkipManager
+    {
+        public static bool CanSkip = false;
+        public static bool HasSkipped = false;
+        public static float FirstNoteTime = 0f;
+        public static float SkipTargetTime = 0f;
+        private static GameObject _promptObj = null;
+        private static TextMeshPro _promptText = null;
+
+        public static void OnSongStarted()
+        {
+            CanSkip = false;
+            HasSkipped = false;
+            FirstNoteTime = 0f;
+            SkipTargetTime = 0f;
+            HidePrompt();
+
+            try
+            {
+                if (GameManager.CurrentSong == null || GameManager.CurrentSong.Keys == null)
+                    return;
+
+                var playableNotes = GameManager.CurrentSong.Keys
+                    .Where(k => !(k is BeatLineKey) && k.Time > 0.5f)
+                    .OrderBy(k => k.Time)
+                    .ToList();
+
+                if (playableNotes.Count > 0)
+                {
+                    FirstNoteTime = playableNotes[0].Time;
+                    // Only offer skip if silence/delay before first playable note is >= 5 seconds!
+                    if (FirstNoteTime >= 5.0f)
+                    {
+                        // Jump to 2.5 seconds before the first note for comfortable reaction time
+                        SkipTargetTime = Mathf.Max(0.5f, FirstNoteTime - 2.5f);
+                        CanSkip = true;
+                        MelonLogger.Msg($"[CustomSongs] Intro skip available: First note at {FirstNoteTime:F2}s -> Skip target: {SkipTargetTime:F2}s");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"[CustomSongs] Error analyzing intro notes: {ex.Message}");
+            }
+        }
+
+        public static void Update()
+        {
+            if (!CanSkip || HasSkipped || GameManager.I == null || !GameManager.IsPlaying)
+            {
+                HidePrompt();
+                return;
+            }
+
+            float currentTime = GameManager.SongTime;
+
+            // If natural playback reached the skip point, dismiss without skipping
+            if (currentTime >= SkipTargetTime - 0.3f)
+            {
+                CanSkip = false;
+                HidePrompt();
+                return;
+            }
+
+            ShowPrompt();
+
+            if (CheckSkipInput())
+            {
+                PerformSkip();
+            }
+        }
+
+        private static bool CheckSkipInput()
+        {
+            // Keyboard (PC / Desktop Debug)
+            if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.S) || Input.GetKeyDown(KeyCode.Tab))
+            {
+                return true;
+            }
+
+            // VR Oculus Touch controllers (both index triggers L2 + R2)
+            try
+            {
+                float leftTrig = OVRInput.Get(OVRInput.Axis1D.PrimaryIndexTrigger);
+                float rightTrig = OVRInput.Get(OVRInput.Axis1D.SecondaryIndexTrigger);
+                if (leftTrig > 0.55f && rightTrig > 0.55f)
+                {
+                    return true;
+                }
+
+                bool leftBtn = OVRInput.Get(OVRInput.Button.PrimaryIndexTrigger);
+                bool rightBtn = OVRInput.Get(OVRInput.Button.SecondaryIndexTrigger);
+                if (leftBtn && rightBtn)
+                {
+                    return true;
+                }
+            }
+            catch { }
+
+            // Cross-platform Unity input
+            try
+            {
+                float l = Input.GetAxisRaw("Oculus_CrossPlatform_PrimaryIndexTrigger");
+                float r = Input.GetAxisRaw("Oculus_CrossPlatform_SecondaryIndexTrigger");
+                if (l > 0.55f && r > 0.55f)
+                {
+                    return true;
+                }
+            }
+            catch { }
+
+            return false;
+        }
+
+        public static void PerformSkip()
+        {
+            if (!CanSkip || HasSkipped || GameManager.I == null || GameManager.I.musicPlayer == null)
+                return;
+
+            HasSkipped = true;
+            CanSkip = false;
+            HidePrompt();
+
+            try
+            {
+                var mp = GameManager.I.musicPlayer;
+                float target = SkipTargetTime;
+
+                if (mp.MusicAudioSource != null)
+                {
+                    mp.MusicAudioSource.time = target;
+                }
+                mp.CurrentTime = target;
+                mp.SongTimeDelayCounter = GameManager.I.StartDelay + target;
+
+                if (mp.AudioSources != null)
+                {
+                    foreach (var src in mp.AudioSources)
+                    {
+                        if (src != null && src.clip != null)
+                        {
+                            src.time = target;
+                        }
+                    }
+                }
+
+                if (GameManager.I.TimelineManager != null)
+                {
+                    GameManager.I.TimelineManager.SetTime(target);
+                }
+
+                try
+                {
+                    OVRInput.SetControllerVibration(0.4f, 0.4f, OVRInput.Controller.All);
+                    MelonCoroutines.Start(StopVibration(0.18f));
+                }
+                catch { }
+
+                MelonLogger.Msg($"[CustomSongs] >> SKIPPED INTRO! Jumped to {target:F2}s (First note at {FirstNoteTime:F2}s)");
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"[CustomSongs] Error performing intro skip: {ex}");
+            }
+        }
+
+        private static IEnumerator StopVibration(float delay)
+        {
+            yield return new WaitForSeconds(delay);
+            try
+            {
+                OVRInput.SetControllerVibration(0f, 0f, OVRInput.Controller.All);
+            }
+            catch { }
+        }
+
+        private static void ShowPrompt()
+        {
+            try
+            {
+                if (_promptObj == null)
+                {
+                    _promptObj = new GameObject("SkipIntroPrompt");
+                    UnityEngine.Object.DontDestroyOnLoad(_promptObj);
+                    _promptText = _promptObj.AddComponent<TextMeshPro>();
+                    _promptText.fontSize = 2.2f;
+                    _promptText.alignment = TextAlignmentOptions.Center;
+                    _promptText.color = new Color(1f, 0.88f, 0.2f);
+                    _promptText.outlineColor = Color.black;
+                    _promptText.outlineWidth = 0.28f;
+                    _promptText.text = "⚡ PRESIONA AMBOS GATILLOS PARA SALTAR ⚡\n<size=70%>[S / Espacio en PC]</size>";
+                }
+
+                Camera cam = CameraManager.Main != null ? CameraManager.Main : Camera.main;
+                if (cam != null)
+                {
+                    Transform ct = cam.transform;
+                    _promptObj.transform.position = ct.position + ct.forward * 2.2f + ct.up * (-0.35f);
+                    _promptObj.transform.rotation = Quaternion.LookRotation(ct.forward, Vector3.up);
+                }
+                if (!_promptObj.activeSelf) _promptObj.SetActive(true);
+            }
+            catch { }
+        }
+
+        public static void HidePrompt()
+        {
+            if (_promptObj != null && _promptObj.activeSelf)
+            {
+                _promptObj.SetActive(false);
             }
         }
     }
