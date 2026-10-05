@@ -1,6 +1,6 @@
-# USG (Unplugged Song Manager) & Custom Songs Mod
+# USM (Unplugged Song Manager) & Custom Songs Mod
 
-**USG** is an all-in-one desktop companion and modding suite for **Unplugged VR** (by Anotherway / Vertigo Games). It allows players to effortlessly convert, manage, and download custom songs from Chorus / Clone Hero directly into Unplugged VR with full hand tracking and controller support.
+**USM** is an all-in-one desktop companion and modding suite for **Unplugged VR** (by Anotherway / Vertigo Games). It allows players to effortlessly convert, manage, and download custom songs from Chorus / Clone Hero directly into Unplugged VR with full hand tracking and controller support.
 
 ---
 
@@ -14,7 +14,7 @@
   - FileSystemWatcher hot-reload: drop new songs into `CustomSongs` and they appear in-game automatically.
   - Discord Rich Presence integration showing current song, artist, and difficulty.
 
-- **Desktop Manager (`USG.exe`):**
+- **Desktop Manager (`USM.exe`):**
   - **Local Converter:** Drag and drop `.zip`, `.sng`, `.chart`, or `.mid` files for instant automatic conversion.
   - **Song Library:** View installed songs, play 25s audio previews, filter/search by title or artist, and batch delete.
   - **Chorus Integration:** Search and download thousands of community charts with one click.
@@ -27,7 +27,7 @@
 
 1. Install [MelonLoader](https://melonwiki.xyz/#/) (v0.5.7) for `Unplugged.exe`.
 2. Place `UnpluggedCustomSongs.dll` inside your `Unplugged/Mods/` folder.
-3. Launch `USG.exe`, drag & drop your charts or download from the Chorus tab.
+3. Launch `USM.exe`, drag & drop your charts or download from the Chorus tab.
 4. Put on your VR headset and enjoy your custom tracks!
 
 ---

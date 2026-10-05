@@ -28,7 +28,7 @@ class UnpluggedStudioApp(*BaseAppClass):
                 print(f"[DnD] Init error: {e}")
 
         # Window configuration
-        self.title("USG • Unplugged Song Manager")
+        self.title("USM • Unplugged Song Manager")
         self.geometry("1020x720")
         self.minsize(860, 580)
         self.configure(fg_color=THEME["bg_main"])
@@ -54,7 +54,7 @@ class UnpluggedStudioApp(*BaseAppClass):
 
         logo_lbl = ctk.CTkLabel(
             brand_frame,
-            text="🎸 USG",
+            text="🎸 USM",
             font=(FONT_FAMILY, 20, "bold"),
             text_color=THEME["accent_pink"]
         )
