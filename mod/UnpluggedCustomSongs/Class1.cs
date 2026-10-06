@@ -403,6 +403,14 @@ namespace UnpluggedCustomSongs
         public override void OnApplicationQuit()
         {
             DiscordRpcManager.Shutdown();
+            try
+            {
+                foreach (var p in Process.GetProcessesByName("UnityCrashHandler64"))
+                {
+                    try { p.Kill(); } catch { }
+                }
+            }
+            catch { }
         }
 
         private static int _navHoldDir = 0;
@@ -2220,6 +2228,25 @@ namespace UnpluggedCustomSongs
                 }
             }
             catch { }
+        }
+    }
+
+    [HarmonyPatch(typeof(GuitarHandPoseRecognitionManager), "ResetFingerColors")]
+    public static class Patch_GuitarHandPoseRecognitionManager_ResetFingerColors
+    {
+        public static bool Prefix()
+        {
+            try
+            {
+                if (InteractionSystem.I == null) return false;
+                if (InteractionSystem.I.PrimaryHand == null || InteractionSystem.I.PrimaryHand.HandRender == null) return false;
+                if (InteractionSystem.I.PrimaryHand.HandRender.material == null) return false;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
     }
 
