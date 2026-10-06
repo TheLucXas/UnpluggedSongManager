@@ -68,13 +68,14 @@ namespace USM.ViewModels
 
                 Notify("Launching Unplugged VR via Steam...");
 
-                // 1. Try launching through Steam URL protocol (App ID 1457820)
+                // 1. Try launching through Steam URL protocol (App ID 1623390)
                 try
                 {
-                    Process.Start(new ProcessStartInfo("steam://rungameid/1457820")
+                    Process.Start(new ProcessStartInfo("steam://rungameid/1623390")
                     {
                         UseShellExecute = true
                     });
+                    Notify("Unplugged VR launched via Steam!");
                     return;
                 }
                 catch { }

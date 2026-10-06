@@ -9,9 +9,15 @@
     <AssemblyName>USM</AssemblyName>
     <RootNamespace>USM</RootNamespace>
     <ApplicationTitle>Unplugged Song Manager</ApplicationTitle>
+    <ApplicationIcon>assets\icon.ico</ApplicationIcon>
     <Version>2.0.0</Version>
     <Authors>TheLucXas</Authors>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="assets\icon.png" />
+    <Resource Include="assets\icon.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <None Include="..\..\UnpluggedCustomSongs.dll" Condition="Exists('..\..\UnpluggedCustomSongs.dll')">

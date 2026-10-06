@@ -7,6 +7,7 @@
         xmlns:views="clr-namespace:USM.Views"
         mc:Ignorable="d"
         Title="USM • Unplugged Song Manager"
+        Icon="assets/icon.png"
         Width="1040"
         Height="740"
         MinWidth="880"
@@ -43,10 +44,17 @@
 
                 <!-- Brand / Logo -->
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="🎸 USM"
+                    <Image Source="assets/icon.png"
+                           Width="28"
+                           Height="28"
+                           Margin="0,0,10,0"
+                           VerticalAlignment="Center"
+                           RenderOptions.BitmapScalingMode="HighQuality" />
+                    <TextBlock Text="USM"
                                FontSize="20"
                                FontWeight="Bold"
-                               Foreground="{StaticResource BrushAccentPink}" />
+                               Foreground="{StaticResource BrushAccentPink}"
+                               VerticalAlignment="Center" />
                     <TextBlock Text="UNPLUGGED SONG MANAGER"
                                FontSize="13"
                                FontWeight="Bold"
