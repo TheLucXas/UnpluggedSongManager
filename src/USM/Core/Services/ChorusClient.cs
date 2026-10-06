@@ -30,8 +30,10 @@ namespace USM.Core.Services
         public static async Task<(int Total, List<ChorusChart> Charts)> SearchAsync(
             string query,
             int page = 1,
-            int perPage = 25,
+            int perPage = 30,
             string instrument = "guitar",
+            string? sortType = null,
+            string? sortDirection = null,
             CancellationToken ct = default)
         {
             var payload = new Dictionary<string, object?>
@@ -42,6 +44,15 @@ namespace USM.Core.Services
                 ["instrument"] = string.IsNullOrEmpty(instrument) ? null : instrument,
                 ["source"] = "api"
             };
+
+            if (!string.IsNullOrEmpty(sortType))
+            {
+                payload["sort"] = new Dictionary<string, string>
+                {
+                    ["type"] = sortType,
+                    ["direction"] = sortDirection ?? "desc"
+                };
+            }
 
             string jsonString = JsonSerializer.Serialize(payload);
             using var content = new StringContent(jsonString, Encoding.UTF8, "application/json");
@@ -92,20 +103,64 @@ namespace USM.Core.Services
                             durationStr = $"{m}:{s:D2}";
                         }
 
+                        string title = item.TryGetProperty("name", out var nameP) ? nameP.GetString() ?? "Unknown Title" : "Unknown Title";
+                        string artist = item.TryGetProperty("artist", out var artNameP) ? artNameP.GetString() ?? "Unknown Artist" : "Unknown Artist";
+                        string album = item.TryGetProperty("album", out var albP) ? albP.GetString() ?? "" : "";
+                        string year = item.TryGetProperty("year", out var yrP) ? yrP.ToString() : "";
+                        string charter = item.TryGetProperty("charter", out var chP) ? chP.GetString() ?? "Unknown" : "Unknown";
+
+                        // MultiTrack detection: check for stems indicator in title, instruments array, or additional instrument stems
+                        bool isMultiTrack = false;
+                        if (title.IndexOf("stem", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            title.IndexOf("multitrack", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            (item.TryGetProperty("drivePath", out var dpP) && dpP.GetString()?.IndexOf("stem", StringComparison.OrdinalIgnoreCase) >= 0))
+                        {
+                            isMultiTrack = true;
+                        }
+
+                        if (item.TryGetProperty("notesData", out var ndP) && ndP.ValueKind == JsonValueKind.Object)
+                        {
+                            if (ndP.TryGetProperty("instruments", out var insts) && insts.ValueKind == JsonValueKind.Array)
+                            {
+                                int instCount = 0;
+                                foreach (var _ in insts.EnumerateArray()) instCount++;
+                                if (instCount > 1) isMultiTrack = true;
+                            }
+                            if (ndP.TryGetProperty("hasVocals", out var hvP) && hvP.ValueKind == JsonValueKind.True)
+                            {
+                                isMultiTrack = true;
+                            }
+                        }
+
+                        if (diffBass >= 0 ||
+                            (item.TryGetProperty("diff_drums", out var ddP) && ddP.ValueKind == JsonValueKind.Number && ddP.GetInt32() >= 0) ||
+                            (item.TryGetProperty("diff_vocals", out var dvP) && dvP.ValueKind == JsonValueKind.Number && dvP.GetInt32() >= 0))
+                        {
+                            isMultiTrack = true;
+                        }
+
+                        DateTime? modifiedTime = null;
+                        if (item.TryGetProperty("modifiedTime", out var mtP) && mtP.ValueKind == JsonValueKind.String)
+                        {
+                            if (DateTime.TryParse(mtP.GetString(), out var parsedDt)) modifiedTime = parsedDt;
+                        }
+
                         var chart = new ChorusChart
                         {
                             Id = item.TryGetProperty("chartId", out var idP) ? idP.ToString() : md5,
                             Md5 = md5,
-                            Title = item.TryGetProperty("name", out var nameP) ? nameP.GetString() ?? "Unknown Title" : "Unknown Title",
-                            Artist = item.TryGetProperty("artist", out var artNameP) ? artNameP.GetString() ?? "Unknown Artist" : "Unknown Artist",
-                            Album = item.TryGetProperty("album", out var albP) ? albP.GetString() ?? "" : "",
-                            Year = item.TryGetProperty("year", out var yrP) ? yrP.ToString() : "",
-                            Charter = item.TryGetProperty("charter", out var chP) ? chP.GetString() ?? "Unknown" : "Unknown",
+                            Title = title,
+                            Artist = artist,
+                            Album = album,
+                            Year = year,
+                            Charter = charter,
                             Duration = durationStr,
                             DurationSeconds = songLen,
                             DiffGuitar = diffGuitar,
                             DiffBass = diffBass,
                             PreviewStart = previewSec,
+                            IsMultiTrack = isMultiTrack,
+                            ModifiedTime = modifiedTime,
                             DownloadUrl = !string.IsNullOrEmpty(md5) ? $"{FilesUrl}/{md5}.sng" : null,
                             ArtUrl = !string.IsNullOrEmpty(artMd5) ? $"{FilesUrl}/{artMd5}.jpg" : null
                         };

@@ -15,10 +15,11 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Top Search Box Card -->
+        <!-- 1. Top Search Box Card -->
         <Border Grid.Row="0"
                 Background="{StaticResource BrushBgCard}"
                 BorderBrush="{StaticResource BrushBorder}"
@@ -51,15 +52,104 @@
             </Grid>
         </Border>
 
-        <!-- Status Header -->
-        <TextBlock Grid.Row="1"
+        <!-- 2. Filters & Sorting Toolbar -->
+        <Border Grid.Row="1"
+                Background="{StaticResource BrushBgCard}"
+                BorderBrush="{StaticResource BrushBorder}"
+                BorderThickness="1"
+                CornerRadius="10"
+                Padding="14,10"
+                Margin="0,0,0,10">
+            <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <!-- Sort ComboBox -->
+                <StackPanel Orientation="Horizontal" Margin="0,2,16,2" VerticalAlignment="Center">
+                    <TextBlock Text="Sort:"
+                               Foreground="{StaticResource BrushTextSecondary}"
+                               FontSize="12"
+                               VerticalAlignment="Center"
+                               Margin="0,0,6,0" />
+                    <ComboBox SelectedIndex="{Binding SelectedSortIndex}"
+                              Width="160"
+                              Height="32">
+                        <ComboBoxItem Content="⚡ Relevance (Default)" />
+                        <ComboBoxItem Content="🕒 Newest (Más Nuevas)" />
+                        <ComboBoxItem Content="🔤 Title (A - Z)" />
+                        <ComboBoxItem Content="👤 Artist (A - Z)" />
+                        <ComboBoxItem Content="📅 Year (Newest)" />
+                        <ComboBoxItem Content="⏳ Length (Longest)" />
+                    </ComboBox>
+                </StackPanel>
+
+                <!-- Track Filter ComboBox (MultiTrack) -->
+                <StackPanel Orientation="Horizontal" Margin="0,2,16,2" VerticalAlignment="Center">
+                    <TextBlock Text="Tracks:"
+                               Foreground="{StaticResource BrushTextSecondary}"
+                               FontSize="12"
+                               VerticalAlignment="Center"
+                               Margin="0,0,6,0" />
+                    <ComboBox SelectedIndex="{Binding SelectedTrackFilterIndex}"
+                              Width="155"
+                              Height="32">
+                        <ComboBoxItem Content="🌐 All Tracks" />
+                        <ComboBoxItem Content="🎛️ MultiTrack Only" />
+                        <ComboBoxItem Content="🎸 Single Track Only" />
+                    </ComboBox>
+                </StackPanel>
+
+                <!-- Difficulty Filter ComboBox -->
+                <StackPanel Orientation="Horizontal" Margin="0,2,16,2" VerticalAlignment="Center">
+                    <TextBlock Text="Difficulty:"
+                               Foreground="{StaticResource BrushTextSecondary}"
+                               FontSize="12"
+                               VerticalAlignment="Center"
+                               Margin="0,0,6,0" />
+                    <ComboBox SelectedIndex="{Binding SelectedDifficultyFilterIndex}"
+                              Width="155"
+                              Height="32">
+                        <ComboBoxItem Content="🎯 All Difficulties" />
+                        <ComboBoxItem Content="🟢 Beginner (Tier 0-1)" />
+                        <ComboBoxItem Content="🟡 Intermediate (Tier 2-3)" />
+                        <ComboBoxItem Content="🔴 Expert (Tier 4+)" />
+                    </ComboBox>
+                </StackPanel>
+
+                <!-- Status Filter ComboBox -->
+                <StackPanel Orientation="Horizontal" Margin="0,2,16,2" VerticalAlignment="Center">
+                    <TextBlock Text="Status:"
+                               Foreground="{StaticResource BrushTextSecondary}"
+                               FontSize="12"
+                               VerticalAlignment="Center"
+                               Margin="0,0,6,0" />
+                    <ComboBox SelectedIndex="{Binding SelectedStatusFilterIndex}"
+                              Width="145"
+                              Height="32">
+                        <ComboBoxItem Content="📦 All Status" />
+                        <ComboBoxItem Content="📥 Not Installed" />
+                        <ComboBoxItem Content="✓ Installed" />
+                    </ComboBox>
+                </StackPanel>
+
+                <!-- Reset Filters Button -->
+                <Button Content="Reset ↺"
+                        Command="{Binding ResetFiltersCommand}"
+                        Style="{StaticResource SecondaryButton}"
+                        Padding="12,4"
+                        Height="32"
+                        FontSize="11"
+                        Margin="0,2,0,2"
+                        VerticalAlignment="Center" />
+            </WrapPanel>
+        </Border>
+
+        <!-- 3. Status Header -->
+        <TextBlock Grid.Row="2"
                    Text="{Binding StatusText}"
                    Foreground="{StaticResource BrushTextSecondary}"
                    FontSize="13"
                    Margin="4,0,0,10" />
 
-        <!-- Search Results List -->
-        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+        <!-- 4. Search Results List -->
+        <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto">
             <ItemsControl ItemsSource="{Binding Results}">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
@@ -94,16 +184,37 @@
 
                                 <!-- Song Metadata -->
                                 <StackPanel Grid.Column="1" Margin="14,0,14,0" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding Title}"
-                                               FontSize="15"
-                                               FontWeight="Bold"
-                                               Foreground="{StaticResource BrushTextPrimary}"
-                                               TextTrimming="CharacterEllipsis" />
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Title}"
+                                                   FontSize="15"
+                                                   FontWeight="Bold"
+                                                   Foreground="{StaticResource BrushTextPrimary}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   MaxWidth="400"
+                                                   VerticalAlignment="Center" />
+
+                                        <!-- MultiTrack Badge -->
+                                        <Border Background="#2E1B4E"
+                                                BorderBrush="{StaticResource BrushAccentPurple}"
+                                                BorderThickness="1"
+                                                CornerRadius="4"
+                                                Padding="6,2"
+                                                Margin="8,0,0,0"
+                                                VerticalAlignment="Center"
+                                                Visibility="{Binding IsMultiTrack, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock Text="🎛️ MULTITRACK"
+                                                       FontSize="10"
+                                                       FontWeight="Bold"
+                                                       Foreground="#C084FC" />
+                                        </Border>
+                                    </StackPanel>
+
                                     <TextBlock Text="{Binding SubtitleDisplay}"
                                                FontSize="13"
                                                Foreground="{StaticResource BrushAccentBlue}"
                                                Margin="0,2,0,0"
                                                TextTrimming="CharacterEllipsis" />
+
                                     <TextBlock Text="{Binding MetaDisplay}"
                                                FontSize="11"
                                                Foreground="{StaticResource BrushTextMuted}"

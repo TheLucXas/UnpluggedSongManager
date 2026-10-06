@@ -20,12 +20,16 @@ namespace USM.Core.Models
         public double PreviewStart { get; set; } = 30.0;
         public string? DownloadUrl { get; set; }
         public string? ArtUrl { get; set; }
+        public bool IsMultiTrack { get; set; }
+        public DateTime? ModifiedTime { get; set; }
 
         public string SubtitleDisplay => string.IsNullOrEmpty(Album)
             ? (string.IsNullOrEmpty(Year) ? Artist : $"{Artist} ({Year})")
             : $"{Artist} • {Album}{(string.IsNullOrEmpty(Year) ? "" : $" ({Year})")}";
 
         public string MetaDisplay => $"Charter: {Charter} | Duration: {Duration} | {(DiffGuitar >= 0 ? $"Guitar: Tier {DiffGuitar}" : "Guitar: Yes")}";
+        public string TrackTypeDisplay => IsMultiTrack ? "🎛️ MultiTrack" : "🎸 Single Track";
+        public string GuitarDifficultyDisplay => DiffGuitar >= 0 ? $"🎸 Tier {DiffGuitar}" : "🎸 Guitar";
 
         private bool _isInstalled;
         public bool IsInstalled

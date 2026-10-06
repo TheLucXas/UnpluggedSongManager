@@ -23,6 +23,7 @@ namespace USM.ViewModels
         private readonly ConcurrentQueue<ChorusChart> _downloadQueue = new();
         private int _activeDownloads = 0;
         private readonly object _queueLock = new();
+        private readonly List<ChorusChart> _rawCharts = new();
 
         public string SearchQuery
         {
@@ -42,10 +43,66 @@ namespace USM.ViewModels
             set => SetProperty(ref _statusText, value);
         }
 
+        private int _selectedSortIndex = 0;
+        public int SelectedSortIndex
+        {
+            get => _selectedSortIndex;
+            set
+            {
+                if (SetProperty(ref _selectedSortIndex, value))
+                {
+                    if (_rawCharts.Count > 0 || !string.IsNullOrWhiteSpace(SearchQuery))
+                    {
+                        _ = PerformSearchAsync();
+                    }
+                }
+            }
+        }
+
+        private int _selectedTrackFilterIndex = 0;
+        public int SelectedTrackFilterIndex
+        {
+            get => _selectedTrackFilterIndex;
+            set
+            {
+                if (SetProperty(ref _selectedTrackFilterIndex, value))
+                {
+                    ApplyFilterAndSort();
+                }
+            }
+        }
+
+        private int _selectedDifficultyFilterIndex = 0;
+        public int SelectedDifficultyFilterIndex
+        {
+            get => _selectedDifficultyFilterIndex;
+            set
+            {
+                if (SetProperty(ref _selectedDifficultyFilterIndex, value))
+                {
+                    ApplyFilterAndSort();
+                }
+            }
+        }
+
+        private int _selectedStatusFilterIndex = 0;
+        public int SelectedStatusFilterIndex
+        {
+            get => _selectedStatusFilterIndex;
+            set
+            {
+                if (SetProperty(ref _selectedStatusFilterIndex, value))
+                {
+                    ApplyFilterAndSort();
+                }
+            }
+        }
+
         public ObservableCollection<ChorusChart> Results { get; } = new();
 
         public ICommand SearchCommand { get; }
         public ICommand DownloadCommand { get; }
+        public ICommand ResetFiltersCommand { get; }
 
         public SearchViewModel(GameDetector gameDetector, Action<string> notifyCallback)
         {
@@ -54,22 +111,65 @@ namespace USM.ViewModels
 
             SearchCommand = new AsyncRelayCommand(PerformSearchAsync);
             DownloadCommand = new RelayCommand(EnqueueDownload);
+            ResetFiltersCommand = new RelayCommand(_ =>
+            {
+                _selectedSortIndex = 0;
+                OnPropertyChanged(nameof(SelectedSortIndex));
+                _selectedTrackFilterIndex = 0;
+                OnPropertyChanged(nameof(SelectedTrackFilterIndex));
+                _selectedDifficultyFilterIndex = 0;
+                OnPropertyChanged(nameof(SelectedDifficultyFilterIndex));
+                _selectedStatusFilterIndex = 0;
+                OnPropertyChanged(nameof(SelectedStatusFilterIndex));
+                ApplyFilterAndSort();
+            });
 
             _gameDetector.MaxConcurrentDownloadsChanged += _ => ProcessDownloadQueue();
         }
 
         private async Task PerformSearchAsync()
         {
-            if (string.IsNullOrWhiteSpace(SearchQuery) || IsSearching) return;
+            if (IsSearching) return;
+
+            string query = string.IsNullOrWhiteSpace(SearchQuery) ? "*" : SearchQuery.Trim();
 
             IsSearching = true;
-            StatusText = $"Searching Chorus Encore for '{SearchQuery}'...";
-            Results.Clear();
+            StatusText = query == "*"
+                ? "Browsing latest charts on Chorus Encore..."
+                : $"Searching Chorus Encore for '{query}'...";
+
+            string? sortType = null;
+            string? sortDirection = null;
+
+            switch (SelectedSortIndex)
+            {
+                case 1: // Newest / Recientes
+                    sortType = "modifiedTime";
+                    sortDirection = "desc";
+                    break;
+                case 2: // Title (A-Z)
+                    sortType = "name";
+                    sortDirection = "asc";
+                    break;
+                case 3: // Artist (A-Z)
+                    sortType = "artist";
+                    sortDirection = "asc";
+                    break;
+                case 4: // Year
+                    sortType = "year";
+                    sortDirection = "desc";
+                    break;
+                case 5: // Length
+                    sortType = "length";
+                    sortDirection = "desc";
+                    break;
+            }
 
             try
             {
-                var (total, charts) = await ChorusClient.SearchAsync(SearchQuery);
+                var (total, charts) = await ChorusClient.SearchAsync(query, 1, 40, "guitar", sortType, sortDirection);
 
+                _rawCharts.Clear();
                 string? customSongsDir = _gameDetector.GetCustomSongsDir();
                 foreach (var chart in charts)
                 {
@@ -90,12 +190,15 @@ namespace USM.ViewModels
                     {
                         chart.StatusText = "📥 Download";
                     }
-                    Results.Add(chart);
+                    _rawCharts.Add(chart);
                 }
 
-                StatusText = charts.Count > 0
-                    ? $"Found {charts.Count} charts ready for Unplugged VR:"
-                    : "No charts found. Try another search term.";
+                ApplyFilterAndSort();
+
+                if (_rawCharts.Count == 0)
+                {
+                    StatusText = "No charts found. Try another search term or change filters.";
+                }
             }
             catch (Exception ex)
             {
@@ -104,6 +207,56 @@ namespace USM.ViewModels
             finally
             {
                 IsSearching = false;
+            }
+        }
+
+        private void ApplyFilterAndSort()
+        {
+            Results.Clear();
+            var filtered = System.Linq.Enumerable.AsEnumerable(_rawCharts);
+
+            // MultiTrack filter
+            if (SelectedTrackFilterIndex == 1) // MultiTrack Only
+            {
+                filtered = System.Linq.Enumerable.Where(filtered, c => c.IsMultiTrack);
+            }
+            else if (SelectedTrackFilterIndex == 2) // Single Track Only
+            {
+                filtered = System.Linq.Enumerable.Where(filtered, c => !c.IsMultiTrack);
+            }
+
+            // Difficulty filter
+            if (SelectedDifficultyFilterIndex == 1) // Beginner Tier 0-1
+            {
+                filtered = System.Linq.Enumerable.Where(filtered, c => c.DiffGuitar >= 0 && c.DiffGuitar <= 1);
+            }
+            else if (SelectedDifficultyFilterIndex == 2) // Intermediate Tier 2-3
+            {
+                filtered = System.Linq.Enumerable.Where(filtered, c => c.DiffGuitar >= 2 && c.DiffGuitar <= 3);
+            }
+            else if (SelectedDifficultyFilterIndex == 3) // Expert Tier 4+
+            {
+                filtered = System.Linq.Enumerable.Where(filtered, c => c.DiffGuitar >= 4);
+            }
+
+            // Installation status filter
+            if (SelectedStatusFilterIndex == 1) // Not Installed Only
+            {
+                filtered = System.Linq.Enumerable.Where(filtered, c => !c.IsInstalled);
+            }
+            else if (SelectedStatusFilterIndex == 2) // Installed Only
+            {
+                filtered = System.Linq.Enumerable.Where(filtered, c => c.IsInstalled);
+            }
+
+            foreach (var chart in filtered)
+            {
+                Results.Add(chart);
+            }
+
+            if (_rawCharts.Count > 0)
+            {
+                StatusText = $"Showing {Results.Count} of {_rawCharts.Count} charts found:";
             }
         }
 
