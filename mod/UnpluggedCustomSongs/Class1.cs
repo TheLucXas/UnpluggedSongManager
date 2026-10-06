@@ -838,8 +838,8 @@ namespace UnpluggedCustomSongs
                     {
                         GameManager.CurrentSongData = selected;
                         LoggerInstance.Msg($"[CustomSongs] Key [1]/Enter: Starting selected song '{selected.BandName} - {selected.SongName}'...");
+                        Traverse.Create(StartSpace.I).Method("StartButton_Pressed").GetValue();
                     }
-                    Traverse.Create(StartSpace.I).Method("StartButton_Pressed").GetValue();
                 }
             }
 
@@ -1736,21 +1736,6 @@ namespace UnpluggedCustomSongs
                 }
 
                 MelonLogger.Msg("[CustomSongs] Generated 2 carousel items for 2 custom songs (front & back at 180°)");
-                return false;
-            }
-            return true;
-        }
-    }
-
-    [HarmonyPatch(typeof(VRPlatformBase), "IsHandTrackingEnabled", MethodType.Getter)]
-    public static class Patch_VRPlatformBase_IsHandTrackingEnabled
-    {
-        public static bool Prefix(ref bool __result)
-        {
-            bool indexHands = GamePreferences.Load(UnpluggedInfo.IndexHandsMode, defaultValue: false);
-            if (!indexHands)
-            {
-                __result = false;
                 return false;
             }
             return true;
