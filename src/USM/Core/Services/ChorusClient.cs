@@ -113,18 +113,44 @@ namespace USM.Core.Services
                         string charter = item.TryGetProperty("charter", out var chP) ? chP.GetString() ?? "Unknown" : "Unknown";
 
                         // MultiTrack detection: strictly check for actual audio stems / multitrack indicators.
-                        // Do NOT treat chartered note tracks (guitar/bass notes in MIDI) as audio stems.
+                        // Covers explicit stems keywords, official Guitar Hero / Rock Band game icons (gh*, rb*),
+                        // official studio charters (Harmonix, Neversoft, Vicarious Visions, etc.), and official pack names.
                         bool isMultiTrack = false;
                         string drivePath = item.TryGetProperty("drivePath", out var dpP) ? dpP.GetString() ?? "" : "";
                         string driveFileName = item.TryGetProperty("driveFileName", out var dfnP) ? dfnP.GetString() ?? "" : "";
                         string chartName = item.TryGetProperty("chartName", out var cnP) ? cnP.GetString() ?? "" : "";
                         string packName = item.TryGetProperty("packName", out var pnP) ? pnP.GetString() ?? "" : "";
                         string internalPath = item.TryGetProperty("internalPath", out var ipP) ? ipP.GetString() ?? "" : "";
+                        string icon = item.TryGetProperty("icon", out var icP) ? (icP.GetString() ?? "").ToLowerInvariant().Trim() : "";
+                        string charterLower = charter.ToLowerInvariant();
 
                         string combinedAudioInfo = $"{title} {chartName} {drivePath} {driveFileName} {packName} {internalPath}";
                         if (combinedAudioInfo.IndexOf("stem", StringComparison.OrdinalIgnoreCase) >= 0 ||
                             combinedAudioInfo.IndexOf("multitrack", StringComparison.OrdinalIgnoreCase) >= 0 ||
                             combinedAudioInfo.IndexOf("multi-track", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            isMultiTrack = true;
+                        }
+                        else if (!string.IsNullOrEmpty(icon) && (
+                            icon.StartsWith("gh") ||
+                            icon.StartsWith("rb") ||
+                            icon == "tbrb" || icon == "gdrb" || icon == "lrb" ||
+                            icon == "rbn" || icon == "rbn2" || icon == "bandhero" || icon == "bh"))
+                        {
+                            isMultiTrack = true;
+                        }
+                        else if (charterLower.Contains("harmonix") ||
+                                 charterLower.Contains("neversoft") ||
+                                 charterLower.Contains("vicarious visions") ||
+                                 charterLower.Contains("redoctane") ||
+                                 charterLower.Contains("freestylegames"))
+                        {
+                            isMultiTrack = true;
+                        }
+                        else if (packName.IndexOf("guitar hero", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 packName.IndexOf("rock band", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 drivePath.IndexOf("guitar hero", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 drivePath.IndexOf("rock band", StringComparison.OrdinalIgnoreCase) >= 0)
                         {
                             isMultiTrack = true;
                         }

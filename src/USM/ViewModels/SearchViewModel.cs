@@ -71,7 +71,14 @@ namespace USM.ViewModels
             {
                 if (SetProperty(ref _selectedTrackFilterIndex, value))
                 {
-                    ApplyFilterAndSort();
+                    if (string.IsNullOrWhiteSpace(SearchQuery) && value == 1 && (_rawCharts.Count == 0 || !_rawCharts.Any(c => c.IsMultiTrack)))
+                    {
+                        _ = PerformSearchAsync();
+                    }
+                    else
+                    {
+                        ApplyFilterAndSort();
+                    }
                 }
             }
         }
@@ -136,10 +143,19 @@ namespace USM.ViewModels
             if (IsSearching) return;
 
             string query = string.IsNullOrWhiteSpace(SearchQuery) ? "*" : SearchQuery.Trim();
+            string apiQuery = query;
+
+            // When searching multitrack only without a specific keyword query, query Harmonix (official Rock Band / GH multitrack masters)
+            if (apiQuery == "*" && SelectedTrackFilterIndex == 1)
+            {
+                apiQuery = "Harmonix";
+            }
 
             IsSearching = true;
             StatusText = query == "*"
-                ? "Browsing latest charts on Chorus Encore..."
+                ? (SelectedTrackFilterIndex == 1
+                    ? "Browsing MultiTrack charts on Chorus Encore..."
+                    : "Browsing latest charts on Chorus Encore...")
                 : $"Searching Chorus Encore for '{query}'...";
 
             string? sortType = null;
@@ -154,7 +170,7 @@ namespace USM.ViewModels
 
             try
             {
-                var (total, charts) = await ChorusClient.SearchAsync(query, 1, 50, "guitar", sortType, sortDirection);
+                var (total, charts) = await ChorusClient.SearchAsync(apiQuery, 1, 60, "guitar", sortType, sortDirection);
 
                 _rawCharts.Clear();
                 string? customSongsDir = _gameDetector.GetCustomSongsDir();
