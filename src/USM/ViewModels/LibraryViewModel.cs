@@ -164,7 +164,7 @@ namespace USM.ViewModels
                 title = ini.Name;
                 artist = ini.Artist;
                 charter = ini.Charter;
-                isMulti = File.Exists(Path.Combine(dir, "song-guitar.mp3")) && File.Exists(Path.Combine(dir, "song-drums.mp3"));
+                isMulti = File.Exists(Path.Combine(dir, "song-guitar.mp3"));
             }
 
             string coverPath = Path.Combine(dir, "album.jpg");

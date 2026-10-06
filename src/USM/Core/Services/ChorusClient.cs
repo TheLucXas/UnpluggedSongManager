@@ -95,11 +95,14 @@ namespace USM.Core.Services
                         if (item.TryGetProperty("song_length", out var slP) && slP.ValueKind == JsonValueKind.Number)
                             songLen = slP.GetInt32();
 
+                        // Enchor API returns song_length in milliseconds
+                        int songLenSec = songLen > 1000 ? songLen / 1000 : songLen;
+
                         string durationStr = "--:--";
-                        if (songLen > 0)
+                        if (songLenSec > 0)
                         {
-                            int m = songLen / 60;
-                            int s = songLen % 60;
+                            int m = songLenSec / 60;
+                            int s = songLenSec % 60;
                             durationStr = $"{m}:{s:D2}";
                         }
 
@@ -109,32 +112,19 @@ namespace USM.Core.Services
                         string year = item.TryGetProperty("year", out var yrP) ? yrP.ToString() : "";
                         string charter = item.TryGetProperty("charter", out var chP) ? chP.GetString() ?? "Unknown" : "Unknown";
 
-                        // MultiTrack detection: check for stems indicator in title, instruments array, or additional instrument stems
+                        // MultiTrack detection: strictly check for actual audio stems / multitrack indicators.
+                        // Do NOT treat chartered note tracks (guitar/bass notes in MIDI) as audio stems.
                         bool isMultiTrack = false;
-                        if (title.IndexOf("stem", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            title.IndexOf("multitrack", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            (item.TryGetProperty("drivePath", out var dpP) && dpP.GetString()?.IndexOf("stem", StringComparison.OrdinalIgnoreCase) >= 0))
-                        {
-                            isMultiTrack = true;
-                        }
+                        string drivePath = item.TryGetProperty("drivePath", out var dpP) ? dpP.GetString() ?? "" : "";
+                        string driveFileName = item.TryGetProperty("driveFileName", out var dfnP) ? dfnP.GetString() ?? "" : "";
+                        string chartName = item.TryGetProperty("chartName", out var cnP) ? cnP.GetString() ?? "" : "";
+                        string packName = item.TryGetProperty("packName", out var pnP) ? pnP.GetString() ?? "" : "";
+                        string internalPath = item.TryGetProperty("internalPath", out var ipP) ? ipP.GetString() ?? "" : "";
 
-                        if (item.TryGetProperty("notesData", out var ndP) && ndP.ValueKind == JsonValueKind.Object)
-                        {
-                            if (ndP.TryGetProperty("instruments", out var insts) && insts.ValueKind == JsonValueKind.Array)
-                            {
-                                int instCount = 0;
-                                foreach (var _ in insts.EnumerateArray()) instCount++;
-                                if (instCount > 1) isMultiTrack = true;
-                            }
-                            if (ndP.TryGetProperty("hasVocals", out var hvP) && hvP.ValueKind == JsonValueKind.True)
-                            {
-                                isMultiTrack = true;
-                            }
-                        }
-
-                        if (diffBass >= 0 ||
-                            (item.TryGetProperty("diff_drums", out var ddP) && ddP.ValueKind == JsonValueKind.Number && ddP.GetInt32() >= 0) ||
-                            (item.TryGetProperty("diff_vocals", out var dvP) && dvP.ValueKind == JsonValueKind.Number && dvP.GetInt32() >= 0))
+                        string combinedAudioInfo = $"{title} {chartName} {drivePath} {driveFileName} {packName} {internalPath}";
+                        if (combinedAudioInfo.IndexOf("stem", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            combinedAudioInfo.IndexOf("multitrack", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            combinedAudioInfo.IndexOf("multi-track", StringComparison.OrdinalIgnoreCase) >= 0)
                         {
                             isMultiTrack = true;
                         }
@@ -155,7 +145,7 @@ namespace USM.Core.Services
                             Year = year,
                             Charter = charter,
                             Duration = durationStr,
-                            DurationSeconds = songLen,
+                            DurationSeconds = songLenSec,
                             DiffGuitar = diffGuitar,
                             DiffBass = diffBass,
                             PreviewStart = previewSec,
