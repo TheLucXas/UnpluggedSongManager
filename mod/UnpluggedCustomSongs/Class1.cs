@@ -305,15 +305,18 @@ namespace UnpluggedCustomSongs
         public static void PerformSongRefresh()
         {
             if (CustomSongLoader.CustomAlbumInstance == null) return;
-            int prevCount = CustomSongLoader.CustomAlbumInstance.SongFiles != null ? CustomSongLoader.CustomAlbumInstance.SongFiles.Count : 0;
             MelonLogger.Msg("[CustomSongs] Refreshing custom songs in real time...");
             CustomSongLoader.PopulateCustomSongs(CustomSongLoader.CustomAlbumInstance);
             int newCount = CustomSongLoader.CustomAlbumInstance.SongFiles != null ? CustomSongLoader.CustomAlbumInstance.SongFiles.Count : 0;
 
-            if (newCount != prevCount && StartSpace.I != null && StartSpace.I.gameObject.activeInHierarchy && StartSpace.I.songMenu != null)
+            if (StartSpace.I != null && StartSpace.I.gameObject.activeInHierarchy && StartSpace.I.songMenu != null)
             {
                 if (AlbumsManager.SelectedAlbum != null && AlbumsManager.SelectedAlbum.AlbumID == "CustomSongsAlbum")
                 {
+                    if (AlbumsManager.I != null)
+                    {
+                        AlbumsManager.I.CurrentAlbumSongs = CustomSongLoader.CustomAlbumInstance.SongsMetadata;
+                    }
                     StartSpace.I.songMenu.ChangeAlbum(CustomSongLoader.CustomAlbumInstance.SongsMetadata);
                     MelonLogger.Msg($"[CustomSongs] Turntable updated with {newCount} songs in real time!");
                 }
@@ -1146,9 +1149,11 @@ namespace UnpluggedCustomSongs
             {
                 if (!Directory.Exists(CustomSongsFolder)) Directory.CreateDirectory(CustomSongsFolder);
                 watcher = new FileSystemWatcher(CustomSongsFolder);
-                watcher.NotifyFilter = NotifyFilters.DirectoryName | NotifyFilters.FileName;
+                watcher.NotifyFilter = NotifyFilters.DirectoryName | NotifyFilters.FileName | NotifyFilters.LastWrite;
                 watcher.IncludeSubdirectories = true;
+                watcher.InternalBufferSize = 65536;
                 watcher.Created += (s, e) => ModMain.ScheduleReload();
+                watcher.Changed += (s, e) => ModMain.ScheduleReload();
                 watcher.Deleted += (s, e) => ModMain.ScheduleReload();
                 watcher.Renamed += (s, e) => ModMain.ScheduleReload();
                 watcher.EnableRaisingEvents = true;
@@ -1302,6 +1307,29 @@ namespace UnpluggedCustomSongs
                 {
                     MelonLogger.Error($"[CustomSongs] Error reading song folder {dir}: {ex}");
                 }
+            }
+
+            // Synchronize private songsMetadata field so AlbumData.SongsMetadata getter returns fresh list!
+            try
+            {
+                var freshList = new List<SongMappingMetaData>(album.builtInSongsMetadata);
+                Traverse.Create(album).Field("songsMetadata").SetValue(freshList);
+
+                if (CustomAlbumInstance != null && CustomAlbumInstance != album)
+                {
+                    CustomAlbumInstance.SongFiles = album.SongFiles;
+                    CustomAlbumInstance.builtInSongsMetadata = album.builtInSongsMetadata;
+                    Traverse.Create(CustomAlbumInstance).Field("songsMetadata").SetValue(new List<SongMappingMetaData>(freshList));
+                }
+
+                if (AlbumsManager.I != null && AlbumsManager.SelectedAlbum != null && AlbumsManager.SelectedAlbum.AlbumID == "CustomSongsAlbum")
+                {
+                    AlbumsManager.I.CurrentAlbumSongs = freshList;
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"[CustomSongs] Error syncing songsMetadata: {ex}");
             }
 
             UpdateAlbumCover(album as DLCAlbumData ?? CustomAlbumInstance);
@@ -1703,6 +1731,26 @@ namespace UnpluggedCustomSongs
                 return false;
             }
             return true;
+        }
+    }
+
+    [HarmonyPatch(typeof(StartSpace), "AlbumSelected")]
+    public static class Patch_StartSpace_AlbumSelected
+    {
+        public static void Prefix(AlbumData album)
+        {
+            try
+            {
+                if (album != null && album.AlbumID == "CustomSongsAlbum")
+                {
+                    MelonLogger.Msg("[CustomSongs] Custom Songs album selected on shelf! Rescanning CustomSongs folder...");
+                    CustomSongLoader.PopulateCustomSongs(album);
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"[CustomSongs] Error in AlbumSelected prefix: {ex}");
+            }
         }
     }
 
