@@ -69,14 +69,13 @@
                                VerticalAlignment="Center"
                                Margin="0,0,6,0" />
                     <ComboBox SelectedIndex="{Binding SelectedSortIndex}"
-                              Width="160"
+                              Width="140"
                               Height="32">
-                        <ComboBoxItem Content="⚡ Relevance (Default)" />
-                        <ComboBoxItem Content="🕒 Newest (Más Nuevas)" />
-                        <ComboBoxItem Content="🔤 Title (A - Z)" />
-                        <ComboBoxItem Content="👤 Artist (A - Z)" />
-                        <ComboBoxItem Content="📅 Year (Newest)" />
-                        <ComboBoxItem Content="⏳ Length (Longest)" />
+                        <ComboBoxItem Content="Relevance" />
+                        <ComboBoxItem Content="Newest" />
+                        <ComboBoxItem Content="Title (A - Z)" />
+                        <ComboBoxItem Content="Artist (A - Z)" />
+                        <ComboBoxItem Content="Duration" />
                     </ComboBox>
                 </StackPanel>
 
@@ -88,11 +87,11 @@
                                VerticalAlignment="Center"
                                Margin="0,0,6,0" />
                     <ComboBox SelectedIndex="{Binding SelectedTrackFilterIndex}"
-                              Width="155"
+                              Width="150"
                               Height="32">
-                        <ComboBoxItem Content="🌐 All Tracks" />
-                        <ComboBoxItem Content="🎛️ MultiTrack Only" />
-                        <ComboBoxItem Content="🎸 Single Track Only" />
+                        <ComboBoxItem Content="All Tracks" />
+                        <ComboBoxItem Content="MultiTrack Only" />
+                        <ComboBoxItem Content="Single Track Only" />
                     </ComboBox>
                 </StackPanel>
 
@@ -106,10 +105,10 @@
                     <ComboBox SelectedIndex="{Binding SelectedDifficultyFilterIndex}"
                               Width="155"
                               Height="32">
-                        <ComboBoxItem Content="🎯 All Difficulties" />
-                        <ComboBoxItem Content="🟢 Beginner (Tier 0-1)" />
-                        <ComboBoxItem Content="🟡 Intermediate (Tier 2-3)" />
-                        <ComboBoxItem Content="🔴 Expert (Tier 4+)" />
+                        <ComboBoxItem Content="All Difficulties" />
+                        <ComboBoxItem Content="Beginner (Tier 0-1)" />
+                        <ComboBoxItem Content="Intermediate (Tier 2-3)" />
+                        <ComboBoxItem Content="Expert (Tier 4+)" />
                     </ComboBox>
                 </StackPanel>
 
@@ -121,11 +120,11 @@
                                VerticalAlignment="Center"
                                Margin="0,0,6,0" />
                     <ComboBox SelectedIndex="{Binding SelectedStatusFilterIndex}"
-                              Width="145"
+                              Width="130"
                               Height="32">
-                        <ComboBoxItem Content="📦 All Status" />
-                        <ComboBoxItem Content="📥 Not Installed" />
-                        <ComboBoxItem Content="✓ Installed" />
+                        <ComboBoxItem Content="All Status" />
+                        <ComboBoxItem Content="Not Installed" />
+                        <ComboBoxItem Content="Installed" />
                     </ComboBox>
                 </StackPanel>
 

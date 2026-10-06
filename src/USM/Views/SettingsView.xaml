@@ -47,14 +47,11 @@
                     Padding="18,16"
                     Margin="0,0,0,12">
                 <StackPanel>
-                    <TextBlock Text="Unplugged VR Game Location"
+                    <TextBlock Text="Game Directory"
                                FontSize="16"
                                FontWeight="Bold"
-                               Foreground="{StaticResource BrushTextPrimary}" />
-                    <TextBlock Text="Root folder where Unplugged.exe is installed on your PC:"
-                               FontSize="12"
-                               Foreground="{StaticResource BrushTextSecondary}"
-                               Margin="0,3,0,12" />
+                               Foreground="{StaticResource BrushTextPrimary}"
+                               Margin="0,0,0,12" />
 
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -69,7 +66,7 @@
                                  Margin="0,0,10,0" />
 
                         <Button Grid.Column="1"
-                                Content="Browse Folder"
+                                Content="Browse"
                                 Command="{Binding BrowseGamePathCommand}"
                                 Padding="16,8"
                                 FontSize="12" />
@@ -92,14 +89,14 @@
                         </Grid.ColumnDefinitions>
 
                         <TextBlock Grid.Column="0"
-                                   Text="Modding &amp; Installation Status"
+                                   Text="Mod Installation Status"
                                    FontSize="16"
                                    FontWeight="Bold"
                                    Foreground="{StaticResource BrushTextPrimary}"
                                    VerticalAlignment="Center" />
 
                         <Button Grid.Column="1"
-                                Content="⚡ Install / Update Mod Plugin"
+                                Content="Install / Update Mod"
                                 Command="{Binding InstallModCommand}"
                                 Background="{StaticResource BrushAccentGreen}"
                                 Foreground="#000000"
@@ -111,37 +108,37 @@
                     <!-- Status Rows -->
                     <Grid Margin="0,4">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="260" />
+                            <ColumnDefinition Width="220" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="Unplugged.exe Executable:" Foreground="{StaticResource BrushTextSecondary}" />
+                        <TextBlock Grid.Column="0" Text="Game Executable:" Foreground="{StaticResource BrushTextSecondary}" />
                         <TextBlock Grid.Column="1" Text="{Binding IsGameFound, Converter={StaticResource StatusTextConv}}" Foreground="{Binding IsGameFound, Converter={StaticResource StatusColorConv}}" FontWeight="Bold" />
                     </Grid>
 
                     <Grid Margin="0,4">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="260" />
+                            <ColumnDefinition Width="220" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="MelonLoader (Mod Loader):" Foreground="{StaticResource BrushTextSecondary}" />
+                        <TextBlock Grid.Column="0" Text="MelonLoader:" Foreground="{StaticResource BrushTextSecondary}" />
                         <TextBlock Grid.Column="1" Text="{Binding IsMelonInstalled, Converter={StaticResource StatusTextConv}}" Foreground="{Binding IsMelonInstalled, Converter={StaticResource StatusColorConv}}" FontWeight="Bold" />
                     </Grid>
 
                     <Grid Margin="0,4">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="260" />
+                            <ColumnDefinition Width="220" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="UnpluggedCustomSongs.dll:" Foreground="{StaticResource BrushTextSecondary}" />
+                        <TextBlock Grid.Column="0" Text="Custom Songs Mod:" Foreground="{StaticResource BrushTextSecondary}" />
                         <TextBlock Grid.Column="1" Text="{Binding IsModInstalled, Converter={StaticResource StatusTextConv}}" Foreground="{Binding IsModInstalled, Converter={StaticResource StatusColorConv}}" FontWeight="Bold" />
                     </Grid>
 
                     <Grid Margin="0,4">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="260" />
+                            <ColumnDefinition Width="220" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="CustomSongs Library Folder:" Foreground="{StaticResource BrushTextSecondary}" />
+                        <TextBlock Grid.Column="0" Text="Custom Songs Folder:" Foreground="{StaticResource BrushTextSecondary}" />
                         <TextBlock Grid.Column="1" Text="{Binding IsCustomSongsReady, Converter={StaticResource StatusTextConv}}" Foreground="{Binding IsCustomSongsReady, Converter={StaticResource StatusColorConv}}" FontWeight="Bold" />
                     </Grid>
                 </StackPanel>
@@ -152,27 +149,25 @@
                     BorderBrush="{StaticResource BrushBorder}"
                     BorderThickness="1"
                     CornerRadius="12"
-                    Padding="18,16">
+                    Padding="18,16"
+                    Margin="0,0,0,12">
                 <StackPanel>
-                    <TextBlock Text="In-Game VR Mod Settings (MelonPreferences.cfg)"
+                    <TextBlock Text="In-Game Mod Settings"
                                FontSize="16"
                                FontWeight="Bold"
-                               Foreground="{StaticResource BrushTextPrimary}" />
-                    <TextBlock Text="These options are executed exclusively by the in-game plugin (UnpluggedCustomSongs.dll) when playing in VR. USM does not run Discord RPC."
-                               FontSize="12"
-                               Foreground="{StaticResource BrushTextSecondary}"
-                               Margin="0,3,0,14" />
+                               Foreground="{StaticResource BrushTextPrimary}"
+                               Margin="0,0,0,14" />
 
                     <!-- Discord RPC Checkbox -->
                     <CheckBox IsChecked="{Binding EnableDiscordRpc}"
-                              Content="Enable In-Game Discord Rich Presence (Shows custom song &amp; difficulty on Discord while playing)"
+                              Content="Discord Rich Presence"
                               Foreground="{StaticResource BrushTextPrimary}"
                               FontSize="13"
-                              Margin="0,0,0,10" />
+                              Margin="0,0,0,12" />
 
                     <!-- Verbose Debug Checkbox -->
                     <CheckBox IsChecked="{Binding EnableVerboseDebug}"
-                              Content="Verbose / Debug In-Game Logging (Log detailed chart &amp; audio loading in MelonLoader console)"
+                              Content="Verbose Logging"
                               Foreground="{StaticResource BrushTextPrimary}"
                               FontSize="13" />
                 </StackPanel>
@@ -183,26 +178,22 @@
                     BorderBrush="{StaticResource BrushBorder}"
                     BorderThickness="1"
                     CornerRadius="12"
-                    Padding="18,16"
-                    Margin="0,12,0,0">
+                    Padding="18,16">
                 <StackPanel>
-                    <TextBlock Text="Song Manager Download Preferences"
+                    <TextBlock Text="Download Preferences"
                                FontSize="16"
                                FontWeight="Bold"
-                               Foreground="{StaticResource BrushTextPrimary}" />
-                    <TextBlock Text="Configure parallel download and queue limits for Chorus Encore charts."
-                               FontSize="12"
-                               Foreground="{StaticResource BrushTextSecondary}"
-                               Margin="0,3,0,14" />
+                               Foreground="{StaticResource BrushTextPrimary}"
+                               Margin="0,0,0,14" />
 
                     <Grid Margin="0,4">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="260" />
-                            <ColumnDefinition Width="100" />
+                            <ColumnDefinition Width="220" />
+                            <ColumnDefinition Width="90" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0"
-                                   Text="Max Concurrent Downloads (1-99):"
+                                   Text="Max Concurrent Downloads:"
                                    Foreground="{StaticResource BrushTextSecondary}"
                                    VerticalAlignment="Center" />
 
@@ -273,13 +264,6 @@
                                 </Border>
                             </Grid>
                         </Border>
-
-                        <TextBlock Grid.Column="2"
-                                   Text="(Default: 5 - parallel chart downloads from Chorus Encore)"
-                                   Foreground="{StaticResource BrushTextMuted}"
-                                   FontSize="12"
-                                   VerticalAlignment="Center"
-                                   Margin="14,0,0,0" />
                     </Grid>
                 </StackPanel>
             </Border>

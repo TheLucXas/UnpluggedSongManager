@@ -51,7 +51,11 @@ namespace USM.ViewModels
             {
                 if (SetProperty(ref _selectedSortIndex, value))
                 {
-                    if (_rawCharts.Count > 0 || !string.IsNullOrWhiteSpace(SearchQuery))
+                    if (_rawCharts.Count > 0)
+                    {
+                        ApplyFilterAndSort();
+                    }
+                    else if (!string.IsNullOrWhiteSpace(SearchQuery))
                     {
                         _ = PerformSearchAsync();
                     }
@@ -141,33 +145,16 @@ namespace USM.ViewModels
             string? sortType = null;
             string? sortDirection = null;
 
-            switch (SelectedSortIndex)
+            // When browsing latest without specific keyword query, request newest from server
+            if (SelectedSortIndex == 1 && (query == "*" || string.IsNullOrWhiteSpace(SearchQuery)))
             {
-                case 1: // Newest / Recientes
-                    sortType = "modifiedTime";
-                    sortDirection = "desc";
-                    break;
-                case 2: // Title (A-Z)
-                    sortType = "name";
-                    sortDirection = "asc";
-                    break;
-                case 3: // Artist (A-Z)
-                    sortType = "artist";
-                    sortDirection = "asc";
-                    break;
-                case 4: // Year
-                    sortType = "year";
-                    sortDirection = "desc";
-                    break;
-                case 5: // Length
-                    sortType = "length";
-                    sortDirection = "desc";
-                    break;
+                sortType = "modifiedTime";
+                sortDirection = "desc";
             }
 
             try
             {
-                var (total, charts) = await ChorusClient.SearchAsync(query, 1, 40, "guitar", sortType, sortDirection);
+                var (total, charts) = await ChorusClient.SearchAsync(query, 1, 50, "guitar", sortType, sortDirection);
 
                 _rawCharts.Clear();
                 string? customSongsDir = _gameDetector.GetCustomSongsDir();
@@ -247,6 +234,51 @@ namespace USM.ViewModels
             else if (SelectedStatusFilterIndex == 2) // Installed Only
             {
                 filtered = System.Linq.Enumerable.Where(filtered, c => c.IsInstalled);
+            }
+
+            // Sorting
+            string q = string.IsNullOrWhiteSpace(SearchQuery) || SearchQuery == "*" ? "" : SearchQuery.Trim().ToLowerInvariant();
+
+            switch (SelectedSortIndex)
+            {
+                case 1: // Newest
+                    filtered = System.Linq.Enumerable.OrderByDescending(filtered, c => c.ModifiedTime ?? DateTime.MinValue);
+                    break;
+
+                case 2: // Title (A - Z) with smart match prioritization
+                    filtered = System.Linq.Enumerable.ThenBy(
+                        System.Linq.Enumerable.OrderBy(filtered, c =>
+                        {
+                            if (string.IsNullOrEmpty(q)) return 0;
+                            string title = (c.Title ?? "").ToLowerInvariant().Trim();
+                            if (title.StartsWith(q)) return 0;
+                            if (title.Contains(q)) return 1;
+                            return 2;
+                        }),
+                        c => c.Title,
+                        StringComparer.OrdinalIgnoreCase);
+                    break;
+
+                case 3: // Artist (A - Z) with smart match prioritization
+                    filtered = System.Linq.Enumerable.ThenBy(
+                        System.Linq.Enumerable.OrderBy(filtered, c =>
+                        {
+                            if (string.IsNullOrEmpty(q)) return 0;
+                            string artist = (c.Artist ?? "").ToLowerInvariant().Trim();
+                            if (artist.StartsWith(q)) return 0;
+                            if (artist.Contains(q)) return 1;
+                            return 2;
+                        }),
+                        c => c.Artist,
+                        StringComparer.OrdinalIgnoreCase);
+                    break;
+
+                case 4: // Duration (Longest)
+                    filtered = System.Linq.Enumerable.OrderByDescending(filtered, c => c.DurationSeconds);
+                    break;
+
+                default: // 0 = Relevance (Preserve search relevance from server)
+                    break;
             }
 
             foreach (var chart in filtered)
