@@ -621,7 +621,8 @@ namespace UnpluggedCustomSongs
             }
 
             GUI.Label(new Rect(15, 12, Screen.width - 30, 22), "<b>[WASD/QE]</b> Move | <b>[Right Click + Mouse]</b> Look | <b>[Left Click]</b> Press Button | <b>[Z/X or ←/→]</b> Change Song" + currentSongText);
-            GUI.Label(new Rect(15, 34, Screen.width - 30, 22), $"<b>[1 or Enter]</b> Start | <b>[2]</b> AutoPlay: {(AutoPlay ? "<color=green>ON</color>" : "<color=yellow>MANUAL</color>")} | <b>[Space]</b> Strum | <b>[3]</b> Skip Intro | <b>[End/N]</b> Finish Song | <b>[Tab]</b> Buttons | <b>[F1]</b> Debug");
+            string modeLabel = GamePreferences.Load(UnpluggedInfo.IndexHandsMode, defaultValue: false) ? "<color=#FFD700>HANDS</color>" : "<color=#00E5FF>CONTROLLER</color>";
+            GUI.Label(new Rect(15, 34, Screen.width - 30, 22), $"<b>[1 or Enter]</b> Start | <b>[2]</b> AutoPlay: {(AutoPlay ? "<color=green>ON</color>" : "<color=yellow>MANUAL</color>")} | <b>[H]</b> Mode: {modeLabel} | <b>[Space]</b> Strum | <b>[3]</b> Skip Intro | <b>[End/N]</b> Finish | <b>[Tab]</b> Buttons | <b>[F1]</b> Debug");
 
             if (IntroSkipManager.CanSkip && !IntroSkipManager.HasSkipped)
             {
@@ -808,6 +809,7 @@ namespace UnpluggedCustomSongs
         //   - [1] / [Enter]    : Confirm floating pick / Start Song
         //   - [2]              : Toggle AutoPlay Bot (Green = ON, Yellow = MANUAL)
         //   - [3]              : Skip Intro Silence (fast-forward to 2.5s before 1st note)
+        //   - [H]              : Toggle Gameplay Mode (Hands Mode vs Controller Mode)
         //   - [Space] / [Down] : Strum guitar (test hit)
         //   - [End] / [N]      : Finish / Skip current song to score screen
         //   - [Esc] / [P]      : Pause / Resume song
@@ -863,6 +865,16 @@ namespace UnpluggedCustomSongs
                 {
                     LoggerInstance.Msg("[CustomSongs] Key [3]: Skip Intro not available (not in intro or already skipped).");
                 }
+            }
+
+            // [H]: Toggle Hands Mode vs Controller Mode (Index Hands vs Mandos)
+            if (Input.GetKeyDown(KeyCode.H))
+            {
+                bool currentMode = GamePreferences.Load(UnpluggedInfo.IndexHandsMode, defaultValue: false);
+                bool newMode = !currentMode;
+                GamePreferences.Save(UnpluggedInfo.IndexHandsMode, (object)newMode, true);
+                string modeStr = newMode ? "HANDS / INDEX TRACKING MODE" : "CONTROLLER / MANDOS MODE";
+                LoggerInstance.Msg($"[CustomSongs] Key [H]: Switched gameplay mode to: {modeStr}. (Select a song or restart track to apply)");
             }
 
             // [4]: Reset Audio Settings to Windows Default
@@ -2496,7 +2508,7 @@ namespace UnpluggedCustomSongs
                 if (_promptText != null)
                 {
                     _promptText.fontSize = 1.45f;
-                    _promptText.text = "<b>PRESS BOTH TRIGGERS (L2 + R2) TO SKIP INTRO</b>\n<size=65%><color=#DCE0E6>Fast-forward intro silence to the first note</color></size>";
+                    _promptText.text = "<b>PRESS BOTH TRIGGERS (L2 + R2) TO SKIP INTRO</b>";
                 }
 
                 Camera cam = CameraManager.Main != null ? CameraManager.Main : Camera.main;
