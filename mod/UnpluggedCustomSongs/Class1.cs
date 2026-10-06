@@ -317,9 +317,48 @@ namespace UnpluggedCustomSongs
                     {
                         AlbumsManager.I.CurrentAlbumSongs = CustomSongLoader.CustomAlbumInstance.SongsMetadata;
                     }
+
+                    int targetIndex = CustomSongLoader.GetLatestSongIndex();
+                    if (targetIndex >= 0)
+                    {
+                        StartSpace.I.songMenu.InitialOffset = targetIndex;
+                        string sName = targetIndex < CustomSongLoader.CustomAlbumInstance.builtInSongsMetadata.Count
+                            ? CustomSongLoader.CustomAlbumInstance.builtInSongsMetadata[targetIndex].SongName
+                            : $"Index {targetIndex}";
+                        MelonLogger.Msg($"[CustomSongs] Auto-selecting newest song: '{sName}' (Index {targetIndex})");
+                    }
+
                     StartSpace.I.songMenu.ChangeAlbum(CustomSongLoader.CustomAlbumInstance.SongsMetadata);
                     MelonLogger.Msg($"[CustomSongs] Turntable updated with {newCount} songs in real time!");
+
+                    if (targetIndex >= 0)
+                    {
+                        MelonCoroutines.Start(PostReloadFocus(targetIndex));
+                    }
                 }
+            }
+        }
+
+        private static IEnumerator PostReloadFocus(int targetIndex)
+        {
+            yield return new WaitForSeconds(0.65f);
+            try
+            {
+                if (StartSpace.I != null && StartSpace.I.songMenu != null && AlbumsManager.SelectedAlbum != null && AlbumsManager.SelectedAlbum.AlbumID == "CustomSongsAlbum")
+                {
+                    var meta = CustomSongLoader.CustomAlbumInstance?.builtInSongsMetadata;
+                    if (meta != null && targetIndex >= 0 && targetIndex < meta.Count)
+                    {
+                        var selectedMeta = meta[targetIndex];
+                        VinylCoverHelper.UpdateTurntableVinyl(selectedMeta);
+                        Traverse.Create(StartSpace.I).Method("SongMenu_SelectedSongChanged", selectedMeta).GetValue();
+                        MelonLogger.Msg($"[CustomSongs] Successfully confirmed focus on newest song: {selectedMeta.SongName}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[CustomSongs] PostReloadFocus error: {ex.Message}");
             }
         }
 
@@ -1702,6 +1741,68 @@ namespace UnpluggedCustomSongs
             }
             return www.GetAudioClip(false, false, AudioType.MPEG);
         }
+
+        public static DateTime GetSongFolderTimestamp(string dir)
+        {
+            try
+            {
+                DateTime latest = Directory.GetLastWriteTimeUtc(dir);
+                DateTime created = Directory.GetCreationTimeUtc(dir);
+                if (created > latest) latest = created;
+
+                string dataXml = Path.Combine(dir, "data.xml");
+                if (File.Exists(dataXml))
+                {
+                    DateTime xmlTime = File.GetLastWriteTimeUtc(dataXml);
+                    if (xmlTime > latest) latest = xmlTime;
+                }
+
+                string songIni = Path.Combine(dir, "song.ini");
+                if (File.Exists(songIni))
+                {
+                    DateTime iniTime = File.GetLastWriteTimeUtc(songIni);
+                    if (iniTime > latest) latest = iniTime;
+                }
+
+                return latest;
+            }
+            catch
+            {
+                return DateTime.MinValue;
+            }
+        }
+
+        public static int GetLatestSongIndex()
+        {
+            if (CustomAlbumInstance == null || CustomAlbumInstance.builtInSongsMetadata == null || CustomAlbumInstance.builtInSongsMetadata.Count == 0)
+                return -1;
+
+            if (!Directory.Exists(CustomSongsFolder))
+                return -1;
+
+            try
+            {
+                var dirs = Directory.GetDirectories(CustomSongsFolder);
+                if (dirs.Length == 0) return -1;
+
+                string newestDir = dirs
+                    .OrderByDescending(GetSongFolderTimestamp)
+                    .FirstOrDefault();
+
+                if (string.IsNullOrEmpty(newestDir)) return -1;
+
+                string folderName = Path.GetFileName(newestDir);
+                int index = CustomAlbumInstance.builtInSongsMetadata.FindIndex(
+                    m => string.Equals(m.FileName, folderName, StringComparison.OrdinalIgnoreCase));
+
+                return index;
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[CustomSongs] Error finding newest song index: {ex.Message}");
+                return -1;
+            }
+        }
     }
 
     [HarmonyPatch(typeof(AlbumsManager), "Awake")]
@@ -1745,6 +1846,12 @@ namespace UnpluggedCustomSongs
                 {
                     MelonLogger.Msg("[CustomSongs] Custom Songs album selected on shelf! Rescanning CustomSongs folder...");
                     CustomSongLoader.PopulateCustomSongs(album);
+
+                    int targetIndex = CustomSongLoader.GetLatestSongIndex();
+                    if (targetIndex >= 0 && StartSpace.I != null && StartSpace.I.songMenu != null)
+                    {
+                        StartSpace.I.songMenu.InitialOffset = targetIndex;
+                    }
                 }
             }
             catch (Exception ex)
