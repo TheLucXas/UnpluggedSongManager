@@ -66,6 +66,21 @@ namespace USM.ViewModels
                     return;
                 }
 
+                // Clean up any lingering zombie crash handlers from previous runs that lock Steam
+                try
+                {
+                    foreach (var crashProc in Process.GetProcessesByName("UnityCrashHandler64"))
+                    {
+                        try
+                        {
+                            crashProc.Kill();
+                            crashProc.WaitForExit(1000);
+                        }
+                        catch { }
+                    }
+                }
+                catch { }
+
                 Notify("Launching Unplugged VR via Steam...");
 
                 // 1. Try launching through Steam URL protocol (App ID 1623390)
