@@ -2585,27 +2585,50 @@ namespace UnpluggedCustomSongs
                 var mp = GameManager.I.musicPlayer;
                 float target = SkipTargetTime;
 
+                // 1. Cancel any pending delayed start coroutine so it cannot overwrite time or reset playback
+                try { mp.StopAllCoroutines(); } catch { }
+
+                // 2. Immediately start master audio source if not playing and seek to target
                 if (mp.MusicAudioSource != null)
                 {
+                    if (!mp.MusicAudioSource.isPlaying)
+                    {
+                        mp.MusicAudioSource.Play();
+                    }
                     mp.MusicAudioSource.time = target;
                 }
-                mp.CurrentTime = target;
-                mp.SongTimeDelayCounter = GameManager.I.StartDelay + target;
 
+                // 3. Immediately start all multitrack stem audio sources and sync sample clocks
                 if (mp.AudioSources != null)
                 {
                     foreach (var src in mp.AudioSources)
                     {
                         if (src != null && src.clip != null)
                         {
-                            src.time = target;
+                            if (!src.isPlaying) src.Play();
+                            if (mp.MusicAudioSource != null && mp.MusicAudioSource.clip != null)
+                            {
+                                src.timeSamples = mp.MusicAudioSource.timeSamples;
+                            }
+                            else
+                            {
+                                src.time = target;
+                            }
                         }
                     }
                 }
 
+                // 4. Update internal player clock and delay counter to target
+                mp.CurrentTime = target;
+                mp.SongTimeDelayCounter = GameManager.I.StartDelay + target;
+
+                // 5. Update timeline and flush upcoming notes onto the highway
                 if (GameManager.I.TimelineManager != null)
                 {
-                    GameManager.I.TimelineManager.SetTime(target);
+                    for (int i = 0; i < 5; i++)
+                    {
+                        GameManager.I.TimelineManager.SetTime(target);
+                    }
                 }
 
                 try
