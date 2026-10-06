@@ -612,11 +612,12 @@ namespace UnpluggedCustomSongs
             // ---- HUD help ----
             GUI.color = Color.white;
             string vol = ForcedGuitarVolume >= 0f ? $"<color=yellow>FORZADO {ForcedGuitarVolume:P0}</color>" : "normal";
+            SongMappingMetaData sel = GameManager.CurrentSongData != null ? GameManager.CurrentSongData : GetSafeSelectedSong();
             string currentSongText = "";
-            SongMappingMetaData sel = GetSafeSelectedSong();
             if (sel != null)
             {
-                currentSongText = $" | Vinyl: <color=cyan><b>{sel.BandName} - {sel.SongName}</b></color>";
+                string trackType = sel.IsMultiTrack ? "<color=#00FF66>[MultiTrack: YES]</color>" : "<color=#FFAA00>[MultiTrack: NO]</color>";
+                currentSongText = $" | Song: <color=cyan><b>{sel.BandName} - {sel.SongName}</b></color> {trackType}";
             }
 
             GUI.Label(new Rect(15, 12, Screen.width - 30, 22), "<b>[WASD/QE]</b> Move | <b>[Right Click + Mouse]</b> Look | <b>[Left Click]</b> Press Button | <b>[Z/X or ←/→]</b> Change Song" + currentSongText);
@@ -624,13 +625,13 @@ namespace UnpluggedCustomSongs
 
             if (IntroSkipManager.CanSkip && !IntroSkipManager.HasSkipped)
             {
-                float bw = 640f;
-                float bh = 38f;
-                Rect skipRect = new Rect((Screen.width - bw) / 2f, Screen.height - 75f, bw, bh);
+                float bw = 560f;
+                float bh = 34f;
+                Rect skipRect = new Rect((Screen.width - bw) / 2f, Screen.height - 70f, bw, bh);
                 GUI.Box(skipRect, "");
                 var oldC = GUI.color;
                 GUI.color = new Color(1f, 0.88f, 0.2f);
-                GUI.Label(skipRect, "<b>⚡ PRESS BOTH TRIGGERS (L2 + R2) OR [3] TO SKIP INTRO SILENCE ⚡</b>");
+                GUI.Label(skipRect, "<b>PRESS BOTH TRIGGERS (L2 + R2) OR [3] TO SKIP INTRO SILENCE</b>");
                 GUI.color = oldC;
             }
 
@@ -2474,12 +2475,28 @@ namespace UnpluggedCustomSongs
                     _promptObj = new GameObject("SkipIntroPrompt");
                     UnityEngine.Object.DontDestroyOnLoad(_promptObj);
                     _promptText = _promptObj.AddComponent<TextMeshPro>();
-                    _promptText.fontSize = 2.2f;
+                    _promptText.fontSize = 1.45f;
                     _promptText.alignment = TextAlignmentOptions.Center;
-                    _promptText.color = new Color(1f, 0.88f, 0.2f);
+                    _promptText.color = new Color(1f, 0.86f, 0.2f);
                     _promptText.outlineColor = Color.black;
-                    _promptText.outlineWidth = 0.28f;
-                    _promptText.text = "⚡ PRESS BOTH TRIGGERS (L2 + R2) TO SKIP INTRO ⚡\n<size=65%>Fast-forward intro silence to 2.5s before first note [or press 3 on PC]</size>";
+                    _promptText.outlineWidth = 0.26f;
+                    try
+                    {
+                        var mat = _promptText.fontMaterial ?? _promptText.fontSharedMaterial;
+                        if (mat != null)
+                        {
+                            mat.EnableKeyword(ShaderUtilities.Keyword_Outline);
+                            mat.SetColor(ShaderUtilities.ID_OutlineColor, Color.black);
+                            mat.SetFloat(ShaderUtilities.ID_OutlineWidth, 0.26f);
+                        }
+                    }
+                    catch { }
+                }
+
+                if (_promptText != null)
+                {
+                    _promptText.fontSize = 1.45f;
+                    _promptText.text = "<b>PRESS BOTH TRIGGERS (L2 + R2) TO SKIP INTRO</b>\n<size=65%><color=#DCE0E6>Fast-forward intro silence to the first note</color></size>";
                 }
 
                 Camera cam = CameraManager.Main != null ? CameraManager.Main : Camera.main;
