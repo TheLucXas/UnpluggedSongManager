@@ -238,9 +238,104 @@ namespace USM.Core.Services.Quest
             log?.Invoke("Quest storage permissions and directories ready.");
         }
 
+        public async Task<string?> GetPackageVersionAsync(string serial, string packageName)
+        {
+            var (exitCode, stdout, _) = await RunProcessAsync(GetAdbPath(), $"-s {serial} shell dumpsys package {packageName}");
+            if (exitCode == 0 && !string.IsNullOrWhiteSpace(stdout))
+            {
+                var match = Regex.Match(stdout, @"versionName=([^\s\r\n]+)");
+                if (match.Success)
+                {
+                    return match.Groups[1].Value;
+                }
+            }
+            return null;
+        }
+
+        public async Task<(bool Success, string Message)> UninstallModdedPackageAsync(string serial, Action<string>? log = null)
+        {
+            log?.Invoke($"Uninstalling {ModdedPackage} from Quest headset...");
+            var (exitCode, stdout, stderr) = await RunProcessAsync(GetAdbPath(), $"-s {serial} uninstall {ModdedPackage}");
+            string output = (stdout + " " + stderr).Trim();
+            bool success = output.Contains("Success", StringComparison.OrdinalIgnoreCase);
+            if (success)
+            {
+                log?.Invoke("Modded package uninstalled successfully.");
+                // Clean up OBB and app data
+                await RunProcessAsync(GetAdbPath(), $"-s {serial} shell rm -rf /sdcard/Android/obb/{ModdedPackage}");
+                await RunProcessAsync(GetAdbPath(), $"-s {serial} shell rm -rf /sdcard/Android/data/{ModdedPackage}");
+                return (true, "Uninstalled successfully.");
+            }
+            log?.Invoke($"Failed to uninstall: {output}");
+            return (false, output);
+        }
+
+        public static string GenerateUnlockedSavePayload()
+        {
+            // Encrypted save data that marks tutorial completed, intro skipped, and unlocks base campaign albums 1-5
+            string plainJson = "{\"SavedData\":{" +
+                "\"HasDoneTutorial\":{\"Type\":\"System.Boolean, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\",\"JsonValue\":\"true\"}," +
+                "\"ShowIntro\":{\"Type\":\"System.Boolean, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\",\"JsonValue\":\"false\"}," +
+                "\"isReleaseVersion\":{\"Type\":\"System.Boolean, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\",\"JsonValue\":\"true\"}," +
+                "\"AlbumCompleted\":{\"Type\":\"System.Collections.Generic.List`1[[System.String, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089]], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\",\"JsonValue\":\"[\\\"CampaignAlbum1\\\",\\\"CampaignAlbum2\\\",\\\"CampaignAlbum3\\\",\\\"CampaignAlbum4\\\",\\\"CampaignAlbum5\\\"]\"}," +
+                "\"Fans\":{\"Type\":\"System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\",\"JsonValue\":\"5000000\"}," +
+                "\"PlayedSongs\":{\"Type\":\"System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\",\"JsonValue\":\"10\"}," +
+                "\"PurchasedGuitars\":{\"Type\":\"System.Collections.Generic.List`1[[System.String, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089]], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\",\"JsonValue\":\"[\\\"SchecterGuitar1\\\",\\\"SchecterGuitar2\\\",\\\"SchecterGuitar3\\\"]\"}," +
+                "\"PurchasedPicks\":{\"Type\":\"System.Collections.Generic.List`1[[System.String, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089]], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\",\"JsonValue\":\"[\\\"DefaultPick1\\\",\\\"DefaultPick2\\\"]\"}," +
+                "\"SelectedAlbumID\":{\"Type\":\"System.String, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\",\"JsonValue\":\"\\\"CampaignAlbum1\\\"\"}" +
+                "}}";
+
+            return EncryptSaveData("b14ca5898a4e4133bbce2ea2315a1916", plainJson);
+        }
+
+        private static string EncryptSaveData(string key, string plainText)
+        {
+            byte[] iv = new byte[16];
+            using var aes = System.Security.Cryptography.Aes.Create();
+            aes.Key = System.Text.Encoding.UTF8.GetBytes(key);
+            aes.IV = iv;
+            using var transform = aes.CreateEncryptor(aes.Key, aes.IV);
+            using var ms = new MemoryStream();
+            using (var cs = new System.Security.Cryptography.CryptoStream(ms, transform, System.Security.Cryptography.CryptoStreamMode.Write))
+            using (var sw = new StreamWriter(cs))
+            {
+                sw.Write(plainText);
+            }
+            return Convert.ToBase64String(ms.ToArray());
+        }
+
+        public async Task SetupUnlockedSaveDataAsync(string serial, string packageName, Action<string>? log = null)
+        {
+            try
+            {
+                log?.Invoke("Injecting unlocked save data (Tutorial Skipped + Campaign Albums 1-5 Unlocked)...");
+                string encryptedData = GenerateUnlockedSavePayload();
+                string tempFile = Path.Combine(Path.GetTempPath(), "SavedData.json");
+                await File.WriteAllTextAsync(tempFile, encryptedData);
+
+                // Push to Android/data persistentDataPath
+                string targetPath1 = $"/sdcard/Android/data/{packageName}/files";
+                await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p {targetPath1}");
+                await RunProcessAsync(GetAdbPath(), $"-s {serial} push \"{tempFile}\" \"{targetPath1}/SavedData.json\"");
+
+                // Also push to ModData as fallback
+                string targetPath2 = $"/sdcard/ModData/{packageName}/files";
+                await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p {targetPath2}");
+                await RunProcessAsync(GetAdbPath(), $"-s {serial} push \"{tempFile}\" \"{targetPath2}/SavedData.json\"");
+
+                try { File.Delete(tempFile); } catch { }
+                log?.Invoke("Tutorial skipped and base campaign venues unlocked on Quest!");
+            }
+            catch (Exception ex)
+            {
+                log?.Invoke($"Warning: Could not inject unlocked save data: {ex.Message}");
+            }
+        }
+
         public async Task<bool> PatchAndDeployAsync(
             string? serial,
             string? customSourceApk,
+            bool skipTutorialAndUnlock,
             IProgress<(int Percent, string Status)> progress,
             Action<string> log,
             CancellationToken cancellationToken)
@@ -427,6 +522,12 @@ namespace USM.Core.Services.Quest
 
                 progress.Report((98, "Configuring storage permissions..."));
                 await GrantStoragePermissionsAsync(serial, ModdedPackage, log);
+
+                if (skipTutorialAndUnlock)
+                {
+                    progress.Report((99, "Configuring unlocked campaign & skipping tutorial..."));
+                    await SetupUnlockedSaveDataAsync(serial, ModdedPackage, log);
+                }
             }
             else
             {

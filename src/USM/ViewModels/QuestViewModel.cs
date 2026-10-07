@@ -113,8 +113,51 @@ namespace USM.ViewModels
         public bool IsModdedInstalled
         {
             get => _isModdedInstalled;
-            set => SetProperty(ref _isModdedInstalled, value);
+            set
+            {
+                if (SetProperty(ref _isModdedInstalled, value))
+                {
+                    OnPropertyChanged(nameof(CanUninstallModded));
+                }
+            }
         }
+
+        private bool _skipTutorialAndUnlock = true;
+        public bool SkipTutorialAndUnlock
+        {
+            get => _skipTutorialAndUnlock;
+            set => SetProperty(ref _skipTutorialAndUnlock, value);
+        }
+
+        private string _patchButtonText = "🚀 Parchear e Instalar 'Unplugged Modded'";
+        public string PatchButtonText
+        {
+            get => _patchButtonText;
+            set => SetProperty(ref _patchButtonText, value);
+        }
+
+        private string _patchButtonDescription = "Extrae el juego de tu Quest, lo clona en una app independiente ('Unplugged Modded') con soporte de custom songs y omisión de tutorial, y lo instala junto a tu juego original.";
+        public string PatchButtonDescription
+        {
+            get => _patchButtonDescription;
+            set => SetProperty(ref _patchButtonDescription, value);
+        }
+
+        private string? _originalVersion;
+        public string? OriginalVersion
+        {
+            get => _originalVersion;
+            set => SetProperty(ref _originalVersion, value);
+        }
+
+        private string? _moddedVersion;
+        public string? ModdedVersion
+        {
+            get => _moddedVersion;
+            set => SetProperty(ref _moddedVersion, value);
+        }
+
+        public bool CanUninstallModded => IsDeviceConnected && IsModdedInstalled;
 
         public bool UseCustomApk
         {
@@ -151,6 +194,7 @@ namespace USM.ViewModels
         public ICommand ConnectWirelessCommand { get; }
         public ICommand BrowseApkCommand { get; }
         public ICommand StartPatchCommand { get; }
+        public ICommand UninstallModdedCommand { get; }
         public ICommand SyncSongsCommand { get; }
         public ICommand ClearLogsCommand { get; }
 
@@ -164,6 +208,7 @@ namespace USM.ViewModels
             ConnectWirelessCommand = new AsyncRelayCommand(_ => ConnectWirelessAsync(), _ => !IsBusy && !string.IsNullOrWhiteSpace(WirelessIp));
             BrowseApkCommand = new RelayCommand(BrowseApk, _ => !IsBusy);
             StartPatchCommand = new AsyncRelayCommand(_ => StartPatchPipelineAsync(), _ => !IsBusy && (IsDeviceConnected || (!string.IsNullOrEmpty(CustomApkPath) && File.Exists(CustomApkPath))));
+            UninstallModdedCommand = new AsyncRelayCommand(_ => UninstallModdedAsync(), _ => !IsBusy && IsDeviceConnected && IsModdedInstalled);
             SyncSongsCommand = new AsyncRelayCommand(_ => SyncSongsAsync(), _ => !IsBusy && IsDeviceConnected && LocalSongCount > 0);
             ClearLogsCommand = new RelayCommand(ClearLogs);
 
@@ -258,6 +303,10 @@ namespace USM.ViewModels
                 PackageStatusText = "No Quest headset connected.";
                 IsOriginalInstalled = false;
                 IsModdedInstalled = false;
+                OriginalVersion = null;
+                ModdedVersion = null;
+                PatchButtonText = "🚀 Parchear e Instalar 'Unplugged Modded'";
+                PatchButtonDescription = "Extrae el juego de tu Quest, lo clona en una app independiente ('Unplugged Modded') con soporte de custom songs y omisión de tutorial, y lo instala junto a tu juego original.";
                 return;
             }
 
@@ -276,27 +325,67 @@ namespace USM.ViewModels
                 IsOriginalInstalled = await _questService.IsPackageInstalledAsync(SelectedDevice.Serial, QuestService.OriginalPackage);
                 IsModdedInstalled = await _questService.IsPackageInstalledAsync(SelectedDevice.Serial, QuestService.ModdedPackage);
 
-                var sb = new StringBuilder();
                 if (IsOriginalInstalled)
                 {
-                    sb.Append("✔ Stock Unplugged detected (com.Anotherway.UnpluggedVR). ");
+                    OriginalVersion = await _questService.GetPackageVersionAsync(SelectedDevice.Serial, QuestService.OriginalPackage);
                 }
                 else
                 {
-                    sb.Append("❌ Stock Unplugged not found. ");
+                    OriginalVersion = null;
                 }
 
                 if (IsModdedInstalled)
                 {
-                    sb.Append("✔ Modded Unplugged installed (com.Anotherway.UnpluggedVR.modded).");
+                    ModdedVersion = await _questService.GetPackageVersionAsync(SelectedDevice.Serial, QuestService.ModdedPackage);
                 }
                 else
                 {
-                    sb.Append("⚪ Modded Unplugged not installed yet.");
+                    ModdedVersion = null;
+                }
+
+                var sb = new StringBuilder();
+                if (IsOriginalInstalled)
+                {
+                    sb.Append($"✔ Stock Unplugged detectado{(OriginalVersion != null ? $" (v{OriginalVersion})" : "")}. ");
+                }
+                else
+                {
+                    sb.Append("❌ Stock Unplugged no encontrado. ");
+                }
+
+                if (IsModdedInstalled)
+                {
+                    sb.Append($"✔ Modded Unplugged instalado{(ModdedVersion != null ? $" (v{ModdedVersion})" : "")}.");
+                }
+                else
+                {
+                    sb.Append("⚪ Modded Unplugged no instalado aún.");
                 }
 
                 PackageStatusText = sb.ToString();
                 AppendLog($"Quest Packages Status: {PackageStatusText}");
+
+                // Dynamic button text & description based on installed state & versions
+                if (!IsModdedInstalled)
+                {
+                    PatchButtonText = "🚀 Parchear e Instalar 'Unplugged Modded'";
+                    PatchButtonDescription = "Extrae el juego de tu Quest, lo clona en una app independiente ('Unplugged Modded') con soporte de custom songs y omisión de tutorial, y lo instala junto a tu juego original.";
+                }
+                else
+                {
+                    if (!string.IsNullOrEmpty(OriginalVersion) && !string.IsNullOrEmpty(ModdedVersion) && !OriginalVersion.Equals(ModdedVersion, StringComparison.OrdinalIgnoreCase))
+                    {
+                        PatchButtonText = "🔄 Actualizar 'Unplugged Modded'";
+                        PatchButtonDescription = $"Hay una actualización del juego oficial (v{OriginalVersion} vs Mod v{ModdedVersion}). Vuelve a parchear para mantener la versión al día.";
+                    }
+                    else
+                    {
+                        PatchButtonText = "🔨 Reinstalar / Reparar 'Unplugged Modded'";
+                        PatchButtonDescription = $"La app modeada ya está instalada en tu visor{(ModdedVersion != null ? $" (v{ModdedVersion})" : "")}. Puedes repararla o reinstalarla para restaurar archivos o aplicar cambios.";
+                    }
+                }
+
+                OnPropertyChanged(nameof(CanUninstallModded));
             }
             catch (Exception ex)
             {
@@ -329,15 +418,16 @@ namespace USM.ViewModels
 
             if (string.IsNullOrEmpty(serial) && string.IsNullOrEmpty(customApk))
             {
-                MessageBox.Show("Please connect a Quest device or select a valid local APK.", "Quest Patcher", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Por favor conecta un visor Quest o selecciona un APK local válido.", "Quest Patcher", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
+            string actionMsg = IsModdedInstalled ? "reinstalar / actualizar" : "parchear y clonar";
             var confirm = MessageBox.Show(
-                "This will patch and clone Unplugged: Air Guitar into a standalone modded app ('Unplugged Modded')\n" +
-                "coexisting alongside your stock game with full custom song storage support.\n\n" +
-                "Do you want to proceed?",
-                "Confirm Quest Patching",
+                $"Esto va a {actionMsg} Unplugged: Air Guitar como app independiente ('Unplugged Modded')\n" +
+                $"que coexistirá con el juego original, con soporte de Custom Songs{(SkipTutorialAndUnlock ? " y tutorial omitido (campaña desbloqueada)" : "")}.\n\n" +
+                "¿Deseas continuar?",
+                "Confirmar Mod Quest",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Question
             );
@@ -346,8 +436,8 @@ namespace USM.ViewModels
 
             IsBusy = true;
             ProgressPercent = 0;
-            ProgressStatus = "Starting...";
-            _notifyCallback("Quest Modding pipeline in progress...");
+            ProgressStatus = "Iniciando...";
+            _notifyCallback("Proceso de parcheo Quest en progreso...");
 
             var progress = new Progress<(int Percent, string Status)>(report =>
             {
@@ -361,6 +451,7 @@ namespace USM.ViewModels
                 bool success = await _questService.PatchAndDeployAsync(
                     serial,
                     customApk,
+                    SkipTutorialAndUnlock,
                     progress,
                     msg => AppendLog(msg),
                     cts.Token
@@ -369,13 +460,14 @@ namespace USM.ViewModels
                 if (success)
                 {
                     ProgressPercent = 100;
-                    ProgressStatus = "Patch & Deploy Complete!";
-                    _notifyCallback("Quest Modded APK successfully installed!");
+                    ProgressStatus = "¡Parcheo e Instalación completados!";
+                    _notifyCallback("¡Unplugged Modded instalado correctamente en Quest!");
                     MessageBox.Show(
-                        "Unplugged Modded has been successfully created and installed on your Quest!\n\n" +
-                        "You will find 'Unplugged Modded' under Unknown Sources in your Quest app library.\n" +
-                        "You can now use 'Sync Custom Songs' to transfer your custom songs directly to the headset.",
-                        "Quest Modding Complete",
+                        "¡'Unplugged Modded' fue creado e instalado exitosamente en tu Meta Quest!\n\n" +
+                        "• Encontrarás 'Unplugged Modded' en Fuentes Desconocidas de tu visor.\n" +
+                        (SkipTutorialAndUnlock ? "• Se ha omitido el tutorial: entrarás directamente al estudio con todas las salas base disponibles.\n" : "") +
+                        "• Ahora puedes presionar 'Sync Songs to Quest' para transferir todas tus canciones custom.",
+                        "Instalación en Quest Completa",
                         MessageBoxButton.OK,
                         MessageBoxImage.Information
                     );
@@ -383,16 +475,65 @@ namespace USM.ViewModels
                 }
                 else
                 {
-                    ProgressStatus = "Failed. Check log output.";
-                    _notifyCallback("Quest Modding pipeline failed. See log.");
-                    MessageBox.Show("Failed to patch or deploy APK. Check the log output for details.", "Quest Modding Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    ProgressStatus = "Fallo. Revisa la consola de registros.";
+                    _notifyCallback("Fallo el parcheo de Quest. Revisa el registro.");
+                    MessageBox.Show("Fallo al parchear o instalar el APK. Revisa la consola de registros para más detalles.", "Error de Parcheo", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
             catch (Exception ex)
             {
                 AppendLog($"FATAL ERROR: {ex.Message}");
-                ProgressStatus = "Fatal Error";
+                ProgressStatus = "Error Fatal";
                 _notifyCallback($"Error: {ex.Message}");
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        private async Task UninstallModdedAsync()
+        {
+            if (SelectedDevice == null || !IsModdedInstalled || IsBusy) return;
+
+            var confirm = MessageBox.Show(
+                "¿Estás seguro de que deseas desinstalar 'Unplugged Modded' de tu Meta Quest?\n\n" +
+                "• Tu juego original (stock) NO se verá afectado.\n" +
+                "• Las canciones custom guardadas en /sdcard/Unplugged/Songs NO se borrarán.\n" +
+                "• La app modeada clonada y sus datos temporales serán desinstalados.",
+                "Confirmar Desinstalación",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning
+            );
+
+            if (confirm != MessageBoxResult.Yes) return;
+
+            IsBusy = true;
+            ProgressPercent = 0;
+            ProgressStatus = "Desinstalando app modeada del Quest...";
+            _notifyCallback("Desinstalando Unplugged Modded...");
+
+            try
+            {
+                var (ok, msg) = await _questService.UninstallModdedPackageAsync(SelectedDevice.Serial, msg => AppendLog(msg));
+                if (ok)
+                {
+                    ProgressPercent = 100;
+                    ProgressStatus = "Desinstalación exitosa";
+                    _notifyCallback("Unplugged Modded ha sido desinstalado.");
+                    MessageBox.Show("Unplugged Modded ha sido desinstalado correctamente de tu Meta Quest.", "Desinstalación Completa", MessageBoxButton.OK, MessageBoxImage.Information);
+                    await CheckInstalledPackagesAsync();
+                }
+                else
+                {
+                    ProgressStatus = "Fallo al desinstalar";
+                    _notifyCallback($"Error: {msg}");
+                    MessageBox.Show($"Fallo al desinstalar la app modeada:\n{msg}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"Error al desinstalar: {ex.Message}");
             }
             finally
             {

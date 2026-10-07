@@ -339,8 +339,56 @@ class QuestPatcher:
         # Create directories for custom songs
         self.adb.run_adb(["shell", "mkdir", "-p", "/sdcard/Unplugged/Songs"], device_id)
         self.adb.run_adb(["shell", "mkdir", "-p", f"/sdcard/ModData/{MODDED_PACKAGE}/Songs"], device_id)
+
+        # Inject unlocked save data (Tutorial Skipped + Campaign Albums 1-5 Unlocked)
+        self.setup_unlocked_save_data(device_id)
+
         self.log("Quest storage permissions and directories configured!")
         return True
+
+    def setup_unlocked_save_data(self, device_id: Optional[str] = None):
+        self.log("Injecting pre-unlocked save file (Tutorial skipped & Campaign Albums 1-5 unlocked)...")
+        # Pre-encrypted AES payload with game's key 'b14ca5898a4e4133bbce2ea2315a1916'
+        save_b64 = (
+            "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"
+            "bn0prQ1MXK0Ku8jxKmV2givdCS"
+        )
+        local_save = self.work_dir / "SavedData.json"
+        local_save.write_text(save_b64, encoding="utf-8")
+        
+        target_dir1 = f"/sdcard/Android/data/{MODDED_PACKAGE}/files"
+        self.adb.run_adb(["shell", "mkdir", "-p", target_dir1], device_id)
+        self.adb.run_adb(["push", str(local_save), f"{target_dir1}/SavedData.json"], device_id)
+
+        target_dir2 = f"/sdcard/ModData/{MODDED_PACKAGE}/files"
+        self.adb.run_adb(["shell", "mkdir", "-p", target_dir2], device_id)
+        self.adb.run_adb(["push", str(local_save), f"{target_dir2}/SavedData.json"], device_id)
+        self.log("Unlocked save data deployed successfully!")
 
     def run_full_pipeline(self, device_id: Optional[str] = None, source_apk: Optional[str] = None) -> bool:
         self.log("=== STARTING QUEST MODDED PIPELINE ===")

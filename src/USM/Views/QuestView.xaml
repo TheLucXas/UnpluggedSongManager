@@ -165,6 +165,20 @@
                                 Padding="14,0"
                                 Height="36" />
                     </Grid>
+                    <Border Height="1" Background="{StaticResource BrushBorder}" Margin="0,10,0,10" />
+
+                    <!-- Mod Options -->
+                    <CheckBox Content="⚡ Omitir Tutorial de Calibración y Desbloquear Campaña (Recomendado)"
+                              IsChecked="{Binding SkipTutorialAndUnlock}"
+                              Foreground="{StaticResource BrushTextPrimary}"
+                              FontWeight="SemiBold"
+                              FontSize="12"
+                              Margin="0,0,0,4" />
+                    <TextBlock Text="Inicia directamente en el estudio sin tener que repetir el tutorial de 15 minutos ni calibración de manos. Desbloquea todas las salas y álbumes base de la campaña (los DLCs oficiales se mantienen intactos)."
+                               FontSize="11"
+                               Foreground="{StaticResource BrushTextMuted}"
+                               TextWrapping="Wrap"
+                               Margin="22,0,0,0" />
                 </StackPanel>
             </Border>
 
@@ -189,17 +203,24 @@
                                    FontWeight="Bold"
                                    Foreground="{StaticResource BrushAccentPink}"
                                    Margin="0,0,0,6" />
-                        <TextBlock Text="Extracts the game from your Quest, clones it into a separate app ('Unplugged Modded'), adds storage permissions for custom songs, rebuilds and reinstalls it alongside your original app."
+                        <TextBlock Text="{Binding PatchButtonDescription}"
                                    FontSize="12"
                                    Foreground="{StaticResource BrushTextSecondary}"
                                    TextWrapping="Wrap"
                                    LineHeight="17"
                                    Margin="0,0,0,14" />
-                        <Button Content="🚀 Patch &amp; Deploy 'Unplugged Modded'"
+                        <Button Content="{Binding PatchButtonText}"
                                 Command="{Binding StartPatchCommand}"
                                 Height="40"
                                 FontSize="13"
                                 FontWeight="Bold" />
+                        <Button Content="🗑 Desinstalar 'Unplugged Modded'"
+                                Style="{StaticResource DangerButton}"
+                                Command="{Binding UninstallModdedCommand}"
+                                Visibility="{Binding CanUninstallModded, Converter={StaticResource BoolToVis}}"
+                                Height="34"
+                                FontSize="12"
+                                Margin="0,8,0,0" />
                     </StackPanel>
                 </Border>
 
