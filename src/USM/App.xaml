@@ -14,6 +14,7 @@
         <Color x:Key="ColorAccentPurple">#8B5CF6</Color>
         <Color x:Key="ColorAccentGreen">#10B981</Color>
         <Color x:Key="ColorAccentBlue">#00C2CB</Color>
+        <Color x:Key="ColorAccentYellow">#F59E0B</Color>
         <Color x:Key="ColorTextPrimary">#FFFFFF</Color>
         <Color x:Key="ColorTextSecondary">#94A3B8</Color>
         <Color x:Key="ColorTextMuted">#64748B</Color>
@@ -28,6 +29,7 @@
         <SolidColorBrush x:Key="BrushAccentPurple" Color="{StaticResource ColorAccentPurple}" />
         <SolidColorBrush x:Key="BrushAccentGreen" Color="{StaticResource ColorAccentGreen}" />
         <SolidColorBrush x:Key="BrushAccentBlue" Color="{StaticResource ColorAccentBlue}" />
+        <SolidColorBrush x:Key="BrushAccentYellow" Color="{StaticResource ColorAccentYellow}" />
         <SolidColorBrush x:Key="BrushTextPrimary" Color="{StaticResource ColorTextPrimary}" />
         <SolidColorBrush x:Key="BrushTextSecondary" Color="{StaticResource ColorTextSecondary}" />
         <SolidColorBrush x:Key="BrushTextMuted" Color="{StaticResource ColorTextMuted}" />
