@@ -48,10 +48,14 @@
 
                         <!-- Left: Connected Devices List -->
                         <StackPanel Grid.Column="0">
-                            <TextBlock Text="Detected Quest Headsets"
+                            <TextBlock Text="Visor Detectado (USB / Wi-Fi)"
                                        FontSize="12"
                                        FontWeight="SemiBold"
                                        Foreground="{StaticResource BrushTextSecondary}"
+                                       Margin="0,0,0,4" />
+                            <TextBlock Text="Selecciona un dispositivo de la lista:"
+                                       FontSize="11"
+                                       Foreground="{StaticResource BrushTextMuted}"
                                        Margin="0,0,0,6" />
                             <ComboBox ItemsSource="{Binding Devices}"
                                       SelectedItem="{Binding SelectedDevice}"
@@ -61,28 +65,45 @@
 
                         <!-- Right: Wireless IP:Port Connection -->
                         <StackPanel Grid.Column="2">
-                            <TextBlock Text="Wireless ADB (Wi-Fi Connection)"
+                            <TextBlock Text="Conexión Inalámbrica (Wi-Fi ADB)"
                                        FontSize="12"
                                        FontWeight="SemiBold"
                                        Foreground="{StaticResource BrushTextSecondary}"
-                                       Margin="0,0,0,6" />
+                                       Margin="0,0,0,4" />
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="10" />
-                                    <ColumnDefinition Width="70" />
+                                    <ColumnDefinition Width="80" />
                                     <ColumnDefinition Width="10" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <TextBox Grid.Column="0"
-                                         Text="{Binding WirelessIp, UpdateSourceTrigger=PropertyChanged}"
-                                         ToolTip="Quest IP Address (e.g. 192.168.1.15)"
-                                         Height="36" />
-                                <TextBox Grid.Column="2"
-                                         Text="{Binding WirelessPort, UpdateSourceTrigger=PropertyChanged}"
-                                         ToolTip="ADB Port (default 5555)"
-                                         Height="36" />
+
+                                <!-- Long bar: IP -->
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="IP del Visor (Barra Larga)"
+                                               FontSize="11"
+                                               Foreground="{StaticResource BrushTextMuted}"
+                                               Margin="0,0,0,4" />
+                                    <TextBox Text="{Binding WirelessIp, UpdateSourceTrigger=PropertyChanged}"
+                                             ToolTip="Dirección IP del Meta Quest (ej: 192.168.1.15)"
+                                             Height="36" />
+                                </StackPanel>
+
+                                <!-- Short bar: Port -->
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="Puerto"
+                                               FontSize="11"
+                                               Foreground="{StaticResource BrushTextMuted}"
+                                               Margin="0,0,0,4" />
+                                    <TextBox Text="{Binding WirelessPort, UpdateSourceTrigger=PropertyChanged}"
+                                             ToolTip="Puerto ADB (por defecto 5555)"
+                                             Height="36" />
+                                </StackPanel>
+
+                                <!-- Button -->
                                 <Button Grid.Column="4"
+                                        VerticalAlignment="Bottom"
                                         Content="📡 Connect Wi-Fi"
                                         Style="{StaticResource SecondaryButton}"
                                         Command="{Binding ConnectWirelessCommand}"

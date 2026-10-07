@@ -261,6 +261,15 @@ namespace USM.ViewModels
                 return;
             }
 
+            if (SelectedDevice.Status.Equals("unauthorized", StringComparison.OrdinalIgnoreCase))
+            {
+                PackageStatusText = "⚠ Visor no autorizado: Por favor ponte el Quest y presiona 'Permitir depuración USB'.";
+                AppendLog("WARNING: Device is unauthorized. Please accept the USB debugging prompt inside your Quest headset.");
+                IsOriginalInstalled = false;
+                IsModdedInstalled = false;
+                return;
+            }
+
             PackageStatusText = "Checking Unplugged packages on Quest...";
             try
             {

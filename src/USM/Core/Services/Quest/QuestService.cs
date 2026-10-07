@@ -29,7 +29,6 @@ namespace USM.Core.Services.Quest
             // 1. Locate ADB
             string[] possibleAdb =
             {
-                "adb",
                 @"D:\platform-tools\adb.exe",
                 @"C:\platform-tools\adb.exe",
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Android\Sdk\platform-tools\adb.exe")
@@ -37,10 +36,41 @@ namespace USM.Core.Services.Quest
 
             foreach (var candidate in possibleAdb)
             {
-                if (candidate == "adb" || File.Exists(candidate))
+                if (File.Exists(candidate))
                 {
                     _adbPath = candidate;
                     break;
+                }
+            }
+
+            if (_adbPath == null)
+            {
+                try
+                {
+                    var psi = new ProcessStartInfo
+                    {
+                        FileName = "where.exe",
+                        Arguments = "adb",
+                        RedirectStandardOutput = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+                    using var p = Process.Start(psi);
+                    if (p != null)
+                    {
+                        string? outStr = p.StandardOutput.ReadLine()?.Trim();
+                        p.WaitForExit();
+                        if (!string.IsNullOrEmpty(outStr) && File.Exists(outStr))
+                        {
+                            _adbPath = outStr;
+                        }
+                    }
+                }
+                catch { }
+
+                if (_adbPath == null)
+                {
+                    _adbPath = "adb";
                 }
             }
 
@@ -96,6 +126,11 @@ namespace USM.Core.Services.Quest
                             model = p.Substring("model:".Length).Replace("_", " ");
                             break;
                         }
+                    }
+
+                    if (status != "device")
+                    {
+                        model += $" ({status.ToUpper()})";
                     }
 
                     result.Add(new QuestDevice
@@ -452,9 +487,10 @@ namespace USM.Core.Services.Quest
 
             var stdoutTask = process.StandardOutput.ReadToEndAsync();
             var stderrTask = process.StandardError.ReadToEndAsync();
+            var exitTask = process.WaitForExitAsync();
 
-            var completedTask = await Task.WhenAny(process.WaitForExitAsync(), Task.Delay(timeoutMs));
-            if (completedTask == process.WaitForExitAsync())
+            var completedTask = await Task.WhenAny(exitTask, Task.Delay(timeoutMs));
+            if (completedTask == exitTask)
             {
                 string stdout = await stdoutTask;
                 string stderr = await stderrTask;
