@@ -552,25 +552,87 @@ namespace USM.ViewModels
                 return;
             }
 
-            var songDirs = Directory.GetDirectories(songsDir);
-            if (songDirs.Length == 0)
+            var allSongDirs = Directory.GetDirectories(songsDir);
+            if (allSongDirs.Length == 0)
             {
                 MessageBox.Show("No custom songs found to transfer.", LocalizationService.T("Quest_CustomSongsSyncTitle"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
-            var confirm = MessageBox.Show(
-                LocalizationService.T("Quest_Dialog_ConfirmSyncMsg", songDirs.Length),
-                LocalizationService.T("Quest_Dialog_ConfirmSyncTitle"),
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question
-            );
-            if (confirm != MessageBoxResult.Yes) return;
-
             IsBusy = true;
+            ProgressStatus = "Checking Quest songs...";
+            _notifyCallback("Checking installed songs on Quest...");
+
+            List<string> songsToSync;
+            try
+            {
+                var existingOnQuest = await _questService.GetQuestInstalledSongsAsync(SelectedDevice.Serial);
+                songsToSync = allSongDirs
+                    .Where(dir => !existingOnQuest.Contains(Path.GetFileName(dir)))
+                    .ToList();
+
+                if (songsToSync.Count == 0)
+                {
+                    var forceConfirm = MessageBox.Show(
+                        LocalizationService.T("Quest_Dialog_AllSongsSyncedMsg", allSongDirs.Length),
+                        LocalizationService.T("Quest_Dialog_AllSongsSyncedTitle"),
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Information
+                    );
+
+                    if (forceConfirm == MessageBoxResult.Yes)
+                    {
+                        songsToSync = allSongDirs.ToList();
+                    }
+                    else
+                    {
+                        AppendLog(LocalizationService.T("Log_SyncAllUpToDate", allSongDirs.Length));
+                        IsBusy = false;
+                        ProgressStatus = "Ready";
+                        return;
+                    }
+                }
+                else if (existingOnQuest.Count > 0)
+                {
+                    var confirm = MessageBox.Show(
+                        LocalizationService.T("Quest_Dialog_ConfirmIncrementalSyncMsg", songsToSync.Count, existingOnQuest.Count),
+                        LocalizationService.T("Quest_Dialog_ConfirmSyncTitle"),
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question
+                    );
+                    if (confirm != MessageBoxResult.Yes)
+                    {
+                        IsBusy = false;
+                        ProgressStatus = "Ready";
+                        return;
+                    }
+                    AppendLog(LocalizationService.T("Log_SyncIncremental", existingOnQuest.Count, songsToSync.Count));
+                }
+                else
+                {
+                    var confirm = MessageBox.Show(
+                        LocalizationService.T("Quest_Dialog_ConfirmSyncMsg", songsToSync.Count),
+                        LocalizationService.T("Quest_Dialog_ConfirmSyncTitle"),
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question
+                    );
+                    if (confirm != MessageBoxResult.Yes)
+                    {
+                        IsBusy = false;
+                        ProgressStatus = "Ready";
+                        return;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"Error checking Quest songs: {ex.Message}");
+                songsToSync = allSongDirs.ToList();
+            }
+
             ProgressPercent = 0;
             ProgressStatus = "Syncing Songs...";
-            _notifyCallback($"Transferring {songDirs.Length} songs to Quest...");
+            _notifyCallback($"Transferring {songsToSync.Count} song(s) to Quest...");
 
             var progress = new Progress<(int Current, int Total)>(report =>
             {
@@ -586,7 +648,8 @@ namespace USM.ViewModels
                     songsDir,
                     msg => AppendLog(msg),
                     progress,
-                    cts.Token
+                    cts.Token,
+                    songsToSync
                 );
 
                 ProgressPercent = 100;

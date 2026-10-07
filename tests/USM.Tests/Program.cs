@@ -232,11 +232,22 @@ namespace USM.Tests
                     string confirmMsg = USM.Core.Services.Localization.LocalizationService.T("Settings_UpdateAppConfirmMsg", "v2.1.0");
                     string updating = USM.Core.Services.Localization.LocalizationService.T("Settings_UpdatingApp", 50.0);
 
+                    string ipLabel = USM.Core.Services.Localization.LocalizationService.T("Quest_IpLabel");
+                    string portLabel = USM.Core.Services.Localization.LocalizationService.T("Quest_PortLabel");
+                    string incSync = USM.Core.Services.Localization.LocalizationService.T("Quest_Dialog_ConfirmIncrementalSyncMsg", 1, 21);
+                    string allSynced = USM.Core.Services.Localization.LocalizationService.T("Quest_Dialog_AllSongsSyncedMsg", 22);
+
                     if (string.IsNullOrEmpty(title) || string.IsNullOrEmpty(upToDate) || string.IsNullOrEmpty(checkBtn) ||
                         string.IsNullOrEmpty(appBtn) || string.IsNullOrEmpty(confirmTitle) || string.IsNullOrEmpty(confirmMsg) ||
-                        string.IsNullOrEmpty(updating))
+                        string.IsNullOrEmpty(updating) || string.IsNullOrEmpty(ipLabel) || string.IsNullOrEmpty(portLabel) ||
+                        string.IsNullOrEmpty(incSync) || string.IsNullOrEmpty(allSynced))
                     {
-                        throw new Exception($"Missing update localization for language: {lang}");
+                        throw new Exception($"Missing update/sync localization for language: {lang}");
+                    }
+
+                    if (ipLabel.Contains("Field") || ipLabel.Contains("Barra") || portLabel.Contains("Field") || portLabel.Contains("Barra"))
+                    {
+                        throw new Exception($"IP/Port label still contains field description: {ipLabel} / {portLabel}");
                     }
                 }
                 loc.CurrentLanguage = prevLang;

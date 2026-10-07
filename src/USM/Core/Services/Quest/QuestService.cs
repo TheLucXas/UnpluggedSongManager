@@ -540,12 +540,37 @@ namespace USM.Core.Services.Quest
             return true;
         }
 
+        public async Task<HashSet<string>> GetQuestInstalledSongsAsync(string serial)
+        {
+            var installed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p /sdcard/Unplugged/Songs");
+                var (code, stdout, _) = await RunProcessAsync(GetAdbPath(), $"-s {serial} shell ls -1 /sdcard/Unplugged/Songs/", 15000);
+                if (code == 0 && !string.IsNullOrWhiteSpace(stdout))
+                {
+                    var lines = stdout.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var line in lines)
+                    {
+                        string name = line.Trim();
+                        if (!string.IsNullOrEmpty(name) && !name.Contains("No such file", StringComparison.OrdinalIgnoreCase))
+                        {
+                            installed.Add(name);
+                        }
+                    }
+                }
+            }
+            catch { }
+            return installed;
+        }
+
         public async Task<int> SyncSongsToQuestAsync(
             string serial,
             string localSongsDir,
             Action<string> log,
             IProgress<(int Current, int Total)> progress,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            IReadOnlyList<string>? specificSongDirs = null)
         {
             if (!Directory.Exists(localSongsDir))
             {
@@ -553,10 +578,13 @@ namespace USM.Core.Services.Quest
                 return 0;
             }
 
-            var songDirs = Directory.GetDirectories(localSongsDir);
+            var songDirs = specificSongDirs != null && specificSongDirs.Count > 0
+                ? specificSongDirs.ToArray()
+                : Directory.GetDirectories(localSongsDir);
+
             if (songDirs.Length == 0)
             {
-                log("No custom songs found in local directory to sync.");
+                log("No custom songs to sync.");
                 return 0;
             }
 
