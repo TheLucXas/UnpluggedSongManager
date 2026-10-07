@@ -214,9 +214,23 @@ namespace USM.Core.Services.Quest
         public async Task<(bool Success, string Message)> InstallApkAsync(string serial, string localApkPath, Action<string>? log = null)
         {
             log?.Invoke(LocalizationService.T("Log_InstallingApk", ModdedPackage));
-            var (code, outStr, errStr) = await RunProcessAsync(GetAdbPath(), $"-s {serial} install -r -d \"{localApkPath}\"", 300000);
+
+            // Clean any stale temp APKs from /data/local/tmp on Quest to maximize free space
+            await RunProcessAsync(GetAdbPath(), $"-s {serial} shell \"rm -f /data/local/tmp/*.apk\"");
+
+            // Try install with --no-incremental to bypass adb incremental service storage restriction
+            var (code, outStr, errStr) = await RunProcessAsync(GetAdbPath(), $"-s {serial} install --no-incremental -r -d \"{localApkPath}\"", 300000);
             string full = (outStr + " " + errStr).Trim();
             bool success = full.Contains("Success", StringComparison.OrdinalIgnoreCase);
+
+            if (!success && !full.Contains("INSTALL_FAILED_ALREADY_EXISTS", StringComparison.OrdinalIgnoreCase))
+            {
+                // Fallback to standard install in case the ADB version doesn't support --no-incremental
+                var (code2, outStr2, errStr2) = await RunProcessAsync(GetAdbPath(), $"-s {serial} install -r -d \"{localApkPath}\"", 300000);
+                full = (outStr2 + " " + errStr2).Trim();
+                success = full.Contains("Success", StringComparison.OrdinalIgnoreCase);
+            }
+
             if (success)
             {
                 log?.Invoke(LocalizationService.T("Log_InstallSuccess"));
