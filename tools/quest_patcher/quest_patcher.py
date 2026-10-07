@@ -309,8 +309,7 @@ class QuestPatcher:
         cmd = [
             "java", "-jar", str(UBER_SIGNER_JAR),
             "-a", str(unsigned_apk),
-            "-o", str(output_dir),
-            "--overwrite"
+            "-o", str(output_dir)
         ]
         proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
         if proc.returncode != 0:

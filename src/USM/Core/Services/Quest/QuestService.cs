@@ -390,7 +390,7 @@ namespace USM.Core.Services.Quest
             log("Signing APK (v2/v3 signatures)...");
             string signedDir = Path.Combine(workDir, "signed");
             Directory.CreateDirectory(signedDir);
-            var (sCode, sOut, sErr) = await RunProcessAsync("java", $"-jar \"{_signerJar}\" -a \"{unsignedApk}\" -o \"{signedDir}\" --overwrite", 300000);
+            var (sCode, sOut, sErr) = await RunProcessAsync("java", $"-jar \"{_signerJar}\" -a \"{unsignedApk}\" -o \"{signedDir}\"", 300000);
             if (sCode != 0)
             {
                 log($"Signing error: {sOut} {sErr}");
