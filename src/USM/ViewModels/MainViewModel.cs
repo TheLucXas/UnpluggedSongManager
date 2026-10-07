@@ -13,6 +13,7 @@ namespace USM.ViewModels
         public SearchViewModel SearchVM { get; }
         public ConverterViewModel ConverterVM { get; }
         public LibraryViewModel LibraryVM { get; }
+        public QuestViewModel QuestVM { get; }
         public SettingsViewModel SettingsVM { get; }
 
         private int _selectedTabIndex = 0;
@@ -49,6 +50,7 @@ namespace USM.ViewModels
             SearchVM = new SearchViewModel(GameDetector, Notify);
             ConverterVM = new ConverterViewModel(GameDetector, Notify);
             LibraryVM = new LibraryViewModel(GameDetector, Notify);
+            QuestVM = new QuestViewModel(GameDetector, Notify);
             SettingsVM = new SettingsViewModel(GameDetector, Notify);
 
             LaunchGameCommand = new RelayCommand(LaunchGame);

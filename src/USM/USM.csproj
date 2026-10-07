@@ -26,6 +26,10 @@
     <None Include="..\..\ffmpeg.exe" Condition="Exists('..\..\ffmpeg.exe')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="..\..\tools\quest\**" Condition="Exists('..\..\tools\quest')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>tools\quest\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </None>
   </ItemGroup>
 
 </Project>

@@ -156,7 +156,12 @@
                 <views:LibraryView DataContext="{Binding LibraryVM}" />
             </TabItem>
 
-            <!-- Tab 4: Settings -->
+            <!-- Tab 4: Quest Patcher -->
+            <TabItem Header="🥽 Quest Patcher">
+                <views:QuestView DataContext="{Binding QuestVM}" />
+            </TabItem>
+
+            <!-- Tab 5: Settings -->
             <TabItem Header="⚙ Settings">
                 <views:SettingsView DataContext="{Binding SettingsVM}" />
             </TabItem>
