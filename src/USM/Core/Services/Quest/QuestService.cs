@@ -11,8 +11,8 @@ namespace USM.Core.Services.Quest
 {
     public class QuestService
     {
-        public const string OriginalPackage = "com.anotherway.unplugged";
-        public const string ModdedPackage = "com.anotherway.unplugged.modded";
+        public const string OriginalPackage = "com.Anotherway.UnpluggedVR";
+        public const string ModdedPackage = "com.Anotherway.UnpluggedVR.modded";
         public const string ModdedAppName = "Unplugged Modded";
 
         private string? _adbPath;
@@ -162,17 +162,33 @@ namespace USM.Core.Services.Quest
 
         public async Task<bool> IsPackageInstalledAsync(string serial, string packageName)
         {
-            var (exitCode, stdout, _) = await RunProcessAsync(GetAdbPath(), $"-s {serial} shell pm list packages {packageName}");
+            var (exitCode, stdout, _) = await RunProcessAsync(GetAdbPath(), $"-s {serial} shell pm list packages");
             if (exitCode != 0 || string.IsNullOrWhiteSpace(stdout))
                 return false;
 
             return stdout.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
-                         .Any(l => l.Trim() == $"package:{packageName}");
+                         .Select(l => l.Trim())
+                         .Select(l => l.StartsWith("package:") ? l.Substring("package:".Length).Trim() : l)
+                         .Any(p => p.Equals(packageName, StringComparison.OrdinalIgnoreCase));
         }
 
         public async Task<string?> GetPackageApkPathAsync(string serial, string packageName)
         {
-            var (exitCode, stdout, _) = await RunProcessAsync(GetAdbPath(), $"-s {serial} shell pm path {packageName}");
+            string actualPackage = packageName;
+            var (listCode, listOut, _) = await RunProcessAsync(GetAdbPath(), $"-s {serial} shell pm list packages");
+            if (listCode == 0 && !string.IsNullOrWhiteSpace(listOut))
+            {
+                var matchPkg = listOut.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                                      .Select(l => l.Trim())
+                                      .Select(l => l.StartsWith("package:") ? l.Substring("package:".Length).Trim() : l)
+                                      .FirstOrDefault(p => p.Equals(packageName, StringComparison.OrdinalIgnoreCase));
+                if (matchPkg != null)
+                {
+                    actualPackage = matchPkg;
+                }
+            }
+
+            var (exitCode, stdout, _) = await RunProcessAsync(GetAdbPath(), $"-s {serial} shell pm path {actualPackage}");
             if (exitCode != 0 || string.IsNullOrWhiteSpace(stdout))
                 return null;
 

@@ -279,7 +279,7 @@ namespace USM.ViewModels
                 var sb = new StringBuilder();
                 if (IsOriginalInstalled)
                 {
-                    sb.Append("✔ Stock Unplugged detected (com.anotherway.unplugged). ");
+                    sb.Append("✔ Stock Unplugged detected (com.Anotherway.UnpluggedVR). ");
                 }
                 else
                 {
@@ -288,7 +288,7 @@ namespace USM.ViewModels
 
                 if (IsModdedInstalled)
                 {
-                    sb.Append("✔ Modded Unplugged installed (com.anotherway.unplugged.modded).");
+                    sb.Append("✔ Modded Unplugged installed (com.Anotherway.UnpluggedVR.modded).");
                 }
                 else
                 {

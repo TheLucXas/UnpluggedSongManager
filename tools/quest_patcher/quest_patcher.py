@@ -20,8 +20,8 @@ APKTOOL_JAR = TOOLS_DIR / "apktool.jar"
 UBER_SIGNER_JAR = TOOLS_DIR / "uber-apk-signer.jar"
 DEFAULT_WORK_DIR = REPO_ROOT / "tools" / "quest_work"
 
-ORIGINAL_PACKAGE = "com.anotherway.unplugged"
-MODDED_PACKAGE = "com.anotherway.unplugged.modded"
+ORIGINAL_PACKAGE = "com.Anotherway.UnpluggedVR"
+MODDED_PACKAGE = "com.Anotherway.UnpluggedVR.modded"
 MODDED_APP_NAME = "Unplugged Modded"
 
 class AdbHelper:
@@ -77,17 +77,31 @@ class AdbHelper:
         return False, out or err
 
     def is_package_installed(self, package_name: str, device_id: Optional[str] = None) -> bool:
-        code, out, _ = self.run_adb(["shell", "pm", "list", "packages", package_name], device_id=device_id)
+        code, out, _ = self.run_adb(["shell", "pm", "list", "packages"], device_id=device_id)
         if code != 0:
             return False
         for line in out.splitlines():
             line = line.strip()
-            if line == f"package:{package_name}":
+            if line.startswith("package:"):
+                line = line[len("package:"):].strip()
+            if line.lower() == package_name.lower():
                 return True
         return False
 
     def get_package_apk_path(self, package_name: str, device_id: Optional[str] = None) -> Optional[str]:
-        code, out, _ = self.run_adb(["shell", "pm", "path", package_name], device_id=device_id)
+        # Resolve exact package casing
+        code, out, _ = self.run_adb(["shell", "pm", "list", "packages"], device_id=device_id)
+        target = package_name
+        if code == 0:
+            for line in out.splitlines():
+                pkg = line.strip()
+                if pkg.startswith("package:"):
+                    pkg = pkg[len("package:"):].strip()
+                if pkg.lower() == package_name.lower():
+                    target = pkg
+                    break
+
+        code, out, _ = self.run_adb(["shell", "pm", "path", target], device_id=device_id)
         if code != 0 or not out:
             return None
         # Format: package:/data/app/.../base.apk
