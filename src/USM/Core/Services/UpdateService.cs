@@ -39,6 +39,7 @@ namespace USM.Core.Services
         public GitHubReleaseInfo? Release { get; set; }
         public GitHubAssetInfo? ModAsset { get; set; }
         public GitHubAssetInfo? UsmAsset { get; set; }
+        public GitHubAssetInfo? QuestToolsAsset { get; set; }
         public string Message { get; set; } = string.Empty;
     }
 
@@ -129,6 +130,10 @@ namespace USM.Core.Services
                     (a.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) &&
                     !a.Name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
                     ?? release.Assets.FirstOrDefault(a => a.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase));
+
+                result.QuestToolsAsset = release.Assets.FirstOrDefault(a =>
+                    a.Name.Contains("quest-tools", StringComparison.OrdinalIgnoreCase) ||
+                    a.Name.Contains("quest_tools", StringComparison.OrdinalIgnoreCase));
 
                 result.IsUpdateAvailable = CompareVersions(result.LatestVersion, result.CurrentVersion) > 0;
 
@@ -411,6 +416,204 @@ namespace USM.Core.Services
 
             // Fallback string compare
             return string.Compare(cleanA, cleanB, StringComparison.OrdinalIgnoreCase);
+        }
+
+        public async Task<(bool Success, string Message)> DownloadAndInstallMelonLoaderAsync(
+            string gamePath,
+            IProgress<(double Progress, string Status)>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath))
+            {
+                return (false, "Game directory not found.");
+            }
+
+            string downloadUrl = "https://github.com/LavaGang/MelonLoader/releases/download/v0.5.7/MelonLoader.x64.zip";
+            string tempZip = Path.Combine(Path.GetTempPath(), $"MelonLoader_x64_{Guid.NewGuid():N}.zip");
+
+            try
+            {
+                progress?.Report((5, LocalizationService.T("Settings_MelonDownloading", 5)));
+
+                using var request = new HttpRequestMessage(HttpMethod.Get, downloadUrl);
+                request.Headers.Add("User-Agent", "USM-SongManager/2.0");
+
+                using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                {
+                    return (false, $"Download failed: HTTP {(int)response.StatusCode}");
+                }
+
+                long totalBytes = response.Content.Headers.ContentLength ?? 18200000L;
+                await using (var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken))
+                await using (var fileStream = new FileStream(tempZip, FileMode.Create, FileAccess.Write, FileShare.None))
+                {
+                    byte[] buffer = new byte[81920];
+                    long totalRead = 0;
+                    int bytesRead;
+
+                    while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
+                    {
+                        await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+                        totalRead += bytesRead;
+                        if (totalBytes > 0 && progress != null)
+                        {
+                            double pct = Math.Min(70.0, ((double)totalRead / totalBytes) * 70.0);
+                            progress.Report((pct, LocalizationService.T("Settings_MelonDownloading", pct)));
+                        }
+                    }
+                }
+
+                progress?.Report((75, LocalizationService.T("Settings_MelonExtracting")));
+
+                // Extract zip into game directory
+                ZipFile.ExtractToDirectory(tempZip, gamePath, overwriteFiles: true);
+
+                // Ensure Mods folder exists
+                string modsDir = Path.Combine(gamePath, "Mods");
+                if (!Directory.Exists(modsDir))
+                {
+                    Directory.CreateDirectory(modsDir);
+                }
+
+                // Deploy UnpluggedCustomSongs mod DLL if available
+                string appDir = AppDomain.CurrentDomain.BaseDirectory;
+                string[] modCandidates =
+                {
+                    Path.Combine(appDir, "UnpluggedCustomSongs.dll"),
+                    Path.Combine(appDir, @"..\..\..\..\mod\UnpluggedCustomSongs\UnpluggedCustomSongs.dll"),
+                    Path.Combine(appDir, @"..\..\..\..\mod\UnpluggedCustomSongs\bin\Release\netstandard2.0\UnpluggedCustomSongs.dll"),
+                    Path.Combine(Directory.GetCurrentDirectory(), "UnpluggedCustomSongs.dll")
+                };
+
+                foreach (var c in modCandidates)
+                {
+                    if (File.Exists(c))
+                    {
+                        try
+                        {
+                            File.Copy(c, Path.Combine(modsDir, "UnpluggedCustomSongs.dll"), overwrite: true);
+                            break;
+                        }
+                        catch { }
+                    }
+                }
+
+                progress?.Report((100, LocalizationService.T("Settings_MelonSuccess")));
+                return (true, LocalizationService.T("Settings_MelonSuccess"));
+            }
+            catch (Exception ex)
+            {
+                return (false, LocalizationService.T("Settings_MelonFailed", ex.Message));
+            }
+            finally
+            {
+                try { if (File.Exists(tempZip)) File.Delete(tempZip); } catch { }
+            }
+        }
+
+        public (bool Success, string Message) UninstallMelonLoader(string gamePath)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(gamePath) || !Directory.Exists(gamePath))
+                    return (false, "Game directory not found.");
+
+                string versionDll = Path.Combine(gamePath, "version.dll");
+                if (File.Exists(versionDll)) File.Delete(versionDll);
+
+                string notice = Path.Combine(gamePath, "NOTICE.txt");
+                if (File.Exists(notice)) File.Delete(notice);
+
+                string melonDir = Path.Combine(gamePath, "MelonLoader");
+                if (Directory.Exists(melonDir)) Directory.Delete(melonDir, recursive: true);
+
+                return (true, LocalizationService.T("Settings_MelonUninstalled"));
+            }
+            catch (Exception ex)
+            {
+                return (false, ex.Message);
+            }
+        }
+
+        public async Task<(bool Success, string Message)> DownloadAndCacheQuestToolsAsync(
+            string cacheDir,
+            string? overrideUrl = null,
+            IProgress<(double Progress, string Status)>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                Directory.CreateDirectory(cacheDir);
+
+                string downloadUrl = overrideUrl ?? string.Empty;
+                if (string.IsNullOrEmpty(downloadUrl))
+                {
+                    try
+                    {
+                        var updateRes = await CheckForUpdatesAsync(cancellationToken: cancellationToken);
+                        if (updateRes.QuestToolsAsset != null && !string.IsNullOrEmpty(updateRes.QuestToolsAsset.BrowserDownloadUrl))
+                        {
+                            downloadUrl = updateRes.QuestToolsAsset.BrowserDownloadUrl;
+                        }
+                    }
+                    catch { }
+                }
+
+                if (string.IsNullOrEmpty(downloadUrl))
+                {
+                    downloadUrl = "https://github.com/TheLucXas/USM/releases/download/v2.0.0/quest-tools.zip";
+                }
+
+                progress?.Report((5, LocalizationService.T("Log_QuestToolsDownloading", 5)));
+
+                string tempZip = Path.Combine(Path.GetTempPath(), $"QuestTools_{Guid.NewGuid():N}.zip");
+                try
+                {
+                    using var request = new HttpRequestMessage(HttpMethod.Get, downloadUrl);
+                    request.Headers.Add("User-Agent", "USM-SongManager/2.0");
+
+                    using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        return (false, $"Download failed: HTTP {(int)response.StatusCode}");
+                    }
+
+                    long totalBytes = response.Content.Headers.ContentLength ?? 55000000L;
+                    await using (var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken))
+                    await using (var fileStream = new FileStream(tempZip, FileMode.Create, FileAccess.Write, FileShare.None))
+                    {
+                        byte[] buffer = new byte[81920];
+                        long totalRead = 0;
+                        int bytesRead;
+
+                        while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
+                        {
+                            await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+                            totalRead += bytesRead;
+                            if (totalBytes > 0 && progress != null)
+                            {
+                                double pct = Math.Min(80.0, ((double)totalRead / totalBytes) * 80.0);
+                                progress.Report((pct, LocalizationService.T("Log_QuestToolsDownloading", pct)));
+                            }
+                        }
+                    }
+
+                    progress?.Report((85, LocalizationService.T("Log_QuestToolsExtracting")));
+                    ZipFile.ExtractToDirectory(tempZip, cacheDir, overwriteFiles: true);
+
+                    progress?.Report((100, LocalizationService.T("Log_QuestToolsCached", cacheDir)));
+                    return (true, LocalizationService.T("Log_QuestToolsCached", cacheDir));
+                }
+                finally
+                {
+                    try { if (File.Exists(tempZip)) File.Delete(tempZip); } catch { }
+                }
+            }
+            catch (Exception ex)
+            {
+                return (false, LocalizationService.T("Log_QuestToolsFailed", ex.Message));
+            }
         }
     }
 }

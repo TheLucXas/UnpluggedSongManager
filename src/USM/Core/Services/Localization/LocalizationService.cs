@@ -285,7 +285,26 @@ namespace USM.Core.Services.Localization
                 ["Settings_UpdateAppConfirmTitle"] = "Update USM",
                 ["Settings_UpdateAppConfirmMsg"] = "A new version of USM ({0}) is available.\n\nUSM will download the update, close, and restart automatically.\n\nDo you want to proceed?",
                 ["Settings_UpdateAppFailed"] = "Failed to update USM: {0}",
-                ["Settings_NoAppAssetFound"] = "No direct update package was found in the release. Please download it manually from GitHub."
+                ["Settings_NoAppAssetFound"] = "No direct update package was found in the release. Please download it manually from GitHub.",
+
+                // MelonLoader installation
+                ["Settings_MelonInstallBtn"] = "Install MelonLoader",
+                ["Settings_MelonReinstallBtn"] = "Reinstall MelonLoader",
+                ["Settings_MelonUninstallBtn"] = "Uninstall MelonLoader",
+                ["Settings_MelonDownloading"] = "Downloading MelonLoader v0.5.7 ({0:F0}%)...",
+                ["Settings_MelonExtracting"] = "Extracting MelonLoader files to game folder...",
+                ["Settings_MelonSuccess"] = "MelonLoader v0.5.7 installed successfully!",
+                ["Settings_MelonFailed"] = "Failed to install MelonLoader: {0}",
+                ["Settings_MelonUninstalled"] = "MelonLoader uninstalled successfully.",
+
+                // Quest Patching Tools Caching / Download
+                ["Quest_ToolsStatusCached"] = "Patching Tools: Ready (Cached)",
+                ["Quest_ToolsStatusMissing"] = "Patching Tools: Will be downloaded on demand",
+                ["Quest_DownloadToolsBtn"] = "Download Tools",
+                ["Log_QuestToolsDownloading"] = "Downloading Quest patching tools from GitHub ({0:F0}%)...",
+                ["Log_QuestToolsExtracting"] = "Extracting Quest tools to local cache...",
+                ["Log_QuestToolsCached"] = "Quest patching tools ready in local cache ({0}).",
+                ["Log_QuestToolsFailed"] = "Failed to download Quest patching tools: {0}"
             },
             ["es"] = new Dictionary<string, string>
             {
@@ -455,7 +474,26 @@ namespace USM.Core.Services.Localization
                 ["Settings_UpdateAppConfirmTitle"] = "Actualizar USM",
                 ["Settings_UpdateAppConfirmMsg"] = "Una nueva versión de USM ({0}) está disponible.\n\nUSM descargará la actualización, se cerrará y reiniciará automáticamente.\n\n¿Deseas continuar?",
                 ["Settings_UpdateAppFailed"] = "Error al actualizar USM: {0}",
-                ["Settings_NoAppAssetFound"] = "No se encontró un paquete de actualización directa en la release. Por favor descárgalo manualmente desde GitHub."
+                ["Settings_NoAppAssetFound"] = "No se encontró un paquete de actualización directa en la release. Por favor descárgalo manualmente desde GitHub.",
+
+                // MelonLoader installation
+                ["Settings_MelonInstallBtn"] = "Instalar MelonLoader",
+                ["Settings_MelonReinstallBtn"] = "Reinstalar MelonLoader",
+                ["Settings_MelonUninstallBtn"] = "Desinstalar MelonLoader",
+                ["Settings_MelonDownloading"] = "Descargando MelonLoader v0.5.7 ({0:F0}%)...",
+                ["Settings_MelonExtracting"] = "Extrayendo archivos de MelonLoader en la carpeta del juego...",
+                ["Settings_MelonSuccess"] = "¡MelonLoader v0.5.7 instalado exitosamente!",
+                ["Settings_MelonFailed"] = "Error al instalar MelonLoader: {0}",
+                ["Settings_MelonUninstalled"] = "MelonLoader desinstalado exitosamente.",
+
+                // Quest Patching Tools Caching / Download
+                ["Quest_ToolsStatusCached"] = "Herramientas de Parcheo: Listas (En Caché)",
+                ["Quest_ToolsStatusMissing"] = "Herramientas de Parcheo: Se descargarán bajo demanda",
+                ["Quest_DownloadToolsBtn"] = "Descargar Herramientas",
+                ["Log_QuestToolsDownloading"] = "Descargando herramientas de parcheo de Quest desde GitHub ({0:F0}%)...",
+                ["Log_QuestToolsExtracting"] = "Extrayendo herramientas de Quest en la caché local...",
+                ["Log_QuestToolsCached"] = "Herramientas de parcheo de Quest listas en caché local ({0}).",
+                ["Log_QuestToolsFailed"] = "Error al descargar herramientas de parcheo de Quest: {0}"
             },
             ["pt"] = new Dictionary<string, string>
             {
@@ -625,7 +663,26 @@ namespace USM.Core.Services.Localization
                 ["Settings_UpdateAppConfirmTitle"] = "Atualizar USM",
                 ["Settings_UpdateAppConfirmMsg"] = "Uma nova versão do USM ({0}) está disponível.\n\nO USM baixará a atualização, fechará e reiniciará automaticamente.\n\nDeseja continuar?",
                 ["Settings_UpdateAppFailed"] = "Falha ao atualizar o USM: {0}",
-                ["Settings_NoAppAssetFound"] = "Nenhum pacote de atualização direta foi encontrado na release. Baixe manualmente pelo GitHub."
+                ["Settings_NoAppAssetFound"] = "Nenhum pacote de atualização direta foi encontrado na release. Baixe manualmente pelo GitHub.",
+
+                // MelonLoader installation
+                ["Settings_MelonInstallBtn"] = "Instalar MelonLoader",
+                ["Settings_MelonReinstallBtn"] = "Reinstalar MelonLoader",
+                ["Settings_MelonUninstallBtn"] = "Desinstalar MelonLoader",
+                ["Settings_MelonDownloading"] = "Baixando MelonLoader v0.5.7 ({0:F0}%)...",
+                ["Settings_MelonExtracting"] = "Extraindo arquivos do MelonLoader na pasta do jogo...",
+                ["Settings_MelonSuccess"] = "MelonLoader v0.5.7 instalado com sucesso!",
+                ["Settings_MelonFailed"] = "Falha ao instalar o MelonLoader: {0}",
+                ["Settings_MelonUninstalled"] = "MelonLoader desinstalado com sucesso.",
+
+                // Quest Patching Tools Caching / Download
+                ["Quest_ToolsStatusCached"] = "Ferramentas de Patch: Prontas (Em Cache)",
+                ["Quest_ToolsStatusMissing"] = "Ferramentas de Patch: Serão baixadas sob demanda",
+                ["Quest_DownloadToolsBtn"] = "Baixar Ferramentas",
+                ["Log_QuestToolsDownloading"] = "Baixando ferramentas de patch do Quest do GitHub ({0:F0}%)...",
+                ["Log_QuestToolsExtracting"] = "Extraindo ferramentas do Quest para o cache local...",
+                ["Log_QuestToolsCached"] = "Ferramentas de patch do Quest prontas no cache local ({0}).",
+                ["Log_QuestToolsFailed"] = "Falha ao baixar as ferramentas de patch do Quest: {0}"
             }
         };
     }

@@ -158,9 +158,29 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="220" />
                             <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="{DynamicResource Loc_Settings_MelonLabel}" Foreground="{StaticResource BrushTextSecondary}" />
-                        <TextBlock Grid.Column="1" Text="{Binding IsMelonInstalled, Converter={StaticResource StatusTextConv}}" Foreground="{Binding IsMelonInstalled, Converter={StaticResource StatusColorConv}}" FontWeight="Bold" />
+                        <TextBlock Grid.Column="0" Text="{DynamicResource Loc_Settings_MelonLabel}" Foreground="{StaticResource BrushTextSecondary}" VerticalAlignment="Center" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding IsMelonInstalled, Converter={StaticResource StatusTextConv}}" Foreground="{Binding IsMelonInstalled, Converter={StaticResource StatusColorConv}}" FontWeight="Bold" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding MelonInstallStatusMessage}" Foreground="{StaticResource BrushAccentYellow}" FontSize="11" Margin="10,0,0,0" VerticalAlignment="Center" Visibility="{Binding IsInstallingMelon, Converter={StaticResource BoolToVis}}" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" Orientation="Horizontal">
+                            <Button Content="{Binding MelonActionButtonText}"
+                                    Command="{Binding InstallMelonCommand}"
+                                    IsEnabled="{Binding CanInstallMelon}"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Padding="10,4"
+                                    FontSize="11" />
+                            <Button Content="{DynamicResource Loc_Settings_MelonUninstallBtn}"
+                                    Command="{Binding UninstallMelonCommand}"
+                                    Visibility="{Binding IsMelonInstalled, Converter={StaticResource BoolToVis}}"
+                                    IsEnabled="{Binding CanInstallMelon}"
+                                    Style="{StaticResource DangerButton}"
+                                    Padding="10,4"
+                                    FontSize="11"
+                                    Margin="6,0,0,0" />
+                        </StackPanel>
                     </Grid>
 
                     <Grid Margin="0,4">

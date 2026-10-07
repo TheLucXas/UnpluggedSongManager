@@ -113,19 +113,38 @@
                         </StackPanel>
                     </Grid>
 
-                    <!-- Device Status Banner -->
+                    <!-- Device & Tools Status Banner -->
                     <Border Background="{StaticResource BrushBgInput}"
                             CornerRadius="8"
                             Padding="12,10"
                             Margin="0,8,0,0">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="Status: "
-                                       FontWeight="Bold"
-                                       Foreground="{StaticResource BrushTextSecondary}" />
-                            <TextBlock Text="{Binding PackageStatusText}"
-                                       Foreground="{StaticResource BrushAccentBlue}"
-                                       TextWrapping="Wrap" />
-                        </StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="Status: "
+                                           FontWeight="Bold"
+                                           Foreground="{StaticResource BrushTextSecondary}" />
+                                <TextBlock Text="{Binding PackageStatusText}"
+                                           Foreground="{StaticResource BrushAccentBlue}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding QuestToolsStatusText}"
+                                           FontSize="11"
+                                           Foreground="{StaticResource BrushTextMuted}"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,8,0" />
+                                <Button Content="{DynamicResource Loc_Quest_DownloadToolsBtn}"
+                                        Command="{Binding DownloadQuestToolsCommand}"
+                                        Visibility="{Binding NeedsQuestTools, Converter={StaticResource BoolToVis}}"
+                                        Style="{StaticResource SecondaryButton}"
+                                        Padding="8,3"
+                                        FontSize="11" />
+                            </StackPanel>
+                        </Grid>
                     </Border>
                 </StackPanel>
             </Border>

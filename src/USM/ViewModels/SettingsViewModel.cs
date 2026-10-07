@@ -125,7 +125,39 @@ namespace USM.ViewModels
         public bool IsMelonInstalled
         {
             get => _isMelonInstalled;
-            set => SetProperty(ref _isMelonInstalled, value);
+            set
+            {
+                if (SetProperty(ref _isMelonInstalled, value))
+                {
+                    OnPropertyChanged(nameof(MelonActionButtonText));
+                }
+            }
+        }
+
+        public string MelonActionButtonText => _isMelonInstalled
+            ? LocalizationService.T("Settings_MelonReinstallBtn")
+            : LocalizationService.T("Settings_MelonInstallBtn");
+
+        private bool _isInstallingMelon;
+        public bool IsInstallingMelon
+        {
+            get => _isInstallingMelon;
+            set
+            {
+                if (SetProperty(ref _isInstallingMelon, value))
+                {
+                    OnPropertyChanged(nameof(CanInstallMelon));
+                }
+            }
+        }
+
+        public bool CanInstallMelon => !_isInstallingMelon;
+
+        private string _melonInstallStatusMessage = string.Empty;
+        public string MelonInstallStatusMessage
+        {
+            get => _melonInstallStatusMessage;
+            set => SetProperty(ref _melonInstallStatusMessage, value);
         }
 
         public bool IsModInstalled
@@ -211,6 +243,8 @@ namespace USM.ViewModels
 
         public ICommand BrowseGamePathCommand { get; }
         public ICommand InstallModCommand { get; }
+        public ICommand InstallMelonCommand { get; }
+        public ICommand UninstallMelonCommand { get; }
         public ICommand IncrementDownloadsCommand { get; }
         public ICommand DecrementDownloadsCommand { get; }
         public ICommand CheckUpdatesCommand { get; }
@@ -226,6 +260,8 @@ namespace USM.ViewModels
 
             BrowseGamePathCommand = new RelayCommand(BrowseGamePath);
             InstallModCommand = new RelayCommand(InstallMod);
+            InstallMelonCommand = new AsyncRelayCommand(InstallMelonAsync);
+            UninstallMelonCommand = new RelayCommand(UninstallMelon);
             IncrementDownloadsCommand = new RelayCommand(IncrementDownloads);
             DecrementDownloadsCommand = new RelayCommand(DecrementDownloads);
 
@@ -445,6 +481,80 @@ namespace USM.ViewModels
                 ModStatusMessage = msg;
                 MessageBox.Show(msg, "Mod Installation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        public async Task InstallMelonAsync()
+        {
+            if (IsInstallingMelon) return;
+            if (string.IsNullOrEmpty(_gameDetector.GamePath) || !Directory.Exists(_gameDetector.GamePath))
+            {
+                MessageBox.Show(
+                    "Please select a valid Unplugged game folder first.",
+                    "Game Folder Missing",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            IsInstallingMelon = true;
+            MelonInstallStatusMessage = LocalizationService.T("Settings_MelonDownloading", 0);
+
+            try
+            {
+                var progress = new Progress<(double Progress, string Status)>(p =>
+                {
+                    MelonInstallStatusMessage = p.Status;
+                });
+
+                var (success, msg) = await _updateService.DownloadAndInstallMelonLoaderAsync(
+                    _gameDetector.GamePath,
+                    progress);
+
+                MelonInstallStatusMessage = msg;
+                _notifyCallback?.Invoke(msg);
+
+                RefreshStatus();
+
+                if (success)
+                {
+                    MessageBox.Show(
+                        msg,
+                        "MelonLoader",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                }
+                else
+                {
+                    MessageBox.Show(
+                        msg,
+                        "MelonLoader Error",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonInstallStatusMessage = LocalizationService.T("Settings_MelonFailed", ex.Message);
+                MessageBox.Show(
+                    MelonInstallStatusMessage,
+                    "MelonLoader Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+            finally
+            {
+                IsInstallingMelon = false;
+            }
+        }
+
+        public void UninstallMelon()
+        {
+            if (string.IsNullOrEmpty(_gameDetector.GamePath)) return;
+
+            var (success, msg) = _updateService.UninstallMelonLoader(_gameDetector.GamePath);
+            _notifyCallback?.Invoke(msg);
+            RefreshStatus();
+            MessageBox.Show(msg, "MelonLoader", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
         private void SavePreferences()

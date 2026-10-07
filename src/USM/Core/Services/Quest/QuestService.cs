@@ -22,10 +22,17 @@ namespace USM.Core.Services.Quest
         private string? _lemonPatcherExe;
         private string? _melonDataZip;
         private string? _modDllPath;
+        private readonly UpdateService _updateService;
 
-        public QuestService()
+        public QuestService(UpdateService? updateService = null)
         {
+            _updateService = updateService ?? new UpdateService();
             FindToolPaths();
+        }
+
+        public static string GetQuestToolsCacheDirectory()
+        {
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "USM", "tools", "quest");
         }
 
         private void FindToolPaths()
@@ -78,48 +85,130 @@ namespace USM.Core.Services.Quest
                 }
             }
 
-            // 2. Locate Tools directory (apktool, uber-apk-signer, lemon_patcher, melon_data)
-            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            string[] searchDirs =
-            {
-                Path.Combine(baseDir, "tools", "quest"),
-                Path.Combine(baseDir, @"..\..\..\..\tools\quest"),
-                Path.Combine(Directory.GetCurrentDirectory(), "tools", "quest"),
-                @"C:/REDACTED\.gemini\antigravity\scratch\UnpluggedSongStudio\tools\quest"
-            };
+            // 2. Locate Tools in AppData cache
+            string cacheDir = GetQuestToolsCacheDirectory();
+            ResolveToolPaths(cacheDir);
 
-            foreach (var dir in searchDirs)
+            // If not complete in cache, check if local dev directories have tools to seed cache
+            if (!AreToolsReady())
             {
-                string fullDir = Path.GetFullPath(dir);
-                string apktool = Path.Combine(fullDir, "apktool.jar");
-                string signer = Path.Combine(fullDir, "uber-apk-signer.jar");
-                string lemonPatcher = Path.Combine(fullDir, "lemon_patcher", "lemon_patcher.exe");
-                string melonData = Path.Combine(fullDir, "melon_data.zip");
-                string modDll = Path.Combine(fullDir, "UnpluggedCustomSongs.dll");
-
-                if (File.Exists(apktool) && File.Exists(signer))
-                {
-                    _apktoolJar = apktool;
-                    _signerJar = signer;
-                }
-                if (File.Exists(lemonPatcher)) _lemonPatcherExe = lemonPatcher;
-                if (File.Exists(melonData)) _melonDataZip = melonData;
-                if (File.Exists(modDll)) _modDllPath = modDll;
+                SeedCacheFromLocalIfAvailable(cacheDir);
+                ResolveToolPaths(cacheDir);
             }
+        }
+
+        public void ResolveToolPaths(string dir)
+        {
+            if (!Directory.Exists(dir)) return;
+
+            string apktool = Path.Combine(dir, "apktool.jar");
+            string signer = Path.Combine(dir, "uber-apk-signer.jar");
+            string lemonPatcher = Path.Combine(dir, "lemon_patcher", "lemon_patcher.exe");
+            string melonData = Path.Combine(dir, "melon_data.zip");
+            string modDll = Path.Combine(dir, "UnpluggedCustomSongs.dll");
+
+            if (File.Exists(apktool)) _apktoolJar = apktool;
+            if (File.Exists(signer)) _signerJar = signer;
+            if (File.Exists(lemonPatcher)) _lemonPatcherExe = lemonPatcher;
+            if (File.Exists(melonData)) _melonDataZip = melonData;
+            if (File.Exists(modDll)) _modDllPath = modDll;
 
             if (_modDllPath == null)
             {
+                string appDir = AppDomain.CurrentDomain.BaseDirectory;
                 string[] modCandidates =
                 {
-                    @"C:/REDACTED\.gemini\antigravity\scratch\UnpluggedSongStudio\tools\quest\UnpluggedCustomSongs.dll",
-                    @"C:/REDACTED\.gemini\antigravity\scratch\UnpluggedSongStudio\mod\UnpluggedCustomSongs\UnpluggedCustomSongs.dll",
-                    @"C:\SteamLibrary\steamapps\common\Unplugged\Mods\UnpluggedCustomSongs.dll"
+                    Path.Combine(appDir, "UnpluggedCustomSongs.dll"),
+                    Path.Combine(appDir, @"..\..\..\..\mod\UnpluggedCustomSongs\UnpluggedCustomSongs.dll"),
+                    Path.Combine(appDir, @"..\..\..\..\mod\UnpluggedCustomSongs\bin\Release\netstandard2.0\UnpluggedCustomSongs.dll"),
+                    Path.Combine(Directory.GetCurrentDirectory(), "UnpluggedCustomSongs.dll")
                 };
                 foreach (var c in modCandidates)
                 {
                     if (File.Exists(c)) { _modDllPath = c; break; }
                 }
             }
+        }
+
+        public bool AreToolsReady()
+        {
+            return !string.IsNullOrEmpty(_apktoolJar) && File.Exists(_apktoolJar) &&
+                   !string.IsNullOrEmpty(_signerJar) && File.Exists(_signerJar) &&
+                   !string.IsNullOrEmpty(_lemonPatcherExe) && File.Exists(_lemonPatcherExe) &&
+                   !string.IsNullOrEmpty(_melonDataZip) && File.Exists(_melonDataZip) &&
+                   !string.IsNullOrEmpty(_modDllPath) && File.Exists(_modDllPath);
+        }
+
+        private void SeedCacheFromLocalIfAvailable(string cacheDir)
+        {
+            try
+            {
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                string[] searchDirs =
+                {
+                    Path.Combine(baseDir, "tools", "quest"),
+                    Path.Combine(baseDir, @"..\..\..\..\tools\quest"),
+                    Path.Combine(Directory.GetCurrentDirectory(), "tools", "quest")
+                };
+
+                foreach (var dir in searchDirs)
+                {
+                    if (Directory.Exists(dir) && File.Exists(Path.Combine(dir, "apktool.jar")))
+                    {
+                        Directory.CreateDirectory(cacheDir);
+                        foreach (var file in Directory.GetFiles(dir, "*.*", SearchOption.AllDirectories))
+                        {
+                            string rel = Path.GetRelativePath(dir, file);
+                            string target = Path.Combine(cacheDir, rel);
+                            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                            if (!File.Exists(target))
+                            {
+                                File.Copy(file, target, true);
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+            catch { }
+        }
+
+        public async Task<(bool Success, string Message)> EnsureToolsReadyAsync(
+            IProgress<(double Progress, string Status)>? progress = null,
+            Action<string>? log = null)
+        {
+            string cacheDir = GetQuestToolsCacheDirectory();
+            ResolveToolPaths(cacheDir);
+
+            if (AreToolsReady())
+            {
+                return (true, LocalizationService.T("Log_QuestToolsCached", cacheDir));
+            }
+
+            SeedCacheFromLocalIfAvailable(cacheDir);
+            ResolveToolPaths(cacheDir);
+
+            if (AreToolsReady())
+            {
+                return (true, LocalizationService.T("Log_QuestToolsCached", cacheDir));
+            }
+
+            log?.Invoke(LocalizationService.T("Log_QuestToolsDownloading", 0));
+            var (dlSuccess, dlMsg) = await _updateService.DownloadAndCacheQuestToolsAsync(cacheDir, null, progress);
+            if (!dlSuccess)
+            {
+                log?.Invoke(LocalizationService.T("Log_QuestToolsFailed", dlMsg));
+                return (false, dlMsg);
+            }
+
+            ResolveToolPaths(cacheDir);
+            if (AreToolsReady())
+            {
+                log?.Invoke(LocalizationService.T("Log_QuestToolsCached", cacheDir));
+                return (true, dlMsg);
+            }
+
+            return (false, "Some Quest tools components are missing after download.");
         }
 
         public string GetAdbPath() => _adbPath ?? "adb";
@@ -405,17 +494,31 @@ namespace USM.Core.Services.Quest
             }
             Directory.CreateDirectory(workDir);
 
+            if (!AreToolsReady())
+            {
+                progress.Report((2, LocalizationService.T("Log_QuestToolsDownloading", 0)));
+                var (toolsReady, toolsMsg) = await EnsureToolsReadyAsync(
+                    new Progress<(double Progress, string Status)>(p => progress.Report(((int)(p.Progress * 0.05), p.Status))),
+                    log);
+
+                if (!toolsReady)
+                {
+                    log($"ERROR: {toolsMsg}");
+                    return false;
+                }
+            }
+
             progress.Report((5, LocalizationService.T("Log_VerifyTools")));
             log(LocalizationService.T("Log_StartingPipeline"));
 
             if (string.IsNullOrEmpty(_apktoolJar) || !File.Exists(_apktoolJar))
             {
-                log($"ERROR: apktool.jar not found! Please check tools/quest/apktool.jar");
+                log($"ERROR: apktool.jar not found! Please check {GetQuestToolsCacheDirectory()}/apktool.jar");
                 return false;
             }
             if (string.IsNullOrEmpty(_signerJar) || !File.Exists(_signerJar))
             {
-                log($"ERROR: uber-apk-signer.jar not found! Please check tools/quest/uber-apk-signer.jar");
+                log($"ERROR: uber-apk-signer.jar not found! Please check {GetQuestToolsCacheDirectory()}/uber-apk-signer.jar");
                 return false;
             }
 

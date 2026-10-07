@@ -191,6 +191,12 @@ namespace USM.ViewModels
             }
         }
 
+        public bool AreQuestToolsReady => _questService.AreToolsReady();
+        public bool NeedsQuestTools => !AreQuestToolsReady;
+        public string QuestToolsStatusText => AreQuestToolsReady
+            ? LocalizationService.T("Quest_ToolsStatusCached")
+            : LocalizationService.T("Quest_ToolsStatusMissing");
+
         public ICommand RefreshDevicesCommand { get; }
         public ICommand ConnectWirelessCommand { get; }
         public ICommand BrowseApkCommand { get; }
@@ -198,6 +204,7 @@ namespace USM.ViewModels
         public ICommand UninstallModdedCommand { get; }
         public ICommand SyncSongsCommand { get; }
         public ICommand ClearLogsCommand { get; }
+        public ICommand DownloadQuestToolsCommand { get; }
 
         public QuestViewModel(GameDetector gameDetector, Action<string> notifyCallback)
         {
@@ -212,10 +219,40 @@ namespace USM.ViewModels
             UninstallModdedCommand = new AsyncRelayCommand(_ => UninstallModdedAsync(), _ => !IsBusy && IsDeviceConnected && IsModdedInstalled);
             SyncSongsCommand = new AsyncRelayCommand(_ => SyncSongsAsync(), _ => !IsBusy && IsDeviceConnected && LocalSongCount > 0);
             ClearLogsCommand = new RelayCommand(ClearLogs);
+            DownloadQuestToolsCommand = new AsyncRelayCommand(_ => DownloadQuestToolsAsync(), _ => !IsBusy);
 
-            LocalizationService.Instance.LanguageChanged += lang => { _ = CheckInstalledPackagesAsync(); };
+            LocalizationService.Instance.LanguageChanged += lang =>
+            {
+                OnPropertyChanged(nameof(QuestToolsStatusText));
+                _ = CheckInstalledPackagesAsync();
+            };
             AppendLog(LocalizationService.T("Log_QuestInit"));
             _ = RefreshDevicesAsync();
+        }
+
+        private async Task DownloadQuestToolsAsync()
+        {
+            if (IsBusy) return;
+            IsBusy = true;
+            try
+            {
+                var progress = new Progress<(double Progress, string Status)>(p =>
+                {
+                    ProgressPercent = (int)p.Progress;
+                    ProgressStatus = p.Status;
+                });
+                var (success, msg) = await _questService.EnsureToolsReadyAsync(progress, AppendLog);
+                OnPropertyChanged(nameof(AreQuestToolsReady));
+                OnPropertyChanged(nameof(NeedsQuestTools));
+                OnPropertyChanged(nameof(QuestToolsStatusText));
+                _notifyCallback?.Invoke(msg);
+            }
+            finally
+            {
+                IsBusy = false;
+                ProgressPercent = 0;
+                ProgressStatus = "Ready";
+            }
         }
 
         public void AppendLog(string message)
