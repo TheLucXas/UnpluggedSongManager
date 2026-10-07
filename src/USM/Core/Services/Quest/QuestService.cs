@@ -249,6 +249,23 @@ namespace USM.Core.Services.Quest
             string full = (outStr + " " + errStr).Trim();
             bool success = full.Contains("Success", StringComparison.OrdinalIgnoreCase);
 
+            // Handle signature mismatch automatically by cleanly reinstalling
+            if (!success && full.Contains("INSTALL_FAILED_UPDATE_INCOMPATIBLE", StringComparison.OrdinalIgnoreCase))
+            {
+                log?.Invoke(LocalizationService.T("Log_SignatureMismatchUninstall"));
+                await RunProcessAsync(GetAdbPath(), $"-s {serial} uninstall {ModdedPackage}");
+                var (cRetry, oRetry, eRetry) = await RunProcessAsync(GetAdbPath(), $"-s {serial} install --no-incremental -d \"{localApkPath}\"", 300000);
+                full = (oRetry + " " + eRetry).Trim();
+                success = full.Contains("Success", StringComparison.OrdinalIgnoreCase);
+
+                if (!success)
+                {
+                    var (cRetry2, oRetry2, eRetry2) = await RunProcessAsync(GetAdbPath(), $"-s {serial} install -d \"{localApkPath}\"", 300000);
+                    full = (oRetry2 + " " + eRetry2).Trim();
+                    success = full.Contains("Success", StringComparison.OrdinalIgnoreCase);
+                }
+            }
+
             if (!success && !full.Contains("INSTALL_FAILED_ALREADY_EXISTS", StringComparison.OrdinalIgnoreCase))
             {
                 // Fallback to standard install in case the ADB version doesn't support --no-incremental
