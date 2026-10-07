@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using Microsoft.Win32;
@@ -12,6 +13,59 @@ namespace USM.ViewModels
     {
         private readonly GameDetector _gameDetector;
         private readonly Action<string> _notifyCallback;
+        private readonly UpdateService _updateService;
+        private GitHubAssetInfo? _modAsset;
+
+        public string CurrentAppVersion => _updateService.CurrentAppVersion;
+
+        private string? _installedModVersion;
+        public string InstalledModVersion
+        {
+            get => _installedModVersion ?? "N/A";
+            private set => SetProperty(ref _installedModVersion, value);
+        }
+
+        private string _latestReleaseVersion = "—";
+        public string LatestReleaseVersion
+        {
+            get => _latestReleaseVersion;
+            private set => SetProperty(ref _latestReleaseVersion, value);
+        }
+
+        private bool _isUpdateAvailable;
+        public bool IsUpdateAvailable
+        {
+            get => _isUpdateAvailable;
+            private set => SetProperty(ref _isUpdateAvailable, value);
+        }
+
+        private bool _isCheckingUpdates;
+        public bool IsCheckingUpdates
+        {
+            get => _isCheckingUpdates;
+            private set => SetProperty(ref _isCheckingUpdates, value);
+        }
+
+        private string _updateStatusMessage = string.Empty;
+        public string UpdateStatusMessage
+        {
+            get => _updateStatusMessage;
+            private set => SetProperty(ref _updateStatusMessage, value);
+        }
+
+        private bool _canDownloadModAsset;
+        public bool CanDownloadModAsset
+        {
+            get => _canDownloadModAsset;
+            private set => SetProperty(ref _canDownloadModAsset, value);
+        }
+
+        private string _releaseUrl = "https://github.com/TheLucXas/USM/releases";
+        public string ReleaseUrl
+        {
+            get => _releaseUrl;
+            private set => SetProperty(ref _releaseUrl, value);
+        }
 
         public System.Collections.Generic.IReadOnlyList<LanguageItem> Languages => LocalizationService.SupportedLanguages;
 
@@ -142,18 +196,27 @@ namespace USM.ViewModels
         public ICommand InstallModCommand { get; }
         public ICommand IncrementDownloadsCommand { get; }
         public ICommand DecrementDownloadsCommand { get; }
+        public ICommand CheckUpdatesCommand { get; }
+        public ICommand OpenReleaseCommand { get; }
+        public ICommand DownloadModAssetCommand { get; }
 
-        public SettingsViewModel(GameDetector gameDetector, Action<string> notifyCallback)
+        public SettingsViewModel(GameDetector gameDetector, Action<string> notifyCallback, UpdateService? updateService = null)
         {
             _gameDetector = gameDetector;
             _notifyCallback = notifyCallback;
+            _updateService = updateService ?? new UpdateService();
 
             BrowseGamePathCommand = new RelayCommand(BrowseGamePath);
             InstallModCommand = new RelayCommand(InstallMod);
             IncrementDownloadsCommand = new RelayCommand(IncrementDownloads);
             DecrementDownloadsCommand = new RelayCommand(DecrementDownloads);
 
+            CheckUpdatesCommand = new AsyncRelayCommand(CheckForUpdatesAsync);
+            OpenReleaseCommand = new RelayCommand(() => UpdateService.OpenUrlInBrowser(ReleaseUrl));
+            DownloadModAssetCommand = new AsyncRelayCommand(DownloadModAssetAsync);
+
             RefreshStatus();
+            _ = CheckForUpdatesAsync();
         }
 
         private void IncrementDownloads()
@@ -182,16 +245,80 @@ namespace USM.ViewModels
             IsGameFound = !string.IsNullOrEmpty(_gameDetector.GamePath) && GameDetector.IsValidGamePath(_gameDetector.GamePath);
             IsMelonInstalled = _gameDetector.IsMelonInstalled();
             IsModInstalled = _gameDetector.IsModInstalled();
+            InstalledModVersion = _gameDetector.GetInstalledModVersion() ?? "N/A";
             IsCustomSongsReady = Directory.Exists(_gameDetector.GetCustomSongsDir() ?? "");
 
             var (disc, verb) = _gameDetector.ReadPreferences();
             _enableDiscordRpc = disc;
             _enableVerboseDebug = verb;
             _maxDownloadsText = _gameDetector.MaxConcurrentDownloads.ToString();
+            CanDownloadModAsset = _modAsset != null && IsGameFound;
+            OnPropertyChanged(nameof(CurrentAppVersion));
             OnPropertyChanged(nameof(EnableDiscordRpc));
             OnPropertyChanged(nameof(EnableVerboseDebug));
             OnPropertyChanged(nameof(MaxConcurrentDownloads));
             OnPropertyChanged(nameof(MaxDownloadsText));
+        }
+
+        public async Task CheckForUpdatesAsync()
+        {
+            if (IsCheckingUpdates) return;
+            IsCheckingUpdates = true;
+            UpdateStatusMessage = LocalizationService.T("Settings_CheckingUpdates");
+
+            try
+            {
+                var result = await _updateService.CheckForUpdatesAsync();
+                IsUpdateAvailable = result.IsUpdateAvailable;
+                UpdateStatusMessage = result.Message;
+
+                if (result.Release != null)
+                {
+                    LatestReleaseVersion = result.Release.TagName;
+                    if (!string.IsNullOrEmpty(result.Release.HtmlUrl))
+                    {
+                        ReleaseUrl = result.Release.HtmlUrl;
+                    }
+                }
+                else
+                {
+                    LatestReleaseVersion = LocalizationService.T("Settings_NoReleasesFound");
+                }
+
+                _modAsset = result.ModAsset;
+                CanDownloadModAsset = _modAsset != null && IsGameFound;
+            }
+            catch (Exception ex)
+            {
+                UpdateStatusMessage = LocalizationService.T("Settings_UpdateCheckFailed", ex.Message);
+            }
+            finally
+            {
+                IsCheckingUpdates = false;
+            }
+        }
+
+        public async Task DownloadModAssetAsync()
+        {
+            if (_modAsset == null || string.IsNullOrEmpty(_modAsset.BrowserDownloadUrl)) return;
+            if (string.IsNullOrEmpty(_gameDetector.GamePath)) return;
+
+            string targetDll = Path.Combine(_gameDetector.GamePath, "Mods", "UnpluggedCustomSongs.dll");
+            UpdateStatusMessage = LocalizationService.T("Settings_CheckingUpdates");
+
+            var (success, msg) = await _updateService.DownloadAndInstallModAssetAsync(_modAsset.BrowserDownloadUrl, targetDll);
+            UpdateStatusMessage = msg;
+            _notifyCallback?.Invoke(msg);
+
+            if (success)
+            {
+                RefreshStatus();
+                MessageBox.Show(msg, "USM Mod Update", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            else
+            {
+                MessageBox.Show(msg, "USM Mod Update Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void BrowseGamePath()

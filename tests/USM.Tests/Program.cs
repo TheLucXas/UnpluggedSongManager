@@ -164,6 +164,69 @@ namespace USM.Tests
                     throw new Exception($"Test 5 failed: urlResult={urlResult}, folderResult={folderResult}, dirs={dirCountAfterFolder}");
                 }
 
+                // Test 6: GitHub Releases & UpdateService Verification
+                Console.WriteLine("\n[TEST 6] Testing UpdateService version comparison, release JSON parsing, and localization...");
+                
+                // 6a. Version comparisons
+                if (UpdateService.CompareVersions("v2.1.0", "2.0.0") <= 0)
+                    throw new Exception("v2.1.0 should be greater than 2.0.0");
+                if (UpdateService.CompareVersions("2.0.0", "v2.0.0") != 0)
+                    throw new Exception("2.0.0 should be equal to v2.0.0");
+                if (UpdateService.CompareVersions("1.9.9", "2.0.0") >= 0)
+                    throw new Exception("1.9.9 should be less than 2.0.0");
+                if (UpdateService.CleanVersionString("  v3.1.2  ") != "3.1.2")
+                    throw new Exception("CleanVersionString failed");
+
+                // 6b. JSON Parsing & Asset Detection
+                string sampleJson = "{\n" +
+                    "  \"tag_name\": \"v2.1.0\",\n" +
+                    "  \"name\": \"USM 2.1.0 Release\",\n" +
+                    "  \"html_url\": \"https://github.com/TheLucXas/USM/releases/tag/v2.1.0\",\n" +
+                    "  \"body\": \"Fixed bugs and added Quest patcher.\",\n" +
+                    "  \"published_at\": \"2026-10-06T12:00:00Z\",\n" +
+                    "  \"assets\": [\n" +
+                    "    {\n" +
+                    "      \"name\": \"USM-v2.1.0.zip\",\n" +
+                    "      \"browser_download_url\": \"https://github.com/TheLucXas/USM/releases/download/v2.1.0/USM-v2.1.0.zip\",\n" +
+                    "      \"size\": 15000000\n" +
+                    "    },\n" +
+                    "    {\n" +
+                    "      \"name\": \"UnpluggedCustomSongs.dll\",\n" +
+                    "      \"browser_download_url\": \"https://github.com/TheLucXas/USM/releases/download/v2.1.0/UnpluggedCustomSongs.dll\",\n" +
+                    "      \"size\": 25000\n" +
+                    "    }\n" +
+                    "  ]\n" +
+                    "}";
+
+                var parsedRelease = UpdateService.ParseReleaseJson(sampleJson);
+                if (parsedRelease == null)
+                    throw new Exception("Failed to parse sample release JSON");
+                if (parsedRelease.TagName != "v2.1.0")
+                    throw new Exception($"Expected tag v2.1.0, got {parsedRelease.TagName}");
+                if (parsedRelease.Assets.Count != 2)
+                    throw new Exception($"Expected 2 assets, got {parsedRelease.Assets.Count}");
+
+                var modAsset = parsedRelease.Assets.FirstOrDefault(a => 
+                    a.Name.Equals("UnpluggedCustomSongs.dll", StringComparison.OrdinalIgnoreCase));
+                if (modAsset == null || !modAsset.BrowserDownloadUrl.Contains("UnpluggedCustomSongs.dll"))
+                    throw new Exception("Failed to find mod asset in release");
+
+                // 6c. Localization checks across languages
+                var loc = USM.Core.Services.Localization.LocalizationService.Instance;
+                string prevLang = loc.CurrentLanguage;
+                foreach (var lang in new[] { "en", "es", "pt" })
+                {
+                    loc.CurrentLanguage = lang;
+                    string title = USM.Core.Services.Localization.LocalizationService.T("Settings_UpdatesTitle");
+                    string upToDate = USM.Core.Services.Localization.LocalizationService.T("Settings_UpToDate");
+                    string checkBtn = USM.Core.Services.Localization.LocalizationService.T("Settings_CheckUpdatesBtn");
+                    if (string.IsNullOrEmpty(title) || string.IsNullOrEmpty(upToDate) || string.IsNullOrEmpty(checkBtn))
+                        throw new Exception($"Missing update localization for language: {lang}");
+                }
+                loc.CurrentLanguage = prevLang;
+
+                Console.WriteLine(">>> TEST 6 PASSED! (Version comparison, release JSON parsing, mod asset matching & i18n verified) <<<");
+
                 Console.WriteLine("\n=============================================");
                 Console.WriteLine(">>> ALL CONVERSION TESTS COMPLETED SUCCESSFULLY! <<<");
                 Console.WriteLine("=============================================");

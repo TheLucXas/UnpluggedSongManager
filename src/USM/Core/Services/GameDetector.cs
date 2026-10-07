@@ -217,6 +217,51 @@ namespace USM.Core.Services
             return File.Exists(modDll);
         }
 
+        public string? GetInstalledModVersion()
+        {
+            if (string.IsNullOrEmpty(GamePath)) return null;
+            string modDll = Path.Combine(GamePath, "Mods", "UnpluggedCustomSongs.dll");
+            if (!File.Exists(modDll)) return null;
+            try
+            {
+                var vi = System.Diagnostics.FileVersionInfo.GetVersionInfo(modDll);
+                return vi.FileVersion ?? vi.ProductVersion;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public string? GetPackagedModVersion()
+        {
+            string appDir = AppDomain.CurrentDomain.BaseDirectory;
+            var candidates = new[]
+            {
+                Path.Combine(appDir, "UnpluggedCustomSongs.dll"),
+                Path.Combine(appDir, @"..\..\..\..\mod\UnpluggedCustomSongs\UnpluggedCustomSongs.dll"),
+                Path.Combine(appDir, @"..\..\..\..\mod\UnpluggedCustomSongs\bin\Release\netstandard2.0\UnpluggedCustomSongs.dll"),
+                Path.Combine(appDir, @"..\..\..\UnpluggedCustomSongs.dll"),
+                Path.Combine(Directory.GetCurrentDirectory(), "UnpluggedCustomSongs.dll"),
+                Path.Combine(Directory.GetCurrentDirectory(), @"mod\UnpluggedCustomSongs\UnpluggedCustomSongs.dll"),
+                Path.Combine(Directory.GetCurrentDirectory(), @"mod\UnpluggedCustomSongs\bin\Release\netstandard2.0\UnpluggedCustomSongs.dll")
+            };
+
+            foreach (var c in candidates)
+            {
+                if (File.Exists(c))
+                {
+                    try
+                    {
+                        var vi = System.Diagnostics.FileVersionInfo.GetVersionInfo(c);
+                        return vi.FileVersion ?? vi.ProductVersion;
+                    }
+                    catch { }
+                }
+            }
+            return null;
+        }
+
         public bool InstallOrUpdateModPlugin(out string message)
         {
             if (string.IsNullOrEmpty(GamePath))

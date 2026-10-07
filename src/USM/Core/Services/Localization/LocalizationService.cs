@@ -251,7 +251,24 @@ namespace USM.Core.Services.Localization
                 ["Settings_DiscordRpc"] = "Discord Rich Presence",
                 ["Settings_VerboseLogging"] = "Verbose Logging",
                 ["Settings_DownloadPrefsTitle"] = "Download Preferences",
-                ["Settings_MaxDownloadsLabel"] = "Max Concurrent Downloads:"
+                ["Settings_MaxDownloadsLabel"] = "Max Concurrent Downloads:",
+
+                // Updates & GitHub Releases
+                ["Settings_UpdatesTitle"] = "Updates & GitHub Releases",
+                ["Settings_CurrentAppVersion"] = "Current USM Version:",
+                ["Settings_InstalledModVersion"] = "Installed PC Mod Version:",
+                ["Settings_LatestRelease"] = "Latest GitHub Release:",
+                ["Settings_CheckUpdatesBtn"] = "🔄 Check for Updates",
+                ["Settings_CheckingUpdates"] = "Checking GitHub for updates...",
+                ["Settings_UpToDate"] = "✔ You are running the latest version.",
+                ["Settings_UpdateAvailable"] = "⚡ New version available: {0}!",
+                ["Settings_NoReleasesFound"] = "No releases published yet on GitHub.",
+                ["Settings_ViewReleaseBtn"] = "🌐 View on GitHub",
+                ["Settings_DownloadModBtn"] = "⬇ Download & Update Mod from GitHub",
+                ["Settings_ModUpdatedSuccess"] = "Mod plugin updated successfully from GitHub release!",
+                ["Settings_ModUpdateFailed"] = "Failed to download mod: {0}",
+                ["Settings_UpdateCheckFailed"] = "Could not check for updates: {0}",
+                ["Settings_RateLimitExceeded"] = "GitHub API rate limit exceeded. Try again later."
             },
             ["es"] = new Dictionary<string, string>
             {
@@ -387,7 +404,24 @@ namespace USM.Core.Services.Localization
                 ["Settings_DiscordRpc"] = "Presencia en Discord (Rich Presence)",
                 ["Settings_VerboseLogging"] = "Registro Detallado (Verbose Logging)",
                 ["Settings_DownloadPrefsTitle"] = "Preferencias de Descarga",
-                ["Settings_MaxDownloadsLabel"] = "Máximo de Descargas Simultáneas:"
+                ["Settings_MaxDownloadsLabel"] = "Máximo de Descargas Simultáneas:",
+
+                // Actualizaciones y Releases de GitHub
+                ["Settings_UpdatesTitle"] = "Actualizaciones y Releases de GitHub",
+                ["Settings_CurrentAppVersion"] = "Versión Actual de USM:",
+                ["Settings_InstalledModVersion"] = "Versión del Mod en PC:",
+                ["Settings_LatestRelease"] = "Última Release en GitHub:",
+                ["Settings_CheckUpdatesBtn"] = "🔄 Buscar Actualizaciones",
+                ["Settings_CheckingUpdates"] = "Consultando GitHub Releases...",
+                ["Settings_UpToDate"] = "✔ Tienes la versión más reciente.",
+                ["Settings_UpdateAvailable"] = "⚡ ¡Nueva versión disponible: {0}!",
+                ["Settings_NoReleasesFound"] = "Aún no hay releases publicadas en GitHub.",
+                ["Settings_ViewReleaseBtn"] = "🌐 Ver en GitHub",
+                ["Settings_DownloadModBtn"] = "⬇ Descargar y Actualizar Mod de GitHub",
+                ["Settings_ModUpdatedSuccess"] = "¡Plugin del mod actualizado con éxito desde GitHub!",
+                ["Settings_ModUpdateFailed"] = "Fallo al descargar el mod: {0}",
+                ["Settings_UpdateCheckFailed"] = "No se pudo verificar actualizaciones: {0}",
+                ["Settings_RateLimitExceeded"] = "Límite de solicitudes de GitHub alcanzado. Intenta más tarde."
             },
             ["pt"] = new Dictionary<string, string>
             {
@@ -523,7 +557,24 @@ namespace USM.Core.Services.Localization
                 ["Settings_DiscordRpc"] = "Discord Rich Presence",
                 ["Settings_VerboseLogging"] = "Logs Detalhados (Verbose)",
                 ["Settings_DownloadPrefsTitle"] = "Preferências de Download",
-                ["Settings_MaxDownloadsLabel"] = "Downloads Simultâneos Máximos:"
+                ["Settings_MaxDownloadsLabel"] = "Downloads Simultâneos Máximos:",
+
+                // Atualizações e Releases do GitHub
+                ["Settings_UpdatesTitle"] = "Atualizações e Releases do GitHub",
+                ["Settings_CurrentAppVersion"] = "Versão Atual do USM:",
+                ["Settings_InstalledModVersion"] = "Versão do Mod no PC:",
+                ["Settings_LatestRelease"] = "Última Release no GitHub:",
+                ["Settings_CheckUpdatesBtn"] = "🔄 Verificar Atualizações",
+                ["Settings_CheckingUpdates"] = "Consultando GitHub Releases...",
+                ["Settings_UpToDate"] = "✔ Você está usando a versão mais recente.",
+                ["Settings_UpdateAvailable"] = "⚡ Nova versão disponível: {0}!",
+                ["Settings_NoReleasesFound"] = "Nenhuma release publicada ainda no GitHub.",
+                ["Settings_ViewReleaseBtn"] = "🌐 Ver no GitHub",
+                ["Settings_DownloadModBtn"] = "⬇ Baixar e Atualizar Mod do GitHub",
+                ["Settings_ModUpdatedSuccess"] = "Plugin do mod atualizado com sucesso do GitHub!",
+                ["Settings_ModUpdateFailed"] = "Falha ao baixar o mod: {0}",
+                ["Settings_UpdateCheckFailed"] = "Não foi possível verificar atualizações: {0}",
+                ["Settings_RateLimitExceeded"] = "Limite de requisições do GitHub atingido. Tente mais tarde."
             }
         };
     }

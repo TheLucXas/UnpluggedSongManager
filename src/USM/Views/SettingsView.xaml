@@ -183,6 +183,93 @@
                 </StackPanel>
             </Border>
 
+            <!-- Updates & GitHub Releases Card -->
+            <Border Background="{StaticResource BrushBgCard}"
+                    BorderBrush="{StaticResource BrushBorder}"
+                    BorderThickness="1"
+                    CornerRadius="12"
+                    Padding="18,16"
+                    Margin="0,0,0,12">
+                <StackPanel>
+                    <Grid Margin="0,0,0,14">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0"
+                                   Text="{DynamicResource Loc_Settings_UpdatesTitle}"
+                                   FontSize="16"
+                                   FontWeight="Bold"
+                                   Foreground="{StaticResource BrushTextPrimary}"
+                                   VerticalAlignment="Center" />
+
+                        <Button Grid.Column="1"
+                                Content="{DynamicResource Loc_Settings_CheckUpdatesBtn}"
+                                Command="{Binding CheckUpdatesCommand}"
+                                Background="{StaticResource BrushAccentPurple}"
+                                Foreground="#FFFFFF"
+                                FontWeight="Bold"
+                                Padding="16,8"
+                                FontSize="12" />
+                    </Grid>
+
+                    <!-- Version Rows -->
+                    <Grid Margin="0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="220" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{DynamicResource Loc_Settings_CurrentAppVersion}" Foreground="{StaticResource BrushTextSecondary}" />
+                        <TextBlock Grid.Column="1" Text="{Binding CurrentAppVersion}" Foreground="{StaticResource BrushTextPrimary}" FontWeight="Bold" />
+                    </Grid>
+
+                    <Grid Margin="0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="220" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{DynamicResource Loc_Settings_InstalledModVersion}" Foreground="{StaticResource BrushTextSecondary}" />
+                        <TextBlock Grid.Column="1" Text="{Binding InstalledModVersion}" Foreground="{StaticResource BrushTextPrimary}" FontWeight="Bold" />
+                    </Grid>
+
+                    <Grid Margin="0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="220" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{DynamicResource Loc_Settings_LatestRelease}" Foreground="{StaticResource BrushTextSecondary}" />
+                        <TextBlock Grid.Column="1" Text="{Binding LatestReleaseVersion}" Foreground="{StaticResource BrushAccentBlue}" FontWeight="Bold" />
+                    </Grid>
+
+                    <!-- Status Message -->
+                    <TextBlock Text="{Binding UpdateStatusMessage}"
+                               Foreground="{StaticResource BrushTextSecondary}"
+                               FontSize="12"
+                               Margin="0,8,0,12"
+                               TextWrapping="Wrap" />
+
+                    <!-- Action Buttons -->
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="{DynamicResource Loc_Settings_ViewReleaseBtn}"
+                                Command="{Binding OpenReleaseCommand}"
+                                Style="{StaticResource SecondaryButton}"
+                                Margin="0,0,10,0"
+                                Padding="14,7"
+                                FontSize="12" />
+
+                        <Button Content="{DynamicResource Loc_Settings_DownloadModBtn}"
+                                Command="{Binding DownloadModAssetCommand}"
+                                Visibility="{Binding CanDownloadModAsset, Converter={StaticResource BoolToVis}}"
+                                Background="{StaticResource BrushAccentGreen}"
+                                Foreground="#000000"
+                                FontWeight="Bold"
+                                Padding="14,7"
+                                FontSize="12" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
             <!-- 3. Preferences & Debug Options Card -->
             <Border Background="{StaticResource BrushBgCard}"
                     BorderBrush="{StaticResource BrushBorder}"
