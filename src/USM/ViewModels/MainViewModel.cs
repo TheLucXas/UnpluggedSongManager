@@ -38,13 +38,16 @@ namespace USM.ViewModels
             set => SetProperty(ref _isGameConnected, value);
         }
 
-        public string GameStatusText => IsGameConnected ? "Game Connected" : "Game Not Detected";
+        public string GameStatusText => IsGameConnected ? USM.Core.Services.Localization.LocalizationService.T("Nav_GameConnected") : USM.Core.Services.Localization.LocalizationService.T("Nav_GameNotDetected");
 
         public ICommand LaunchGameCommand { get; }
 
         public MainViewModel()
         {
             GameDetector = new GameDetector();
+            USM.Core.Services.Localization.LocalizationService.Instance.Initialize(GameDetector.Language);
+            _toastMessage = USM.Core.Services.Localization.LocalizationService.T("Toast_Ready");
+
             IsGameConnected = !string.IsNullOrEmpty(GameDetector.GamePath) && GameDetector.IsValidGamePath(GameDetector.GamePath);
 
             SearchVM = new SearchViewModel(GameDetector, Notify);
@@ -52,6 +55,12 @@ namespace USM.ViewModels
             LibraryVM = new LibraryViewModel(GameDetector, Notify);
             QuestVM = new QuestViewModel(GameDetector, Notify);
             SettingsVM = new SettingsViewModel(GameDetector, Notify);
+
+            USM.Core.Services.Localization.LocalizationService.Instance.LanguageChanged += _ =>
+            {
+                OnPropertyChanged(nameof(GameStatusText));
+                ToastMessage = USM.Core.Services.Localization.LocalizationService.T("Toast_Ready");
+            };
 
             LaunchGameCommand = new RelayCommand(LaunchGame);
         }

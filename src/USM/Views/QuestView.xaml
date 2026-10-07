@@ -25,14 +25,14 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <TextBlock Text="🥽" FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center" />
-                            <TextBlock Text="Meta Quest ADB Connection"
+                            <TextBlock Text="{DynamicResource Loc_Quest_ConnectionTitle}"
                                        FontSize="16"
                                        FontWeight="Bold"
                                        Foreground="{StaticResource BrushTextPrimary}"
                                        VerticalAlignment="Center" />
                         </StackPanel>
                         <Button Grid.Column="1"
-                                Content="🔄 Refresh Devices"
+                                Content="{DynamicResource Loc_Quest_RefreshDevices}"
                                 Style="{StaticResource SecondaryButton}"
                                 Command="{Binding RefreshDevicesCommand}"
                                 Padding="12,6" />
@@ -48,24 +48,24 @@
 
                         <!-- Left: Connected Devices List -->
                         <StackPanel Grid.Column="0">
-                            <TextBlock Text="Visor Detectado (USB / Wi-Fi)"
+                            <TextBlock Text="{DynamicResource Loc_Quest_DetectedHeadset}"
                                        FontSize="12"
                                        FontWeight="SemiBold"
                                        Foreground="{StaticResource BrushTextSecondary}"
                                        Margin="0,0,0,4" />
-                            <TextBlock Text="Selecciona un dispositivo de la lista:"
+                            <TextBlock Text="{DynamicResource Loc_Quest_SelectHeadsetHint}"
                                        FontSize="11"
                                        Foreground="{StaticResource BrushTextMuted}"
                                        Margin="0,0,0,6" />
                             <ComboBox ItemsSource="{Binding Devices}"
-                                      SelectedItem="{Binding SelectedDevice}"
-                                      DisplayMemberPath="DisplayName"
-                                      Height="36" />
+                                       SelectedItem="{Binding SelectedDevice}"
+                                       DisplayMemberPath="DisplayName"
+                                       Height="36" />
                         </StackPanel>
 
                         <!-- Right: Wireless IP:Port Connection -->
                         <StackPanel Grid.Column="2">
-                            <TextBlock Text="Conexión Inalámbrica (Wi-Fi ADB)"
+                            <TextBlock Text="{DynamicResource Loc_Quest_WirelessTitle}"
                                        FontSize="12"
                                        FontWeight="SemiBold"
                                        Foreground="{StaticResource BrushTextSecondary}"
@@ -81,30 +81,30 @@
 
                                 <!-- Long bar: IP -->
                                 <StackPanel Grid.Column="0">
-                                    <TextBlock Text="IP del Visor (Barra Larga)"
+                                    <TextBlock Text="{DynamicResource Loc_Quest_IpLabel}"
                                                FontSize="11"
                                                Foreground="{StaticResource BrushTextMuted}"
                                                Margin="0,0,0,4" />
                                     <TextBox Text="{Binding WirelessIp, UpdateSourceTrigger=PropertyChanged}"
-                                             ToolTip="Dirección IP del Meta Quest (ej: 192.168.1.15)"
+                                             ToolTip="{DynamicResource Loc_Quest_IpTooltip}"
                                              Height="36" />
                                 </StackPanel>
 
                                 <!-- Short bar: Port -->
                                 <StackPanel Grid.Column="2">
-                                    <TextBlock Text="Puerto"
+                                    <TextBlock Text="{DynamicResource Loc_Quest_PortLabel}"
                                                FontSize="11"
                                                Foreground="{StaticResource BrushTextMuted}"
                                                Margin="0,0,0,4" />
                                     <TextBox Text="{Binding WirelessPort, UpdateSourceTrigger=PropertyChanged}"
-                                             ToolTip="Puerto ADB (por defecto 5555)"
+                                             ToolTip="{DynamicResource Loc_Quest_PortTooltip}"
                                              Height="36" />
                                 </StackPanel>
 
                                 <!-- Button -->
                                 <Button Grid.Column="4"
                                         VerticalAlignment="Bottom"
-                                        Content="📡 Connect Wi-Fi"
+                                        Content="{DynamicResource Loc_Quest_ConnectWifi}"
                                         Style="{StaticResource SecondaryButton}"
                                         Command="{Binding ConnectWirelessCommand}"
                                         Padding="14,0"
@@ -138,12 +138,12 @@
                     Padding="18,16"
                     Margin="0,0,0,12">
                 <StackPanel>
-                    <TextBlock Text="Source APK Configuration"
+                    <TextBlock Text="{DynamicResource Loc_Quest_SourceConfigTitle}"
                                FontSize="14"
                                FontWeight="Bold"
                                Foreground="{StaticResource BrushTextPrimary}"
                                Margin="0,0,0,8" />
-                    <CheckBox Content="Use custom local APK file (instead of pulling directly from Quest)"
+                    <CheckBox Content="{DynamicResource Loc_Quest_UseCustomApk}"
                               IsChecked="{Binding UseCustomApk}"
                               Foreground="{StaticResource BrushTextSecondary}"
                               FontSize="12"
@@ -159,7 +159,7 @@
                                  Text="{Binding CustomApkPath, UpdateSourceTrigger=PropertyChanged}"
                                  Height="36" />
                         <Button Grid.Column="2"
-                                Content="📂 Browse APK..."
+                                Content="{DynamicResource Loc_Quest_BrowseApk}"
                                 Style="{StaticResource SecondaryButton}"
                                 Command="{Binding BrowseApkCommand}"
                                 Padding="14,0"
@@ -168,13 +168,13 @@
                     <Border Height="1" Background="{StaticResource BrushBorder}" Margin="0,10,0,10" />
 
                     <!-- Mod Options -->
-                    <CheckBox Content="⚡ Omitir Tutorial de Calibración y Desbloquear Campaña (Recomendado)"
+                    <CheckBox Content="{DynamicResource Loc_Quest_SkipTutorialTitle}"
                               IsChecked="{Binding SkipTutorialAndUnlock}"
                               Foreground="{StaticResource BrushTextPrimary}"
                               FontWeight="SemiBold"
                               FontSize="12"
                               Margin="0,0,0,4" />
-                    <TextBlock Text="Inicia directamente en el estudio sin tener que repetir el tutorial de 15 minutos ni calibración de manos. Desbloquea todas las salas y álbumes base de la campaña (los DLCs oficiales se mantienen intactos)."
+                    <TextBlock Text="{DynamicResource Loc_Quest_SkipTutorialDesc}"
                                FontSize="11"
                                Foreground="{StaticResource BrushTextMuted}"
                                TextWrapping="Wrap"
@@ -198,7 +198,7 @@
                         CornerRadius="12"
                         Padding="18,16">
                     <StackPanel>
-                        <TextBlock Text="⚡ Quest Standalone Modder"
+                        <TextBlock Text="{DynamicResource Loc_Quest_StandaloneModderTitle}"
                                    FontSize="15"
                                    FontWeight="Bold"
                                    Foreground="{StaticResource BrushAccentPink}"
@@ -214,7 +214,7 @@
                                 Height="40"
                                 FontSize="13"
                                 FontWeight="Bold" />
-                        <Button Content="🗑 Desinstalar 'Unplugged Modded'"
+                        <Button Content="{DynamicResource Loc_Quest_UninstallButton}"
                                 Style="{StaticResource DangerButton}"
                                 Command="{Binding UninstallModdedCommand}"
                                 Visibility="{Binding CanUninstallModded, Converter={StaticResource BoolToVis}}"
@@ -232,18 +232,18 @@
                         CornerRadius="12"
                         Padding="18,16">
                     <StackPanel>
-                        <TextBlock Text="🎵 Custom Songs Transfer"
+                        <TextBlock Text="{DynamicResource Loc_Quest_CustomSongsSyncTitle}"
                                    FontSize="15"
                                    FontWeight="Bold"
                                    Foreground="{StaticResource BrushAccentPurple}"
                                    Margin="0,0,0,6" />
-                        <TextBlock Text="Pushes all custom songs from your USM library directly to your Quest storage (/sdcard/Unplugged/Songs) ready to play."
+                        <TextBlock Text="{DynamicResource Loc_Quest_CustomSongsSyncDesc}"
                                    FontSize="12"
                                    Foreground="{StaticResource BrushTextSecondary}"
                                    TextWrapping="Wrap"
                                    LineHeight="17"
                                    Margin="0,0,0,14" />
-                        <Button Content="📂 Sync Songs to Quest"
+                        <Button Content="{DynamicResource Loc_Quest_SyncSongsButton}"
                                 Style="{StaticResource PurpleButton}"
                                 Command="{Binding SyncSongsCommand}"
                                 Height="40"
@@ -285,13 +285,13 @@
                     <Grid Margin="0,0,0,8">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="📟" FontSize="14" Margin="0,0,6,0" VerticalAlignment="Center" />
-                            <TextBlock Text="ADB &amp; Patcher Console Log"
+                            <TextBlock Text="{DynamicResource Loc_Quest_ConsoleLogTitle}"
                                        FontSize="13"
                                        FontWeight="Bold"
                                        Foreground="{StaticResource BrushTextPrimary}"
                                        VerticalAlignment="Center" />
                         </StackPanel>
-                        <Button Content="Clear Logs"
+                        <Button Content="{DynamicResource Loc_Quest_ClearLogs}"
                                 HorizontalAlignment="Right"
                                 Style="{StaticResource SecondaryButton}"
                                 Command="{Binding ClearLogsCommand}"

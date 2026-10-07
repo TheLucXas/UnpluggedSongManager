@@ -46,9 +46,35 @@ namespace USM.Core.Services
         }
         public event Action<int>? MaxConcurrentDownloadsChanged;
 
+        private string _language = "en";
+        public string Language
+        {
+            get => _language;
+            set
+            {
+                if (_language != value)
+                {
+                    _language = value;
+                    SaveConfig("language", _language);
+                }
+            }
+        }
+
         public GameDetector()
         {
             _config = LoadConfig();
+            if (_config.TryGetValue("language", out var langObj))
+            {
+                if (langObj is JsonElement langElem && langElem.ValueKind == JsonValueKind.String)
+                {
+                    _language = langElem.GetString() ?? "en";
+                }
+                else if (langObj is string s)
+                {
+                    _language = s;
+                }
+            }
+
             if (_config.TryGetValue("game_path", out var gpObj) && gpObj is JsonElement elem && elem.ValueKind == JsonValueKind.String)
             {
                 string? p = elem.GetString();

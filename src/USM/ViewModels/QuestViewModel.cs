@@ -9,6 +9,7 @@ using System.Windows;
 using System.Windows.Input;
 using Microsoft.Win32;
 using USM.Core.Services;
+using USM.Core.Services.Localization;
 using USM.Core.Services.Quest;
 
 namespace USM.ViewModels
@@ -27,7 +28,7 @@ namespace USM.ViewModels
         private bool _isBusy;
         private int _progressPercent;
         private string _progressStatus = "Ready";
-        private string _packageStatusText = "Connect a Quest headset to detect Unplugged status.";
+        private string _packageStatusText = LocalizationService.T("Quest_StatusNoDevice");
         private bool _isOriginalInstalled;
         private bool _isModdedInstalled;
         private bool _useCustomApk;
@@ -129,14 +130,14 @@ namespace USM.ViewModels
             set => SetProperty(ref _skipTutorialAndUnlock, value);
         }
 
-        private string _patchButtonText = "🚀 Parchear e Instalar 'Unplugged Modded'";
+        private string _patchButtonText = LocalizationService.T("Quest_PatchButton_Install");
         public string PatchButtonText
         {
             get => _patchButtonText;
             set => SetProperty(ref _patchButtonText, value);
         }
 
-        private string _patchButtonDescription = "Extrae el juego de tu Quest, lo clona en una app independiente ('Unplugged Modded') con soporte de custom songs y omisión de tutorial, y lo instala junto a tu juego original.";
+        private string _patchButtonDescription = LocalizationService.T("Quest_PatchDesc_Install");
         public string PatchButtonDescription
         {
             get => _patchButtonDescription;
@@ -212,7 +213,8 @@ namespace USM.ViewModels
             SyncSongsCommand = new AsyncRelayCommand(_ => SyncSongsAsync(), _ => !IsBusy && IsDeviceConnected && LocalSongCount > 0);
             ClearLogsCommand = new RelayCommand(ClearLogs);
 
-            AppendLog("Quest Patcher Initialized. Searching for Quest headsets via ADB...");
+            LocalizationService.Instance.LanguageChanged += lang => { _ = CheckInstalledPackagesAsync(); };
+            AppendLog(LocalizationService.T("Log_QuestInit"));
             _ = RefreshDevicesAsync();
         }
 
@@ -254,13 +256,13 @@ namespace USM.ViewModels
                 if (Devices.Count > 0)
                 {
                     SelectedDevice = Devices.First();
-                    AppendLog($"Found {Devices.Count} device(s). Selected: {SelectedDevice.DisplayName}");
+                    AppendLog(LocalizationService.T("Log_FoundDevices", Devices.Count, SelectedDevice.DisplayName));
                 }
                 else
                 {
                     SelectedDevice = null;
-                    PackageStatusText = "No Quest device found. Connect via USB or enter your Quest's IP address.";
-                    AppendLog("No devices found on ADB.");
+                    PackageStatusText = LocalizationService.T("Quest_StatusNoDevice");
+                    AppendLog(LocalizationService.T("Log_NoDevicesFound"));
                 }
             }
             catch (Exception ex)
@@ -273,20 +275,20 @@ namespace USM.ViewModels
         {
             if (string.IsNullOrWhiteSpace(WirelessIp)) return;
             IsConnectingWireless = true;
-            AppendLog($"Attempting wireless connection to {WirelessIp}:{WirelessPort}...");
+            AppendLog(LocalizationService.T("Log_ConnectingWireless", WirelessIp, WirelessPort));
 
             try
             {
                 var (ok, msg) = await _questService.ConnectWirelessAsync(WirelessIp, WirelessPort);
                 if (ok)
                 {
-                    AppendLog($"Wireless ADB connected! ({msg})");
+                    AppendLog(LocalizationService.T("Log_WirelessConnected", msg));
                     _notifyCallback($"Quest Wi-Fi connected ({WirelessIp})");
                     await RefreshDevicesAsync();
                 }
                 else
                 {
-                    AppendLog($"Failed to connect wirelessly: {msg}");
+                    AppendLog(LocalizationService.T("Log_WirelessFailed", msg));
                     _notifyCallback($"Wireless connection failed: {msg}");
                 }
             }
@@ -300,26 +302,26 @@ namespace USM.ViewModels
         {
             if (SelectedDevice == null)
             {
-                PackageStatusText = "No Quest headset connected.";
+                PackageStatusText = LocalizationService.T("Quest_StatusNoDevice");
                 IsOriginalInstalled = false;
                 IsModdedInstalled = false;
                 OriginalVersion = null;
                 ModdedVersion = null;
-                PatchButtonText = "🚀 Parchear e Instalar 'Unplugged Modded'";
-                PatchButtonDescription = "Extrae el juego de tu Quest, lo clona en una app independiente ('Unplugged Modded') con soporte de custom songs y omisión de tutorial, y lo instala junto a tu juego original.";
+                PatchButtonText = LocalizationService.T("Quest_PatchButton_Install");
+                PatchButtonDescription = LocalizationService.T("Quest_PatchDesc_Install");
                 return;
             }
 
             if (SelectedDevice.Status.Equals("unauthorized", StringComparison.OrdinalIgnoreCase))
             {
-                PackageStatusText = "⚠ Visor no autorizado: Por favor ponte el Quest y presiona 'Permitir depuración USB'.";
-                AppendLog("WARNING: Device is unauthorized. Please accept the USB debugging prompt inside your Quest headset.");
+                PackageStatusText = LocalizationService.T("Quest_StatusUnauthorized");
+                AppendLog(LocalizationService.T("Quest_StatusUnauthorized"));
                 IsOriginalInstalled = false;
                 IsModdedInstalled = false;
                 return;
             }
 
-            PackageStatusText = "Checking Unplugged packages on Quest...";
+            PackageStatusText = LocalizationService.T("Quest_StatusChecking");
             try
             {
                 IsOriginalInstalled = await _questService.IsPackageInstalledAsync(SelectedDevice.Serial, QuestService.OriginalPackage);
@@ -346,20 +348,20 @@ namespace USM.ViewModels
                 var sb = new StringBuilder();
                 if (IsOriginalInstalled)
                 {
-                    sb.Append($"✔ Stock Unplugged detectado{(OriginalVersion != null ? $" (v{OriginalVersion})" : "")}. ");
+                    sb.Append(LocalizationService.T("Quest_StockFound") + (OriginalVersion != null ? $" (v{OriginalVersion}). " : ". "));
                 }
                 else
                 {
-                    sb.Append("❌ Stock Unplugged no encontrado. ");
+                    sb.Append(LocalizationService.T("Quest_StockNotFound") + ". ");
                 }
 
                 if (IsModdedInstalled)
                 {
-                    sb.Append($"✔ Modded Unplugged instalado{(ModdedVersion != null ? $" (v{ModdedVersion})" : "")}.");
+                    sb.Append(LocalizationService.T("Quest_ModdedFound") + (ModdedVersion != null ? $" (v{ModdedVersion})." : "."));
                 }
                 else
                 {
-                    sb.Append("⚪ Modded Unplugged no instalado aún.");
+                    sb.Append(LocalizationService.T("Quest_ModdedNotFound") + ".");
                 }
 
                 PackageStatusText = sb.ToString();
@@ -368,20 +370,20 @@ namespace USM.ViewModels
                 // Dynamic button text & description based on installed state & versions
                 if (!IsModdedInstalled)
                 {
-                    PatchButtonText = "🚀 Parchear e Instalar 'Unplugged Modded'";
-                    PatchButtonDescription = "Extrae el juego de tu Quest, lo clona en una app independiente ('Unplugged Modded') con soporte de custom songs y omisión de tutorial, y lo instala junto a tu juego original.";
+                    PatchButtonText = LocalizationService.T("Quest_PatchButton_Install");
+                    PatchButtonDescription = LocalizationService.T("Quest_PatchDesc_Install");
                 }
                 else
                 {
                     if (!string.IsNullOrEmpty(OriginalVersion) && !string.IsNullOrEmpty(ModdedVersion) && !OriginalVersion.Equals(ModdedVersion, StringComparison.OrdinalIgnoreCase))
                     {
-                        PatchButtonText = "🔄 Actualizar 'Unplugged Modded'";
-                        PatchButtonDescription = $"Hay una actualización del juego oficial (v{OriginalVersion} vs Mod v{ModdedVersion}). Vuelve a parchear para mantener la versión al día.";
+                        PatchButtonText = LocalizationService.T("Quest_PatchButton_Update");
+                        PatchButtonDescription = LocalizationService.T("Quest_PatchDesc_Update", OriginalVersion, ModdedVersion);
                     }
                     else
                     {
-                        PatchButtonText = "🔨 Reinstalar / Reparar 'Unplugged Modded'";
-                        PatchButtonDescription = $"La app modeada ya está instalada en tu visor{(ModdedVersion != null ? $" (v{ModdedVersion})" : "")}. Puedes repararla o reinstalarla para restaurar archivos o aplicar cambios.";
+                        PatchButtonText = LocalizationService.T("Quest_PatchButton_Reinstall");
+                        PatchButtonDescription = LocalizationService.T("Quest_PatchDesc_Reinstall", ModdedVersion != null ? $" (v{ModdedVersion})" : "");
                     }
                 }
 
@@ -418,16 +420,15 @@ namespace USM.ViewModels
 
             if (string.IsNullOrEmpty(serial) && string.IsNullOrEmpty(customApk))
             {
-                MessageBox.Show("Por favor conecta un visor Quest o selecciona un APK local válido.", "Quest Patcher", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(LocalizationService.T("Quest_Dialog_SelectHeadsetWarning"), LocalizationService.T("Quest_StandaloneModderTitle"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            string actionMsg = IsModdedInstalled ? "reinstalar / actualizar" : "parchear y clonar";
+            string actionMsg = IsModdedInstalled ? LocalizationService.T("Quest_PatchButton_Reinstall") : LocalizationService.T("Quest_PatchButton_Install");
+            string tutMsg = SkipTutorialAndUnlock ? (" (" + LocalizationService.T("Quest_SkipTutorialTitle") + ")") : "";
             var confirm = MessageBox.Show(
-                $"Esto va a {actionMsg} Unplugged: Air Guitar como app independiente ('Unplugged Modded')\n" +
-                $"que coexistirá con el juego original, con soporte de Custom Songs{(SkipTutorialAndUnlock ? " y tutorial omitido (campaña desbloqueada)" : "")}.\n\n" +
-                "¿Deseas continuar?",
-                "Confirmar Mod Quest",
+                LocalizationService.T("Quest_Dialog_ConfirmPatchMsg", actionMsg, tutMsg),
+                LocalizationService.T("Quest_Dialog_ConfirmPatchTitle"),
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Question
             );
@@ -436,8 +437,8 @@ namespace USM.ViewModels
 
             IsBusy = true;
             ProgressPercent = 0;
-            ProgressStatus = "Iniciando...";
-            _notifyCallback("Proceso de parcheo Quest en progreso...");
+            ProgressStatus = "Starting...";
+            _notifyCallback("Quest modding pipeline in progress...");
 
             var progress = new Progress<(int Percent, string Status)>(report =>
             {
@@ -460,14 +461,12 @@ namespace USM.ViewModels
                 if (success)
                 {
                     ProgressPercent = 100;
-                    ProgressStatus = "¡Parcheo e Instalación completados!";
-                    _notifyCallback("¡Unplugged Modded instalado correctamente en Quest!");
+                    ProgressStatus = "Done!";
+                    _notifyCallback("Unplugged Modded successfully deployed to Quest!");
+                    string tutNote = SkipTutorialAndUnlock ? LocalizationService.T("Quest_Dialog_PatchCompleteTutorialNote") : "";
                     MessageBox.Show(
-                        "¡'Unplugged Modded' fue creado e instalado exitosamente en tu Meta Quest!\n\n" +
-                        "• Encontrarás 'Unplugged Modded' en Fuentes Desconocidas de tu visor.\n" +
-                        (SkipTutorialAndUnlock ? "• Se ha omitido el tutorial: entrarás directamente al estudio con todas las salas base disponibles.\n" : "") +
-                        "• Ahora puedes presionar 'Sync Songs to Quest' para transferir todas tus canciones custom.",
-                        "Instalación en Quest Completa",
+                        LocalizationService.T("Quest_Dialog_PatchCompleteMsg", tutNote),
+                        LocalizationService.T("Quest_Dialog_PatchCompleteTitle"),
                         MessageBoxButton.OK,
                         MessageBoxImage.Information
                     );
@@ -475,15 +474,15 @@ namespace USM.ViewModels
                 }
                 else
                 {
-                    ProgressStatus = "Fallo. Revisa la consola de registros.";
-                    _notifyCallback("Fallo el parcheo de Quest. Revisa el registro.");
-                    MessageBox.Show("Fallo al parchear o instalar el APK. Revisa la consola de registros para más detalles.", "Error de Parcheo", MessageBoxButton.OK, MessageBoxImage.Error);
+                    ProgressStatus = "Failed.";
+                    _notifyCallback("Quest modding pipeline failed. Check logs.");
+                    MessageBox.Show(LocalizationService.T("Quest_Dialog_PatchErrorMsg"), LocalizationService.T("Quest_Dialog_PatchErrorTitle"), MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
             catch (Exception ex)
             {
                 AppendLog($"FATAL ERROR: {ex.Message}");
-                ProgressStatus = "Error Fatal";
+                ProgressStatus = "Fatal Error";
                 _notifyCallback($"Error: {ex.Message}");
             }
             finally
@@ -497,11 +496,8 @@ namespace USM.ViewModels
             if (SelectedDevice == null || !IsModdedInstalled || IsBusy) return;
 
             var confirm = MessageBox.Show(
-                "¿Estás seguro de que deseas desinstalar 'Unplugged Modded' de tu Meta Quest?\n\n" +
-                "• Tu juego original (stock) NO se verá afectado.\n" +
-                "• Las canciones custom guardadas en /sdcard/Unplugged/Songs NO se borrarán.\n" +
-                "• La app modeada clonada y sus datos temporales serán desinstalados.",
-                "Confirmar Desinstalación",
+                LocalizationService.T("Quest_Dialog_ConfirmUninstallMsg"),
+                LocalizationService.T("Quest_Dialog_ConfirmUninstallTitle"),
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Warning
             );
@@ -510,8 +506,8 @@ namespace USM.ViewModels
 
             IsBusy = true;
             ProgressPercent = 0;
-            ProgressStatus = "Desinstalando app modeada del Quest...";
-            _notifyCallback("Desinstalando Unplugged Modded...");
+            ProgressStatus = "Uninstalling...";
+            _notifyCallback("Uninstalling Unplugged Modded...");
 
             try
             {
@@ -519,21 +515,21 @@ namespace USM.ViewModels
                 if (ok)
                 {
                     ProgressPercent = 100;
-                    ProgressStatus = "Desinstalación exitosa";
-                    _notifyCallback("Unplugged Modded ha sido desinstalado.");
-                    MessageBox.Show("Unplugged Modded ha sido desinstalado correctamente de tu Meta Quest.", "Desinstalación Completa", MessageBoxButton.OK, MessageBoxImage.Information);
+                    ProgressStatus = "Uninstall Complete";
+                    _notifyCallback("Unplugged Modded uninstalled.");
+                    MessageBox.Show(LocalizationService.T("Quest_Dialog_UninstallCompleteMsg"), LocalizationService.T("Quest_Dialog_UninstallCompleteTitle"), MessageBoxButton.OK, MessageBoxImage.Information);
                     await CheckInstalledPackagesAsync();
                 }
                 else
                 {
-                    ProgressStatus = "Fallo al desinstalar";
+                    ProgressStatus = "Uninstall Failed";
                     _notifyCallback($"Error: {msg}");
-                    MessageBox.Show($"Fallo al desinstalar la app modeada:\n{msg}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show(LocalizationService.T("Quest_Dialog_UninstallErrorMsg", msg), LocalizationService.T("Quest_Dialog_UninstallErrorTitle"), MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
             catch (Exception ex)
             {
-                AppendLog($"Error al desinstalar: {ex.Message}");
+                AppendLog($"Uninstall Error: {ex.Message}");
             }
             finally
             {
@@ -545,27 +541,27 @@ namespace USM.ViewModels
         {
             if (SelectedDevice == null)
             {
-                MessageBox.Show("Please connect a Quest device first.", "Sync Songs", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(LocalizationService.T("Quest_Dialog_SelectHeadsetWarning"), LocalizationService.T("Quest_CustomSongsSyncTitle"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             string? songsDir = _gameDetector.GetCustomSongsDir();
             if (string.IsNullOrEmpty(songsDir) || !Directory.Exists(songsDir))
             {
-                MessageBox.Show("No custom songs directory found in USM.", "Sync Songs", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("No custom songs directory found in USM.", LocalizationService.T("Quest_CustomSongsSyncTitle"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             var songDirs = Directory.GetDirectories(songsDir);
             if (songDirs.Length == 0)
             {
-                MessageBox.Show("No custom songs found to transfer.", "Sync Songs", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show("No custom songs found to transfer.", LocalizationService.T("Quest_CustomSongsSyncTitle"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
             var confirm = MessageBox.Show(
-                $"Sync {songDirs.Length} custom song(s) to Quest (/sdcard/Unplugged/Songs)?",
-                "Sync Custom Songs",
+                LocalizationService.T("Quest_Dialog_ConfirmSyncMsg", songDirs.Length),
+                LocalizationService.T("Quest_Dialog_ConfirmSyncTitle"),
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Question
             );
@@ -597,9 +593,8 @@ namespace USM.ViewModels
                 ProgressStatus = $"Sync Complete! ({transferred} songs)";
                 _notifyCallback($"Successfully synced {transferred} songs to Quest!");
                 MessageBox.Show(
-                    $"Successfully synced {transferred} songs to your Quest!\n" +
-                    "They will appear inside Unplugged Modded.",
-                    "Songs Synced",
+                    LocalizationService.T("Quest_Dialog_SyncCompleteMsg", transferred),
+                    LocalizationService.T("Quest_Dialog_SyncCompleteTitle"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Information
                 );

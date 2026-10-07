@@ -65,7 +65,7 @@
 
                 <!-- Actions & Connection Badge -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Content="🚀 Launch Unplugged"
+                    <Button Content="{DynamicResource Loc_Nav_LaunchGame}"
                             Command="{Binding LaunchGameCommand}"
                             Background="{StaticResource BrushAccentGreen}"
                             Foreground="#0a0a0f"
@@ -73,7 +73,7 @@
                             FontSize="12"
                             Padding="14,6"
                             Margin="0,0,12,0"
-                            ToolTip="Launch Unplugged VR via Steam" />
+                            ToolTip="{DynamicResource Loc_Nav_LaunchGame_Tooltip}" />
 
                     <!-- Game Connection Badge -->
                     <Border Background="{StaticResource BrushBgInput}"
@@ -142,27 +142,27 @@
             </TabControl.Resources>
 
             <!-- Tab 1: Chorus Search & Download -->
-            <TabItem Header="🔍 Download (Chorus)">
+            <TabItem Header="{DynamicResource Loc_Tab_Download}">
                 <views:SearchView DataContext="{Binding SearchVM}" />
             </TabItem>
 
             <!-- Tab 2: Local Converter Drag & Drop -->
-            <TabItem Header="⚡ Local Converter">
+            <TabItem Header="{DynamicResource Loc_Tab_Converter}">
                 <views:ConverterView DataContext="{Binding ConverterVM}" />
             </TabItem>
 
             <!-- Tab 3: Song Library Manager -->
-            <TabItem Header="📚 Song Library">
+            <TabItem Header="{DynamicResource Loc_Tab_Library}">
                 <views:LibraryView DataContext="{Binding LibraryVM}" />
             </TabItem>
 
             <!-- Tab 4: Quest Patcher -->
-            <TabItem Header="🥽 Quest Patcher">
+            <TabItem Header="{DynamicResource Loc_Tab_QuestPatcher}">
                 <views:QuestView DataContext="{Binding QuestVM}" />
             </TabItem>
 
             <!-- Tab 5: Settings -->
-            <TabItem Header="⚙ Settings">
+            <TabItem Header="{DynamicResource Loc_Tab_Settings}">
                 <views:SettingsView DataContext="{Binding SettingsVM}" />
             </TabItem>
         </TabControl>

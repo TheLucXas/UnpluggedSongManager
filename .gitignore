@@ -31,3 +31,6 @@ Thumbs.db
 *.log
 .idea/
 .vscode/
+
+# Quest Tools Scratch / Work
+tools/quest_work/

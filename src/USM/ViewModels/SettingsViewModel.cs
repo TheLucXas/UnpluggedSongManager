@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Input;
 using Microsoft.Win32;
 using USM.Core.Services;
+using USM.Core.Services.Localization;
 
 namespace USM.ViewModels
 {
@@ -11,6 +12,23 @@ namespace USM.ViewModels
     {
         private readonly GameDetector _gameDetector;
         private readonly Action<string> _notifyCallback;
+
+        public System.Collections.Generic.IReadOnlyList<LanguageItem> Languages => LocalizationService.SupportedLanguages;
+
+        public string SelectedLanguage
+        {
+            get => LocalizationService.Instance.CurrentLanguage;
+            set
+            {
+                if (!string.IsNullOrEmpty(value) && LocalizationService.Instance.CurrentLanguage != value)
+                {
+                    LocalizationService.Instance.CurrentLanguage = value;
+                    _gameDetector.Language = value;
+                    OnPropertyChanged();
+                    RefreshStatus();
+                }
+            }
+        }
 
         private string _gamePath = string.Empty;
         private bool _isGameFound;

@@ -56,7 +56,9 @@ namespace USM.Views
 
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
-            return (value is bool b && b) ? "✓ Ready / Installed" : "✗ Not Found / Missing";
+            return (value is bool b && b) 
+                ? USM.Core.Services.Localization.LocalizationService.T("Settings_StatusReady") 
+                : USM.Core.Services.Localization.LocalizationService.T("Settings_StatusMissing");
         }
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotImplementedException();
     }

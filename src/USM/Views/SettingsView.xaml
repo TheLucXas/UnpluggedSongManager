@@ -39,6 +39,45 @@
 
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="20,10,20,20">
+            <!-- 0. Language Settings Card -->
+            <Border Background="{StaticResource BrushBgCard}"
+                    BorderBrush="{StaticResource BrushBorder}"
+                    BorderThickness="1"
+                    CornerRadius="12"
+                    Padding="18,16"
+                    Margin="0,0,0,12">
+                <StackPanel>
+                    <TextBlock Text="{DynamicResource Loc_Settings_LanguageCardTitle}"
+                               FontSize="16"
+                               FontWeight="Bold"
+                               Foreground="{StaticResource BrushTextPrimary}"
+                               Margin="0,0,0,6" />
+                    <TextBlock Text="{DynamicResource Loc_Settings_LanguageDesc}"
+                               FontSize="12"
+                               Foreground="{StaticResource BrushTextSecondary}"
+                               Margin="0,0,0,14" />
+                    <Grid Margin="0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="220" />
+                            <ColumnDefinition Width="260" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0"
+                                   Text="{DynamicResource Loc_Settings_LanguageCardTitle}"
+                                   Foreground="{StaticResource BrushTextSecondary}"
+                                   VerticalAlignment="Center" />
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding Languages}"
+                                  SelectedValue="{Binding SelectedLanguage, Mode=TwoWay}"
+                                  SelectedValuePath="Code"
+                                  DisplayMemberPath="DisplayName"
+                                  Height="36"
+                                  VerticalContentAlignment="Center"
+                                  FontSize="13" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
             <!-- 1. Game Path Card -->
             <Border Background="{StaticResource BrushBgCard}"
                     BorderBrush="{StaticResource BrushBorder}"
@@ -47,7 +86,7 @@
                     Padding="18,16"
                     Margin="0,0,0,12">
                 <StackPanel>
-                    <TextBlock Text="Game Directory"
+                    <TextBlock Text="{DynamicResource Loc_Settings_GameDirTitle}"
                                FontSize="16"
                                FontWeight="Bold"
                                Foreground="{StaticResource BrushTextPrimary}"
@@ -66,7 +105,7 @@
                                  Margin="0,0,10,0" />
 
                         <Button Grid.Column="1"
-                                Content="Browse"
+                                Content="{DynamicResource Loc_Settings_BrowseButton}"
                                 Command="{Binding BrowseGamePathCommand}"
                                 Padding="16,8"
                                 FontSize="12" />
@@ -89,14 +128,14 @@
                         </Grid.ColumnDefinitions>
 
                         <TextBlock Grid.Column="0"
-                                   Text="Mod Installation Status"
+                                   Text="{DynamicResource Loc_Settings_ModStatusTitle}"
                                    FontSize="16"
                                    FontWeight="Bold"
                                    Foreground="{StaticResource BrushTextPrimary}"
                                    VerticalAlignment="Center" />
 
                         <Button Grid.Column="1"
-                                Content="Install / Update Mod"
+                                Content="{DynamicResource Loc_Settings_InstallModButton}"
                                 Command="{Binding InstallModCommand}"
                                 Background="{StaticResource BrushAccentGreen}"
                                 Foreground="#000000"
@@ -111,7 +150,7 @@
                             <ColumnDefinition Width="220" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="Game Executable:" Foreground="{StaticResource BrushTextSecondary}" />
+                        <TextBlock Grid.Column="0" Text="{DynamicResource Loc_Settings_GameExecLabel}" Foreground="{StaticResource BrushTextSecondary}" />
                         <TextBlock Grid.Column="1" Text="{Binding IsGameFound, Converter={StaticResource StatusTextConv}}" Foreground="{Binding IsGameFound, Converter={StaticResource StatusColorConv}}" FontWeight="Bold" />
                     </Grid>
 
@@ -120,7 +159,7 @@
                             <ColumnDefinition Width="220" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="MelonLoader:" Foreground="{StaticResource BrushTextSecondary}" />
+                        <TextBlock Grid.Column="0" Text="{DynamicResource Loc_Settings_MelonLabel}" Foreground="{StaticResource BrushTextSecondary}" />
                         <TextBlock Grid.Column="1" Text="{Binding IsMelonInstalled, Converter={StaticResource StatusTextConv}}" Foreground="{Binding IsMelonInstalled, Converter={StaticResource StatusColorConv}}" FontWeight="Bold" />
                     </Grid>
 
@@ -129,7 +168,7 @@
                             <ColumnDefinition Width="220" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="Custom Songs Mod:" Foreground="{StaticResource BrushTextSecondary}" />
+                        <TextBlock Grid.Column="0" Text="{DynamicResource Loc_Settings_ModLabel}" Foreground="{StaticResource BrushTextSecondary}" />
                         <TextBlock Grid.Column="1" Text="{Binding IsModInstalled, Converter={StaticResource StatusTextConv}}" Foreground="{Binding IsModInstalled, Converter={StaticResource StatusColorConv}}" FontWeight="Bold" />
                     </Grid>
 
@@ -138,7 +177,7 @@
                             <ColumnDefinition Width="220" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="Custom Songs Folder:" Foreground="{StaticResource BrushTextSecondary}" />
+                        <TextBlock Grid.Column="0" Text="{DynamicResource Loc_Settings_CustomSongsFolderLabel}" Foreground="{StaticResource BrushTextSecondary}" />
                         <TextBlock Grid.Column="1" Text="{Binding IsCustomSongsReady, Converter={StaticResource StatusTextConv}}" Foreground="{Binding IsCustomSongsReady, Converter={StaticResource StatusColorConv}}" FontWeight="Bold" />
                     </Grid>
                 </StackPanel>
@@ -152,7 +191,7 @@
                     Padding="18,16"
                     Margin="0,0,0,12">
                 <StackPanel>
-                    <TextBlock Text="In-Game Mod Settings"
+                    <TextBlock Text="{DynamicResource Loc_Settings_InGameSettingsTitle}"
                                FontSize="16"
                                FontWeight="Bold"
                                Foreground="{StaticResource BrushTextPrimary}"
@@ -160,14 +199,14 @@
 
                     <!-- Discord RPC Checkbox -->
                     <CheckBox IsChecked="{Binding EnableDiscordRpc}"
-                              Content="Discord Rich Presence"
+                              Content="{DynamicResource Loc_Settings_DiscordRpc}"
                               Foreground="{StaticResource BrushTextPrimary}"
                               FontSize="13"
                               Margin="0,0,0,12" />
 
                     <!-- Verbose Debug Checkbox -->
                     <CheckBox IsChecked="{Binding EnableVerboseDebug}"
-                              Content="Verbose Logging"
+                              Content="{DynamicResource Loc_Settings_VerboseLogging}"
                               Foreground="{StaticResource BrushTextPrimary}"
                               FontSize="13" />
                 </StackPanel>
@@ -180,7 +219,7 @@
                     CornerRadius="12"
                     Padding="18,16">
                 <StackPanel>
-                    <TextBlock Text="Download Preferences"
+                    <TextBlock Text="{DynamicResource Loc_Settings_DownloadPrefsTitle}"
                                FontSize="16"
                                FontWeight="Bold"
                                Foreground="{StaticResource BrushTextPrimary}"
@@ -193,7 +232,7 @@
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0"
-                                   Text="Max Concurrent Downloads:"
+                                   Text="{DynamicResource Loc_Settings_MaxDownloadsLabel}"
                                    Foreground="{StaticResource BrushTextSecondary}"
                                    VerticalAlignment="Center" />
 

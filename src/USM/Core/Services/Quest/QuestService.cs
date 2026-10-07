@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using USM.Core.Services.Localization;
 
 namespace USM.Core.Services.Quest
 {
@@ -199,26 +200,26 @@ namespace USM.Core.Services.Quest
 
         public async Task<bool> PullApkAsync(string serial, string remotePath, string localPath, Action<string>? log = null)
         {
-            log?.Invoke($"Pulling APK from Quest: {remotePath} -> {localPath}");
+            log?.Invoke(LocalizationService.T("Log_PullingApk", remotePath, localPath));
             var (code, outStr, errStr) = await RunProcessAsync(GetAdbPath(), $"-s {serial} pull \"{remotePath}\" \"{localPath}\"", 300000);
             if (code == 0 && File.Exists(localPath))
             {
-                log?.Invoke($"APK pulled successfully ({new FileInfo(localPath).Length / (1024 * 1024)} MB).");
+                log?.Invoke(LocalizationService.T("Log_ApkPulledSuccess", $"{new FileInfo(localPath).Length / (1024 * 1024)}"));
                 return true;
             }
-            log?.Invoke($"Failed to pull APK: {outStr} {errStr}");
+            log?.Invoke(LocalizationService.T("Log_ApkPulledFail", $"{outStr} {errStr}".Trim()));
             return false;
         }
 
         public async Task<(bool Success, string Message)> InstallApkAsync(string serial, string localApkPath, Action<string>? log = null)
         {
-            log?.Invoke($"Installing modded APK to Quest ({ModdedPackage})...");
+            log?.Invoke(LocalizationService.T("Log_InstallingApk", ModdedPackage));
             var (code, outStr, errStr) = await RunProcessAsync(GetAdbPath(), $"-s {serial} install -r -d \"{localApkPath}\"", 300000);
             string full = (outStr + " " + errStr).Trim();
             bool success = full.Contains("Success", StringComparison.OrdinalIgnoreCase);
             if (success)
             {
-                log?.Invoke("APK successfully installed on Quest!");
+                log?.Invoke(LocalizationService.T("Log_InstallSuccess"));
                 return (true, "Installation successful!");
             }
             log?.Invoke($"Installation error: {full}");
@@ -227,7 +228,7 @@ namespace USM.Core.Services.Quest
 
         public async Task GrantStoragePermissionsAsync(string serial, string packageName, Action<string>? log = null)
         {
-            log?.Invoke("Granting storage and file access permissions on Quest...");
+            log?.Invoke(LocalizationService.T("Log_GrantingPermissions"));
             await RunProcessAsync(GetAdbPath(), $"-s {serial} shell appops set {packageName} MANAGE_EXTERNAL_STORAGE allow");
             await RunProcessAsync(GetAdbPath(), $"-s {serial} shell pm grant {packageName} android.permission.READ_EXTERNAL_STORAGE");
             await RunProcessAsync(GetAdbPath(), $"-s {serial} shell pm grant {packageName} android.permission.WRITE_EXTERNAL_STORAGE");
@@ -235,7 +236,7 @@ namespace USM.Core.Services.Quest
             // Setup songs directories
             await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p /sdcard/Unplugged/Songs");
             await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p /sdcard/ModData/{packageName}/Songs");
-            log?.Invoke("Quest storage permissions and directories ready.");
+            log?.Invoke(LocalizationService.T("Log_PermissionsReady"));
         }
 
         public async Task<string?> GetPackageVersionAsync(string serial, string packageName)
@@ -254,13 +255,13 @@ namespace USM.Core.Services.Quest
 
         public async Task<(bool Success, string Message)> UninstallModdedPackageAsync(string serial, Action<string>? log = null)
         {
-            log?.Invoke($"Uninstalling {ModdedPackage} from Quest headset...");
+            log?.Invoke(LocalizationService.T("Log_Uninstalling", ModdedPackage));
             var (exitCode, stdout, stderr) = await RunProcessAsync(GetAdbPath(), $"-s {serial} uninstall {ModdedPackage}");
             string output = (stdout + " " + stderr).Trim();
             bool success = output.Contains("Success", StringComparison.OrdinalIgnoreCase);
             if (success)
             {
-                log?.Invoke("Modded package uninstalled successfully.");
+                log?.Invoke(LocalizationService.T("Log_UninstallSuccess"));
                 // Clean up OBB and app data
                 await RunProcessAsync(GetAdbPath(), $"-s {serial} shell rm -rf /sdcard/Android/obb/{ModdedPackage}");
                 await RunProcessAsync(GetAdbPath(), $"-s {serial} shell rm -rf /sdcard/Android/data/{ModdedPackage}");
@@ -308,7 +309,7 @@ namespace USM.Core.Services.Quest
         {
             try
             {
-                log?.Invoke("Injecting unlocked save data (Tutorial Skipped + Campaign Albums 1-5 Unlocked)...");
+                log?.Invoke(LocalizationService.T("Log_InjectingSave"));
                 string encryptedData = GenerateUnlockedSavePayload();
                 string tempFile = Path.Combine(Path.GetTempPath(), "SavedData.json");
                 await File.WriteAllTextAsync(tempFile, encryptedData);
@@ -324,7 +325,7 @@ namespace USM.Core.Services.Quest
                 await RunProcessAsync(GetAdbPath(), $"-s {serial} push \"{tempFile}\" \"{targetPath2}/SavedData.json\"");
 
                 try { File.Delete(tempFile); } catch { }
-                log?.Invoke("Tutorial skipped and base campaign venues unlocked on Quest!");
+                log?.Invoke(LocalizationService.T("Log_SaveSuccess"));
             }
             catch (Exception ex)
             {
@@ -347,8 +348,8 @@ namespace USM.Core.Services.Quest
             }
             Directory.CreateDirectory(workDir);
 
-            progress.Report((5, "Verifying Java, Apktool, and ADB..."));
-            log("=== STARTING QUEST MODDING PIPELINE ===");
+            progress.Report((5, LocalizationService.T("Log_VerifyTools")));
+            log(LocalizationService.T("Log_StartingPipeline"));
 
             if (string.IsNullOrEmpty(_apktoolJar) || !File.Exists(_apktoolJar))
             {
@@ -379,18 +380,18 @@ namespace USM.Core.Services.Quest
                 }
 
                 progress.Report((15, "Checking Unplugged on Quest..."));
-                log($"Querying package '{OriginalPackage}' on device {serial}...");
+                log(LocalizationService.T("Log_QueryingPackage", OriginalPackage, serial));
 
                 string? remotePath = await GetPackageApkPathAsync(serial, OriginalPackage);
                 if (string.IsNullOrEmpty(remotePath))
                 {
-                    log($"Original package '{OriginalPackage}' not found. Checking if modded version exists...");
+                    log(LocalizationService.T("Log_CheckingModdedPackage", OriginalPackage));
                     remotePath = await GetPackageApkPathAsync(serial, ModdedPackage);
                 }
 
                 if (string.IsNullOrEmpty(remotePath))
                 {
-                    log("ERROR: Unplugged: Air Guitar was not found installed on this Quest.");
+                    log(LocalizationService.T("Log_OriginalNotFound"));
                     return false;
                 }
 
@@ -403,7 +404,7 @@ namespace USM.Core.Services.Quest
 
             // Step 2: Decompile APK
             progress.Report((40, "Decompiling APK with Apktool..."));
-            log("Decompiling APK structure (this may take up to 1-2 minutes)...");
+            log(LocalizationService.T("Log_DecompilingApk"));
             string decompiledDir = Path.Combine(workDir, "decompiled");
             var (dCode, dOut, dErr) = await RunProcessAsync("java", $"-jar \"{_apktoolJar}\" d -f -o \"{decompiledDir}\" \"{sourceApk}\"", 300000);
             if (dCode != 0)
@@ -411,13 +412,13 @@ namespace USM.Core.Services.Quest
                 log($"Decompilation error: {dOut} {dErr}");
                 return false;
             }
-            log("APK decompiled successfully.");
+            log(LocalizationService.T("Log_DecompileSuccess"));
 
             if (cancellationToken.IsCancellationRequested) return false;
 
             // Step 3: Patch AndroidManifest and clone package
             progress.Report((60, "Patching Manifest and package identity..."));
-            log("Configuring cloned package identity (com.anotherway.unplugged.modded) and mod permissions...");
+            log(LocalizationService.T("Log_PatchingManifest"));
             string manifestPath = Path.Combine(decompiledDir, "AndroidManifest.xml");
             if (!File.Exists(manifestPath))
             {
@@ -452,7 +453,7 @@ namespace USM.Core.Services.Quest
             });
 
             await File.WriteAllTextAsync(manifestPath, manifest);
-            log("AndroidManifest.xml successfully patched.");
+            log(LocalizationService.T("Log_ManifestSuccess"));
 
             // Update app title in strings.xml
             string stringsXml = Path.Combine(decompiledDir, "res", "values", "strings.xml");
@@ -468,7 +469,7 @@ namespace USM.Core.Services.Quest
 
             // Step 4: Rebuild APK
             progress.Report((75, "Rebuilding APK with Apktool..."));
-            log("Rebuilding APK (this may take 1-2 minutes)...");
+            log(LocalizationService.T("Log_RebuildingApk"));
             string unsignedApk = Path.Combine(workDir, "unplugged_modded_unsigned.apk");
             var (bCode, bOut, bErr) = await RunProcessAsync("java", $"-jar \"{_apktoolJar}\" b \"{decompiledDir}\" -o \"{unsignedApk}\"", 300000);
             if (bCode != 0)
@@ -476,13 +477,13 @@ namespace USM.Core.Services.Quest
                 log($"Rebuild error: {bOut} {bErr}");
                 return false;
             }
-            log($"APK rebuilt: {unsignedApk}");
+            log(LocalizationService.T("Log_RebuildSuccess", unsignedApk));
 
             if (cancellationToken.IsCancellationRequested) return false;
 
             // Step 5: Sign APK
             progress.Report((85, "Signing APK with Uber-APK-Signer..."));
-            log("Signing APK (v2/v3 signatures)...");
+            log(LocalizationService.T("Log_SigningApk"));
             string signedDir = Path.Combine(workDir, "signed");
             Directory.CreateDirectory(signedDir);
             var (sCode, sOut, sErr) = await RunProcessAsync("java", $"-jar \"{_signerJar}\" -a \"{unsignedApk}\" -o \"{signedDir}\"", 300000);
@@ -498,7 +499,7 @@ namespace USM.Core.Services.Quest
                 log("ERROR: Signed APK not found in output directory.");
                 return false;
             }
-            log($"Signed APK ready: {signedApk}");
+            log(LocalizationService.T("Log_SigningSuccess", signedApk));
 
             if (cancellationToken.IsCancellationRequested) return false;
 
@@ -514,7 +515,7 @@ namespace USM.Core.Services.Quest
                 }
 
                 progress.Report((96, "Ensuring OBB expansion file exists..."));
-                log("Setting up game data OBB expansion file on Quest...");
+                log(LocalizationService.T("Log_SettingObb"));
                 string obbTargetDir = $"/sdcard/Android/obb/{ModdedPackage}";
                 await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p {obbTargetDir}");
                 string origObbDir = $"/sdcard/Android/obb/{OriginalPackage}";
@@ -535,7 +536,7 @@ namespace USM.Core.Services.Quest
             }
 
             progress.Report((100, "Completed successfully!"));
-            log("=== QUEST MODDING PIPELINE FINISHED SUCCESSFULLY ===");
+            log(LocalizationService.T("Log_PipelineComplete"));
             return true;
         }
 
@@ -559,7 +560,7 @@ namespace USM.Core.Services.Quest
                 return 0;
             }
 
-            log($"Syncing {songDirs.Length} custom songs to Quest (/sdcard/Unplugged/Songs)...");
+            log(LocalizationService.T("Log_SyncStarting", songDirs.Length));
             await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p /sdcard/Unplugged/Songs");
 
             int transferred = 0;
@@ -570,7 +571,7 @@ namespace USM.Core.Services.Quest
                 string dir = songDirs[i];
                 string songName = Path.GetFileName(dir);
                 progress.Report((i + 1, songDirs.Length));
-                log($"[{i + 1}/{songDirs.Length}] Pushing {songName}...");
+                log(LocalizationService.T("Log_SyncingSong", i + 1, songDirs.Length, songName));
 
                 var (code, _, err) = await RunProcessAsync(GetAdbPath(), $"-s {serial} push \"{dir}\" /sdcard/Unplugged/Songs/", 120000);
                 if (code == 0)
@@ -583,7 +584,7 @@ namespace USM.Core.Services.Quest
                 }
             }
 
-            log($"Sync finished! {transferred}/{songDirs.Length} songs transferred to Quest.");
+            log(LocalizationService.T("Log_SyncComplete", transferred, songDirs.Length));
             return transferred;
         }
 
