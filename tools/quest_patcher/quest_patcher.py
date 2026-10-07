@@ -229,19 +229,11 @@ class QuestPatcher:
         self.log("Patching AndroidManifest.xml for modding & coexistence...")
         content = manifest_file.read_text(encoding="utf-8", errors="replace")
 
-        # 1. Update package attribute
-        content = re.sub(
-            r'package="' + re.escape(ORIGINAL_PACKAGE) + r'"',
-            f'package="{MODDED_PACKAGE}"',
-            content
-        )
+        # 1. Update package attribute cleanly
+        content = re.sub(r'package="[^"]*"', f'package="{MODDED_PACKAGE}"', content)
 
-        # 2. Update provider authorities
-        content = re.sub(
-            re.escape(ORIGINAL_PACKAGE),
-            MODDED_PACKAGE,
-            content
-        )
+        # 2. Update provider authorities cleanly
+        content = re.sub(r'android:authorities="[^"]*"', f'android:authorities="{MODDED_PACKAGE}"', content)
 
         # 3. Add storage permissions if missing
         permissions_to_add = [
@@ -335,6 +327,11 @@ class QuestPatcher:
         if not success:
             self.log(f"Installation failed: {out}")
             return False
+
+        # Ensure OBB exists
+        obb_target = f"/sdcard/Android/obb/{MODDED_PACKAGE}"
+        self.adb.run_adb(["shell", "mkdir", "-p", obb_target], device_id)
+        self.adb.run_adb(["shell", f"cp /sdcard/Android/obb/{ORIGINAL_PACKAGE}/main.*.{ORIGINAL_PACKAGE}.obb {obb_target}/main.410.{MODDED_PACKAGE}.obb"], device_id)
 
         self.log("Installation successful! Configuring storage permissions...")
         self.adb.grant_storage_permissions(MODDED_PACKAGE, device_id)

@@ -331,8 +331,8 @@ namespace USM.Core.Services.Quest
             }
 
             string manifest = await File.ReadAllTextAsync(manifestPath);
-            manifest = manifest.Replace($"package=\"{OriginalPackage}\"", $"package=\"{ModdedPackage}\"");
-            manifest = manifest.Replace(OriginalPackage, ModdedPackage);
+            manifest = Regex.Replace(manifest, @"package=""[^""]*""", $"package=\"{ModdedPackage}\"");
+            manifest = Regex.Replace(manifest, @"android:authorities=""[^""]*""", $"android:authorities=\"{ModdedPackage}\"");
 
             // Add permissions
             string permissions = "\n    <uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\" />" +
@@ -417,6 +417,13 @@ namespace USM.Core.Services.Quest
                     log($"Installation failed: {instMsg}");
                     return false;
                 }
+
+                progress.Report((96, "Ensuring OBB expansion file exists..."));
+                log("Setting up game data OBB expansion file on Quest...");
+                string obbTargetDir = $"/sdcard/Android/obb/{ModdedPackage}";
+                await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p {obbTargetDir}");
+                string origObbDir = $"/sdcard/Android/obb/{OriginalPackage}";
+                await RunProcessAsync(GetAdbPath(), $"-s {serial} shell cp {origObbDir}/main.*.{OriginalPackage}.obb {obbTargetDir}/main.410.{ModdedPackage}.obb");
 
                 progress.Report((98, "Configuring storage permissions..."));
                 await GrantStoragePermissionsAsync(serial, ModdedPackage, log);
