@@ -67,14 +67,14 @@ namespace USM.ViewModels
         public bool IsUpdatingApp
         {
             get => _isUpdatingApp;
-            private set => SetProperty(ref _isUpdatingApp, value);
+            set => SetProperty(ref _isUpdatingApp, value);
         }
 
         private double _updateProgress;
         public double UpdateProgress
         {
             get => _updateProgress;
-            private set => SetProperty(ref _updateProgress, value);
+            set => SetProperty(ref _updateProgress, value);
         }
 
         private string _releaseUrl = "https://github.com/TheLucXas/USM/releases";

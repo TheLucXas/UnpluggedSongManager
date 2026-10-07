@@ -253,7 +253,7 @@
                     <ProgressBar Height="6"
                                  Minimum="0"
                                  Maximum="100"
-                                 Value="{Binding UpdateProgress}"
+                                 Value="{Binding UpdateProgress, Mode=OneWay}"
                                  Visibility="{Binding IsUpdatingApp, Converter={StaticResource BoolToVis}}"
                                  Foreground="{StaticResource BrushAccentPink}"
                                  Background="{StaticResource BrushBgInput}"
