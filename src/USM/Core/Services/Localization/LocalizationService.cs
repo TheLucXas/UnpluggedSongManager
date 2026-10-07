@@ -268,7 +268,14 @@ namespace USM.Core.Services.Localization
                 ["Settings_ModUpdatedSuccess"] = "Mod plugin updated successfully from GitHub release!",
                 ["Settings_ModUpdateFailed"] = "Failed to download mod: {0}",
                 ["Settings_UpdateCheckFailed"] = "Could not check for updates: {0}",
-                ["Settings_RateLimitExceeded"] = "GitHub API rate limit exceeded. Try again later."
+                ["Settings_RateLimitExceeded"] = "GitHub API rate limit exceeded. Try again later.",
+                ["Settings_UpdateAppBtn"] = "🚀 Update USM App",
+                ["Settings_UpdatingApp"] = "Downloading USM update: {0:F0}%...",
+                ["Settings_ExtractingApp"] = "Extracting update files and preparing installer...",
+                ["Settings_UpdateAppConfirmTitle"] = "Update USM",
+                ["Settings_UpdateAppConfirmMsg"] = "A new version of USM ({0}) is available.\n\nUSM will download the update, close, and restart automatically.\n\nDo you want to proceed?",
+                ["Settings_UpdateAppFailed"] = "Failed to update USM: {0}",
+                ["Settings_NoAppAssetFound"] = "No direct update package was found in the release. Please download it manually from GitHub."
             },
             ["es"] = new Dictionary<string, string>
             {
@@ -421,7 +428,14 @@ namespace USM.Core.Services.Localization
                 ["Settings_ModUpdatedSuccess"] = "¡Plugin del mod actualizado con éxito desde GitHub!",
                 ["Settings_ModUpdateFailed"] = "Fallo al descargar el mod: {0}",
                 ["Settings_UpdateCheckFailed"] = "No se pudo verificar actualizaciones: {0}",
-                ["Settings_RateLimitExceeded"] = "Límite de solicitudes de GitHub alcanzado. Intenta más tarde."
+                ["Settings_RateLimitExceeded"] = "Límite de solicitudes de GitHub alcanzado. Intenta más tarde.",
+                ["Settings_UpdateAppBtn"] = "🚀 Actualizar USM",
+                ["Settings_UpdatingApp"] = "Descargando actualización de USM: {0:F0}%...",
+                ["Settings_ExtractingApp"] = "Extrayendo archivos y preparando el instalador...",
+                ["Settings_UpdateAppConfirmTitle"] = "Actualizar USM",
+                ["Settings_UpdateAppConfirmMsg"] = "Una nueva versión de USM ({0}) está disponible.\n\nUSM descargará la actualización, se cerrará y reiniciará automáticamente.\n\n¿Deseas continuar?",
+                ["Settings_UpdateAppFailed"] = "Error al actualizar USM: {0}",
+                ["Settings_NoAppAssetFound"] = "No se encontró un paquete de actualización directa en la release. Por favor descárgalo manualmente desde GitHub."
             },
             ["pt"] = new Dictionary<string, string>
             {
@@ -574,7 +588,14 @@ namespace USM.Core.Services.Localization
                 ["Settings_ModUpdatedSuccess"] = "Plugin do mod atualizado com sucesso do GitHub!",
                 ["Settings_ModUpdateFailed"] = "Falha ao baixar o mod: {0}",
                 ["Settings_UpdateCheckFailed"] = "Não foi possível verificar atualizações: {0}",
-                ["Settings_RateLimitExceeded"] = "Limite de requisições do GitHub atingido. Tente mais tarde."
+                ["Settings_RateLimitExceeded"] = "Limite de requisições do GitHub atingido. Tente mais tarde.",
+                ["Settings_UpdateAppBtn"] = "🚀 Atualizar USM",
+                ["Settings_UpdatingApp"] = "Baixando atualização do USM: {0:F0}%...",
+                ["Settings_ExtractingApp"] = "Extraindo arquivos e preparando o instalador...",
+                ["Settings_UpdateAppConfirmTitle"] = "Atualizar USM",
+                ["Settings_UpdateAppConfirmMsg"] = "Uma nova versão do USM ({0}) está disponível.\n\nO USM baixará a atualização, fechará e reiniciará automaticamente.\n\nDeseja continuar?",
+                ["Settings_UpdateAppFailed"] = "Falha ao atualizar o USM: {0}",
+                ["Settings_NoAppAssetFound"] = "Nenhum pacote de atualização direta foi encontrado na release. Baixe manualmente pelo GitHub."
             }
         };
     }

@@ -246,11 +246,32 @@
                     <TextBlock Text="{Binding UpdateStatusMessage}"
                                Foreground="{StaticResource BrushTextSecondary}"
                                FontSize="12"
-                               Margin="0,8,0,12"
+                               Margin="0,8,0,10"
                                TextWrapping="Wrap" />
+
+                    <!-- Progress Bar for USM App Updating -->
+                    <ProgressBar Height="6"
+                                 Minimum="0"
+                                 Maximum="100"
+                                 Value="{Binding UpdateProgress}"
+                                 Visibility="{Binding IsUpdatingApp, Converter={StaticResource BoolToVis}}"
+                                 Foreground="{StaticResource BrushAccentPink}"
+                                 Background="{StaticResource BrushBgInput}"
+                                 BorderThickness="0"
+                                 Margin="0,0,0,12" />
 
                     <!-- Action Buttons -->
                     <StackPanel Orientation="Horizontal">
+                        <Button Content="{DynamicResource Loc_Settings_UpdateAppBtn}"
+                                Command="{Binding UpdateAppCommand}"
+                                Visibility="{Binding CanUpdateApp, Converter={StaticResource BoolToVis}}"
+                                Background="{StaticResource BrushAccentPink}"
+                                Foreground="#FFFFFF"
+                                FontWeight="Bold"
+                                Margin="0,0,10,0"
+                                Padding="14,7"
+                                FontSize="12" />
+
                         <Button Content="{DynamicResource Loc_Settings_ViewReleaseBtn}"
                                 Command="{Binding OpenReleaseCommand}"
                                 Style="{StaticResource SecondaryButton}"

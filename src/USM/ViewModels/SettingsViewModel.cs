@@ -60,6 +60,23 @@ namespace USM.ViewModels
             private set => SetProperty(ref _canDownloadModAsset, value);
         }
 
+        private GitHubAssetInfo? _usmAsset;
+        public bool CanUpdateApp => _usmAsset != null && IsUpdateAvailable;
+
+        private bool _isUpdatingApp;
+        public bool IsUpdatingApp
+        {
+            get => _isUpdatingApp;
+            private set => SetProperty(ref _isUpdatingApp, value);
+        }
+
+        private double _updateProgress;
+        public double UpdateProgress
+        {
+            get => _updateProgress;
+            private set => SetProperty(ref _updateProgress, value);
+        }
+
         private string _releaseUrl = "https://github.com/TheLucXas/USM/releases";
         public string ReleaseUrl
         {
@@ -199,6 +216,7 @@ namespace USM.ViewModels
         public ICommand CheckUpdatesCommand { get; }
         public ICommand OpenReleaseCommand { get; }
         public ICommand DownloadModAssetCommand { get; }
+        public ICommand UpdateAppCommand { get; }
 
         public SettingsViewModel(GameDetector gameDetector, Action<string> notifyCallback, UpdateService? updateService = null)
         {
@@ -214,6 +232,7 @@ namespace USM.ViewModels
             CheckUpdatesCommand = new AsyncRelayCommand(CheckForUpdatesAsync);
             OpenReleaseCommand = new RelayCommand(() => UpdateService.OpenUrlInBrowser(ReleaseUrl));
             DownloadModAssetCommand = new AsyncRelayCommand(DownloadModAssetAsync);
+            UpdateAppCommand = new AsyncRelayCommand(UpdateAppAsync);
 
             RefreshStatus();
             _ = CheckForUpdatesAsync();
@@ -286,7 +305,9 @@ namespace USM.ViewModels
                 }
 
                 _modAsset = result.ModAsset;
+                _usmAsset = result.UsmAsset;
                 CanDownloadModAsset = _modAsset != null && IsGameFound;
+                OnPropertyChanged(nameof(CanUpdateApp));
             }
             catch (Exception ex)
             {
@@ -295,6 +316,73 @@ namespace USM.ViewModels
             finally
             {
                 IsCheckingUpdates = false;
+            }
+        }
+
+        public async Task UpdateAppAsync()
+        {
+            if (_usmAsset == null || string.IsNullOrEmpty(_usmAsset.BrowserDownloadUrl))
+            {
+                MessageBox.Show(
+                    LocalizationService.T("Settings_NoAppAssetFound"),
+                    LocalizationService.T("Settings_UpdateAppConfirmTitle"),
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            var confirm = MessageBox.Show(
+                LocalizationService.T("Settings_UpdateAppConfirmMsg", LatestReleaseVersion),
+                LocalizationService.T("Settings_UpdateAppConfirmTitle"),
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (confirm != MessageBoxResult.Yes) return;
+
+            IsUpdatingApp = true;
+            UpdateProgress = 0;
+            UpdateStatusMessage = LocalizationService.T("Settings_UpdatingApp", 0.0);
+
+            try
+            {
+                var progress = new Progress<double>(p =>
+                {
+                    UpdateProgress = p;
+                    UpdateStatusMessage = LocalizationService.T("Settings_UpdatingApp", p);
+                });
+
+                var (success, msg, batchFile) = await _updateService.DownloadAndPrepareAppUpdateAsync(
+                    _usmAsset.BrowserDownloadUrl,
+                    _usmAsset.Name,
+                    progress);
+
+                if (!success)
+                {
+                    MessageBox.Show(msg, LocalizationService.T("Settings_UpdateAppConfirmTitle"), MessageBoxButton.OK, MessageBoxImage.Error);
+                    UpdateStatusMessage = msg;
+                    IsUpdatingApp = false;
+                    return;
+                }
+
+                if (!string.IsNullOrEmpty(batchFile))
+                {
+                    UpdateStatusMessage = LocalizationService.T("Settings_ExtractingApp");
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = batchFile,
+                        UseShellExecute = true,
+                        CreateNoWindow = false,
+                        WindowStyle = System.Diagnostics.ProcessWindowStyle.Normal
+                    });
+
+                    Application.Current?.Dispatcher.Invoke(() => Application.Current.Shutdown());
+                }
+            }
+            catch (Exception ex)
+            {
+                UpdateStatusMessage = LocalizationService.T("Settings_UpdateAppFailed", ex.Message);
+                MessageBox.Show(UpdateStatusMessage, LocalizationService.T("Settings_UpdateAppConfirmTitle"), MessageBoxButton.OK, MessageBoxImage.Error);
+                IsUpdatingApp = false;
             }
         }
 

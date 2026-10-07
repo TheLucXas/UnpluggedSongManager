@@ -211,6 +211,13 @@ namespace USM.Tests
                 if (modAsset == null || !modAsset.BrowserDownloadUrl.Contains("UnpluggedCustomSongs.dll"))
                     throw new Exception("Failed to find mod asset in release");
 
+                var usmAsset = parsedRelease.Assets.FirstOrDefault(a =>
+                    (a.Name.Contains("USM", StringComparison.OrdinalIgnoreCase) || a.Name.Contains("Unplugged", StringComparison.OrdinalIgnoreCase)) &&
+                    (a.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) &&
+                    !a.Name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase));
+                if (usmAsset == null || usmAsset.Name != "USM-v2.1.0.zip")
+                    throw new Exception("Failed to match USM app zip asset");
+
                 // 6c. Localization checks across languages
                 var loc = USM.Core.Services.Localization.LocalizationService.Instance;
                 string prevLang = loc.CurrentLanguage;
@@ -220,12 +227,21 @@ namespace USM.Tests
                     string title = USM.Core.Services.Localization.LocalizationService.T("Settings_UpdatesTitle");
                     string upToDate = USM.Core.Services.Localization.LocalizationService.T("Settings_UpToDate");
                     string checkBtn = USM.Core.Services.Localization.LocalizationService.T("Settings_CheckUpdatesBtn");
-                    if (string.IsNullOrEmpty(title) || string.IsNullOrEmpty(upToDate) || string.IsNullOrEmpty(checkBtn))
+                    string appBtn = USM.Core.Services.Localization.LocalizationService.T("Settings_UpdateAppBtn");
+                    string confirmTitle = USM.Core.Services.Localization.LocalizationService.T("Settings_UpdateAppConfirmTitle");
+                    string confirmMsg = USM.Core.Services.Localization.LocalizationService.T("Settings_UpdateAppConfirmMsg", "v2.1.0");
+                    string updating = USM.Core.Services.Localization.LocalizationService.T("Settings_UpdatingApp", 50.0);
+
+                    if (string.IsNullOrEmpty(title) || string.IsNullOrEmpty(upToDate) || string.IsNullOrEmpty(checkBtn) ||
+                        string.IsNullOrEmpty(appBtn) || string.IsNullOrEmpty(confirmTitle) || string.IsNullOrEmpty(confirmMsg) ||
+                        string.IsNullOrEmpty(updating))
+                    {
                         throw new Exception($"Missing update localization for language: {lang}");
+                    }
                 }
                 loc.CurrentLanguage = prevLang;
 
-                Console.WriteLine(">>> TEST 6 PASSED! (Version comparison, release JSON parsing, mod asset matching & i18n verified) <<<");
+                Console.WriteLine(">>> TEST 6 PASSED! (Version comparison, release JSON parsing, app & mod assets matching & i18n verified) <<<");
 
                 Console.WriteLine("\n=============================================");
                 Console.WriteLine(">>> ALL CONVERSION TESTS COMPLETED SUCCESSFULLY! <<<");
