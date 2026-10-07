@@ -749,13 +749,19 @@ namespace USM.Core.Services.Quest
                 if (!string.IsNullOrEmpty(modDll) && File.Exists(modDll))
                 {
                     log?.Invoke(LocalizationService.T("Log_DeployingModDll"));
-                    string targetModDir1 = $"/sdcard/ModData/{packageName}/Mods";
-                    await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p {targetModDir1}");
-                    await RunProcessAsync(GetAdbPath(), $"-s {serial} push \"{modDll}\" \"{targetModDir1}/UnpluggedCustomSongs.dll\"");
-
-                    string targetModDir2 = $"/sdcard/ModData/{OriginalPackage}/Mods";
-                    await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p {targetModDir2}");
-                    await RunProcessAsync(GetAdbPath(), $"-s {serial} push \"{modDll}\" \"{targetModDir2}/UnpluggedCustomSongs.dll\"");
+                    string[] targetModDirs =
+                    {
+                        $"/sdcard/MelonLoader/{packageName}/Mods",
+                        $"/sdcard/MelonLoader/{OriginalPackage}/Mods",
+                        $"/sdcard/Unplugged/Mods",
+                        $"/sdcard/ModData/{packageName}/Mods",
+                        $"/sdcard/ModData/{OriginalPackage}/Mods"
+                    };
+                    foreach (var targetDir in targetModDirs)
+                    {
+                        await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p {targetDir}");
+                        await RunProcessAsync(GetAdbPath(), $"-s {serial} push \"{modDll}\" \"{targetDir}/UnpluggedCustomSongs.dll\"");
+                    }
                     log?.Invoke(LocalizationService.T("Log_ModDllSuccess"));
                     return true;
                 }
