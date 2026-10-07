@@ -29,12 +29,14 @@ namespace UnpluggedCustomSongs
 
         public static void Init()
         {
+            if (Application.platform == RuntimePlatform.Android) return;
             if (!ModMain.ConfigDiscordRPC) return;
             System.Threading.ThreadPool.QueueUserWorkItem(_ => Connect());
         }
 
         public static void EnsureConnected()
         {
+            if (Application.platform == RuntimePlatform.Android) return;
             if (!ModMain.ConfigDiscordRPC) return;
             if (isConnected && pipe != null && pipe.IsConnected) return;
             Connect();
@@ -1074,18 +1076,35 @@ namespace UnpluggedCustomSongs
 
     public static class CustomSongLoader
     {
-        public static string CustomSongsFolder => Path.Combine(Directory.GetParent(Application.dataPath).FullName, "CustomSongs");
+        public static string CustomSongsFolder
+        {
+            get
+            {
+                if (Application.platform == RuntimePlatform.Android)
+                {
+                    if (Directory.Exists("/sdcard/Unplugged/Songs")) return "/sdcard/Unplugged/Songs";
+                    if (Directory.Exists("/sdcard/Unplugged/CustomSongs")) return "/sdcard/Unplugged/CustomSongs";
+                    return "/sdcard/Unplugged/Songs";
+                }
+                return Path.Combine(Directory.GetParent(Application.dataPath).FullName, "CustomSongs");
+            }
+        }
         public static DLCAlbumData CustomAlbumInstance;
 
         private static FileSystemWatcher watcher;
 
         public static void Init()
         {
+            MelonLogger.Msg($"[UnpluggedQuestMod] CustomSongLoader.Init called! Platform: {Application.platform}");
+            MelonLogger.Msg($"[UnpluggedQuestMod] Target CustomSongsFolder: {CustomSongsFolder}");
             if (!Directory.Exists(CustomSongsFolder))
             {
-                Directory.CreateDirectory(CustomSongsFolder);
+                try { Directory.CreateDirectory(CustomSongsFolder); } catch { }
             }
-            StartWatcher();
+            if (Application.platform != RuntimePlatform.Android)
+            {
+                StartWatcher();
+            }
         }
 
         public static void StartWatcher()
@@ -1113,6 +1132,9 @@ namespace UnpluggedCustomSongs
         {
             try
             {
+                MelonLogger.Msg($"[UnpluggedQuestMod] RegisterCustomAlbum called. Manager null: {manager == null}");
+                if (manager == null) return;
+
                 if (CustomAlbumInstance == null)
                 {
                     if (manager.DlcAlbums != null && manager.DlcAlbums.Count > 0)
@@ -1140,11 +1162,12 @@ namespace UnpluggedCustomSongs
                 }
 
                 PopulateCustomSongs(CustomAlbumInstance);
+                MelonLogger.Msg($"[UnpluggedQuestMod] Custom songs populated: {CustomAlbumInstance.SongFiles?.Count ?? 0} song(s)");
 
                 if (manager.DlcAlbums != null && !manager.DlcAlbums.Contains(CustomAlbumInstance))
                 {
                     manager.DlcAlbums.Add(CustomAlbumInstance);
-                    MelonLogger.Msg($"[CustomSongs] Added Custom Songs Album to DLC shelf with {CustomAlbumInstance.SongFiles.Count} song(s)!");
+                    MelonLogger.Msg($"[UnpluggedQuestMod] Added Custom Songs Album to DLC shelf with {CustomAlbumInstance.SongFiles?.Count ?? 0} song(s)!");
                 }
             }
             catch (Exception ex)
@@ -1599,7 +1622,12 @@ namespace UnpluggedCustomSongs
 
         private static AudioClip LoadClip(string filePath)
         {
-            string url = "file:///" + filePath.Replace("\\", "/");
+            string clean = filePath.Replace("\\", "/");
+            string url = clean.StartsWith("/") ? "file://" + clean : "file:///" + clean;
+            AudioType aType = AudioType.MPEG;
+            if (clean.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase)) aType = AudioType.OGGVORBIS;
+            else if (clean.EndsWith(".wav", StringComparison.OrdinalIgnoreCase)) aType = AudioType.WAV;
+
             using var www = new WWW(url);
             int timeout = 0;
             while (!www.isDone && timeout < 500)
@@ -1607,7 +1635,7 @@ namespace UnpluggedCustomSongs
                 System.Threading.Thread.Sleep(10);
                 timeout++;
             }
-            return www.GetAudioClip(false, false, AudioType.MPEG);
+            return www.GetAudioClip(false, false, aType);
         }
     }
 

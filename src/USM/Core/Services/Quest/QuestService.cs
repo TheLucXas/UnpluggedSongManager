@@ -19,6 +19,9 @@ namespace USM.Core.Services.Quest
         private string? _adbPath;
         private string? _apktoolJar;
         private string? _signerJar;
+        private string? _lemonPatcherExe;
+        private string? _melonDataZip;
+        private string? _modDllPath;
 
         public QuestService()
         {
@@ -75,7 +78,7 @@ namespace USM.Core.Services.Quest
                 }
             }
 
-            // 2. Locate Tools directory (apktool and uber-apk-signer)
+            // 2. Locate Tools directory (apktool, uber-apk-signer, lemon_patcher, melon_data)
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
             string[] searchDirs =
             {
@@ -90,11 +93,31 @@ namespace USM.Core.Services.Quest
                 string fullDir = Path.GetFullPath(dir);
                 string apktool = Path.Combine(fullDir, "apktool.jar");
                 string signer = Path.Combine(fullDir, "uber-apk-signer.jar");
+                string lemonPatcher = Path.Combine(fullDir, "lemon_patcher", "lemon_patcher.exe");
+                string melonData = Path.Combine(fullDir, "melon_data.zip");
+                string modDll = Path.Combine(fullDir, "UnpluggedCustomSongs.dll");
+
                 if (File.Exists(apktool) && File.Exists(signer))
                 {
                     _apktoolJar = apktool;
                     _signerJar = signer;
-                    break;
+                }
+                if (File.Exists(lemonPatcher)) _lemonPatcherExe = lemonPatcher;
+                if (File.Exists(melonData)) _melonDataZip = melonData;
+                if (File.Exists(modDll)) _modDllPath = modDll;
+            }
+
+            if (_modDllPath == null)
+            {
+                string[] modCandidates =
+                {
+                    @"C:/REDACTED\.gemini\antigravity\scratch\UnpluggedSongStudio\tools\quest\UnpluggedCustomSongs.dll",
+                    @"C:/REDACTED\.gemini\antigravity\scratch\UnpluggedSongStudio\mod\UnpluggedCustomSongs\UnpluggedCustomSongs.dll",
+                    @"C:\SteamLibrary\steamapps\common\Unplugged\Mods\UnpluggedCustomSongs.dll"
+                };
+                foreach (var c in modCandidates)
+                {
+                    if (File.Exists(c)) { _modDllPath = c; break; }
                 }
             }
         }
@@ -102,6 +125,9 @@ namespace USM.Core.Services.Quest
         public string GetAdbPath() => _adbPath ?? "adb";
         public string? GetApktoolJar() => _apktoolJar;
         public string? GetSignerJar() => _signerJar;
+        public string? GetLemonPatcherExe() => _lemonPatcherExe;
+        public string? GetMelonDataZip() => _melonDataZip;
+        public string? GetModDllPath() => _modDllPath;
 
         public async Task<List<QuestDevice>> GetDevicesAsync()
         {
@@ -495,19 +521,50 @@ namespace USM.Core.Services.Quest
 
             if (cancellationToken.IsCancellationRequested) return false;
 
-            // Step 5: Sign APK
-            progress.Report((85, "Signing APK with Uber-APK-Signer..."));
-            log(LocalizationService.T("Log_SigningApk"));
-            string signedDir = Path.Combine(workDir, "signed");
-            Directory.CreateDirectory(signedDir);
-            var (sCode, sOut, sErr) = await RunProcessAsync("java", $"-jar \"{_signerJar}\" -a \"{unsignedApk}\" -o \"{signedDir}\"", 300000);
-            if (sCode != 0)
+            // Step 5: Inject LemonLoader & Sign APK
+            progress.Report((85, LocalizationService.T("Log_InjectingLemonLoader")));
+            log(LocalizationService.T("Log_InjectingLemonLoader"));
+            
+            string lemonOutDir = Path.Combine(workDir, "lemon_out");
+            string lemonTempDir = Path.Combine(workDir, "lemon_temp");
+            string? signedApk = null;
+
+            if (!string.IsNullOrEmpty(_lemonPatcherExe) && File.Exists(_lemonPatcherExe) &&
+                !string.IsNullOrEmpty(_melonDataZip) && File.Exists(_melonDataZip))
             {
-                log($"Signing error: {sOut} {sErr}");
-                return false;
+                var (lCode, lOut, lErr) = await RunProcessAsync(_lemonPatcherExe,
+                    $"\"{unsignedApk}\" \"{lemonOutDir}\" \"{lemonTempDir}\" \"{_melonDataZip}\" \"{ModdedPackage}\"", 300000);
+
+                if (lCode == 0)
+                {
+                    signedApk = Directory.GetFiles(lemonOutDir, "*.apk").FirstOrDefault();
+                    if (!string.IsNullOrEmpty(signedApk))
+                    {
+                        log(LocalizationService.T("Log_LemonLoaderSuccess"));
+                    }
+                }
+                else
+                {
+                    log($"LemonLoader patch note ({lCode}): {lOut} {lErr}");
+                }
             }
 
-            string? signedApk = Directory.GetFiles(signedDir, "*.apk").FirstOrDefault();
+            // Fallback to uber-apk-signer if lemon_patcher was not available
+            if (string.IsNullOrEmpty(signedApk))
+            {
+                progress.Report((88, LocalizationService.T("Log_SigningApk")));
+                log(LocalizationService.T("Log_SigningApk"));
+                string signedDir = Path.Combine(workDir, "signed");
+                Directory.CreateDirectory(signedDir);
+                var (sCode, sOut, sErr) = await RunProcessAsync("java", $"-jar \"{_signerJar}\" -a \"{unsignedApk}\" -o \"{signedDir}\"", 300000);
+                if (sCode != 0)
+                {
+                    log($"Signing error: {sOut} {sErr}");
+                    return false;
+                }
+                signedApk = Directory.GetFiles(signedDir, "*.apk").FirstOrDefault();
+            }
+
             if (string.IsNullOrEmpty(signedApk))
             {
                 log("ERROR: Signed APK not found in output directory.");
@@ -520,7 +577,7 @@ namespace USM.Core.Services.Quest
             // Step 6: Deploy to Quest if device connected
             if (!string.IsNullOrEmpty(serial))
             {
-                progress.Report((92, "Installing modded APK to Quest..."));
+                progress.Report((92, LocalizationService.T("Log_InstallingApk", ModdedPackage)));
                 var (instSuccess, instMsg) = await InstallApkAsync(serial, signedApk, log);
                 if (!instSuccess)
                 {
@@ -528,19 +585,23 @@ namespace USM.Core.Services.Quest
                     return false;
                 }
 
-                progress.Report((96, "Ensuring OBB expansion file exists..."));
+                progress.Report((95, LocalizationService.T("Log_SettingObb")));
                 log(LocalizationService.T("Log_SettingObb"));
                 string obbTargetDir = $"/sdcard/Android/obb/{ModdedPackage}";
                 await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p {obbTargetDir}");
                 string origObbDir = $"/sdcard/Android/obb/{OriginalPackage}";
                 await RunProcessAsync(GetAdbPath(), $"-s {serial} shell cp {origObbDir}/main.*.{OriginalPackage}.obb {obbTargetDir}/main.410.{ModdedPackage}.obb");
 
-                progress.Report((98, "Configuring storage permissions..."));
+                progress.Report((97, LocalizationService.T("Log_GrantingPermissions")));
                 await GrantStoragePermissionsAsync(serial, ModdedPackage, log);
+
+                // Deploy UnpluggedCustomSongs mod DLL to Quest Mods folder
+                progress.Report((98, LocalizationService.T("Log_DeployingModDll")));
+                await DeployModDllAsync(serial, ModdedPackage, log);
 
                 if (skipTutorialAndUnlock)
                 {
-                    progress.Report((99, "Configuring unlocked campaign & skipping tutorial..."));
+                    progress.Report((99, LocalizationService.T("Log_InjectingSave")));
                     await SetupUnlockedSaveDataAsync(serial, ModdedPackage, log);
                 }
             }
@@ -549,9 +610,46 @@ namespace USM.Core.Services.Quest
                 log($"No device connected. The modded APK is ready at:\n{signedApk}");
             }
 
-            progress.Report((100, "Completed successfully!"));
+            progress.Report((100, LocalizationService.T("Log_PipelineComplete")));
             log(LocalizationService.T("Log_PipelineComplete"));
             return true;
+        }
+
+        public async Task<bool> DeployModDllAsync(string serial, string packageName, Action<string>? log = null)
+        {
+            try
+            {
+                string? modDll = _modDllPath;
+                if (string.IsNullOrEmpty(modDll) || !File.Exists(modDll))
+                {
+                    string candidate = @"C:/REDACTED\.gemini\antigravity\scratch\UnpluggedSongStudio\tools\quest\UnpluggedCustomSongs.dll";
+                    if (File.Exists(candidate)) modDll = candidate;
+                }
+
+                if (!string.IsNullOrEmpty(modDll) && File.Exists(modDll))
+                {
+                    log?.Invoke(LocalizationService.T("Log_DeployingModDll"));
+                    string targetModDir1 = $"/sdcard/ModData/{packageName}/Mods";
+                    await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p {targetModDir1}");
+                    await RunProcessAsync(GetAdbPath(), $"-s {serial} push \"{modDll}\" \"{targetModDir1}/UnpluggedCustomSongs.dll\"");
+
+                    string targetModDir2 = $"/sdcard/ModData/{OriginalPackage}/Mods";
+                    await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p {targetModDir2}");
+                    await RunProcessAsync(GetAdbPath(), $"-s {serial} push \"{modDll}\" \"{targetModDir2}/UnpluggedCustomSongs.dll\"");
+                    log?.Invoke(LocalizationService.T("Log_ModDllSuccess"));
+                    return true;
+                }
+                else
+                {
+                    log?.Invoke("Warning: UnpluggedCustomSongs.dll not found to deploy to Quest Mods folder.");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                log?.Invoke($"Warning: Could not deploy mod DLL to Quest: {ex.Message}");
+                return false;
+            }
         }
 
         public async Task<HashSet<string>> GetQuestInstalledSongsAsync(string serial)

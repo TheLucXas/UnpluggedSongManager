@@ -34,3 +34,5 @@ Thumbs.db
 
 # Quest Tools Scratch / Work
 tools/quest_work/
+tools/quest/lemon_patcher/
+tools/quest/*.zip
