@@ -722,7 +722,7 @@ namespace USM.Core.Services.Quest
                 if (skipTutorialAndUnlock)
                 {
                     progress.Report((99, LocalizationService.T("Log_InjectingSave")));
-                    await SetupUnlockedSaveDataAsync(serial, ModdedPackage, log);
+                    // await SetupUnlockedSaveDataAsync(serial, ModdedPackage, log);
                 }
             }
             else
