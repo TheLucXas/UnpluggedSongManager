@@ -1387,14 +1387,83 @@ namespace UnpluggedCustomSongs
             if (!File.Exists(xmlPath)) xmlPath = Path.Combine(folder, "songdata-Easy.xml");
 
             MelonLogger.Msg($"[CustomSongs] Loading chart XML: {xmlPath}");
+#if QUEST_IL2CPP
+            var serializer = new Il2CppSystem.Runtime.Serialization.DataContractSerializer(Il2CppInterop.Runtime.Il2CppType.Of<SongMapping>());
+            var stream = Il2CppSystem.IO.File.OpenRead(xmlPath);
+            var settings = new Il2CppSystem.Xml.XmlReaderSettings();
+            settings.ConformanceLevel = Il2CppSystem.Xml.ConformanceLevel.Fragment;
+            var reader = Il2CppSystem.Xml.XmlReader.Create(stream.Cast<Il2CppSystem.IO.Stream>(), settings);
+            reader.Read();
+            var obj = serializer.ReadObject(reader, false);
+            var mapping = obj.Cast<SongMapping>();
+#else
             using var stream = File.OpenRead(xmlPath);
             var serializer = new DataContractSerializer(typeof(SongMapping));
             using var reader = XmlReader.Create(stream, new XmlReaderSettings { ConformanceLevel = ConformanceLevel.Fragment });
             reader.Read();
             var mapping = (SongMapping)serializer.ReadObject(reader, false);
+#endif
             mapping.IsHandTrackingMapping = isHandTracking;
 
-                        // DUAL-TRACK GUARANTEE: Ensure GuitarControllerGame exists for controllers / PC desktop!
+            // DYNAMIC FINGERING POPULATION FOR ALL NOTES (Fixes missing scoring without needing Harmony patches)
+            if (mapping.Keys != null)
+            {
+                for (int ki = 0; ki < mapping.Keys.Count; ki++)
+                {
+                    var k = mapping.Keys[ki];
+                    if (k is GuitarGame gg && gg.Notes != null)
+                    {
+                        for (int ni = 0; ni < gg.Notes.Count; ni++)
+                        {
+                            if (gg.Notes[ni] is HandGuitarNote hn)
+                            {
+                                if (hn.Fingers == null || hn.Fingers.Count == 0)
+                                {
+#if QUEST_IL2CPP
+                                    var fList = new Il2CppSystem.Collections.Generic.List<TierFinger>();
+                                    fList.Add(hn.Tier switch {
+                                        0 => TierFinger.Index,
+                                        1 => TierFinger.Middle,
+                                        2 => TierFinger.Ring,
+                                        _ => TierFinger.Pinky
+                                    });
+                                    hn.Fingers = fList;
+#else
+                                    hn.Fingers = hn.Tier switch {
+                                        0 => new List<TierFinger> { TierFinger.Index },
+                                        1 => new List<TierFinger> { TierFinger.Middle },
+                                        2 => new List<TierFinger> { TierFinger.Ring },
+                                        _ => new List<TierFinger> { TierFinger.Pinky }
+                                    };
+#endif
+                                }
+                            }
+                        }
+                    }
+                    else if (k is GuitarControllerGame cg && cg.Notes != null)
+                    {
+                        for (int ni = 0; ni < cg.Notes.Count; ni++)
+                        {
+                            if (cg.Notes[ni] is ControllerGuitarNote cn)
+                            {
+                                if (cn.Buttons == null || cn.Buttons.Count < 2 || (!cn.Buttons[0] && !cn.Buttons[1]))
+                                {
+#if QUEST_IL2CPP
+                                    var bList = new Il2CppSystem.Collections.Generic.List<bool>();
+                                    bList.Add(cn.Tier < 2);
+                                    bList.Add(cn.Tier >= 2);
+                                    cn.Buttons = bList;
+#else
+                                    cn.Buttons = new List<bool> { cn.Tier < 2, cn.Tier >= 2 };
+#endif
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // DUAL-TRACK GUARANTEE: Ensure GuitarControllerGame exists so controllers work!
             if (mapping.Keys != null)
             {
                 bool hasHand = false;
@@ -2111,134 +2180,7 @@ namespace UnpluggedCustomSongs
         }
     }
 
-#if QUEST_IL2CPP
-    [HarmonyPatch(typeof(GuitarNoteController), "SetFingers", new Type[] { typeof(Il2CppSystem.Collections.Generic.List<TierFinger>) })]
-    public static class Patch_GuitarNoteController_SetFingers
-    {
-        public static void Prefix(GuitarNoteController __instance, ref Il2CppSystem.Collections.Generic.List<TierFinger> fingers)
-        {
-            if (fingers == null || fingers.Count == 0)
-            {
-                int tier = 0;
-                if (__instance.Note is GuitarNote gn) tier = gn.Tier;
-                var fList = new Il2CppSystem.Collections.Generic.List<TierFinger>();
-                fList.Add(tier switch
-                {
-                    0 => TierFinger.Index,
-                    1 => TierFinger.Middle,
-                    2 => TierFinger.Ring,
-                    _ => TierFinger.Pinky
-                });
-                fingers = fList;
-            }
-        }
-#else
-    [HarmonyPatch(typeof(GuitarNoteController), "SetFingers", new Type[] { typeof(List<TierFinger>) })]
-    public static class Patch_GuitarNoteController_SetFingers
-    {
-        public static void Prefix(GuitarNoteController __instance, ref List<TierFinger> fingers)
-        {
-            if (fingers == null || fingers.Count == 0)
-            {
-                int tier = 0;
-                if (__instance.Note is GuitarNote gn) tier = gn.Tier;
-                fingers = tier switch
-                {
-                    0 => new List<TierFinger> { TierFinger.Index },
-                    1 => new List<TierFinger> { TierFinger.Middle },
-                    2 => new List<TierFinger> { TierFinger.Ring },
-                    _ => new List<TierFinger> { TierFinger.Pinky }
-                };
-            }
-        }
-#endif
 
-        public static void Postfix(GuitarNoteController __instance)
-        {
-            try
-            {
-                var block = Traverse.Create(__instance).Field("notePropertyBlock").GetValue<MaterialPropertyBlock>();
-                if (__instance.NoteRenderer != null && block != null)
-                {
-                    __instance.NoteRenderer.SetPropertyBlock(block);
-                }
-            }
-            catch { }
-        }
-    }
-
-#if QUEST_IL2CPP
-    [HarmonyPatch(typeof(GuitarControllerNoteController), "SetFingers", new Type[] { typeof(Il2CppSystem.Collections.Generic.List<bool>), typeof(int) })]
-    public static class Patch_GuitarControllerNoteController_SetFingers_List
-    {
-        public static void Prefix(GuitarControllerNoteController __instance, ref Il2CppSystem.Collections.Generic.List<bool> buttons)
-        {
-            if (buttons == null || buttons.Count < 2 || (!buttons[0] && !buttons[1]))
-            {
-                int tier = 0;
-                if (__instance.Note is GuitarNote gn) tier = gn.Tier;
-                var bList = new Il2CppSystem.Collections.Generic.List<bool>();
-                bList.Add(tier < 2);
-                bList.Add(tier >= 2);
-                buttons = bList;
-            }
-        }
-#else
-    [HarmonyPatch(typeof(GuitarControllerNoteController), "SetFingers", new Type[] { typeof(List<bool>), typeof(int) })]
-    public static class Patch_GuitarControllerNoteController_SetFingers_List
-    {
-        public static void Prefix(GuitarControllerNoteController __instance, ref List<bool> buttons)
-        {
-            if (buttons == null || buttons.Count < 2 || (!buttons[0] && !buttons[1]))
-            {
-                int tier = 0;
-                if (__instance.Note is GuitarNote gn) tier = gn.Tier;
-                buttons = new List<bool> { tier < 2, tier >= 2 };
-            }
-        }
-#endif
-
-        public static void Postfix(GuitarControllerNoteController __instance)
-        {
-            try
-            {
-                var block = Traverse.Create(__instance).Field("notePropertyBlock").GetValue<MaterialPropertyBlock>();
-                if (__instance.NoteRenderer != null && block != null)
-                {
-                    __instance.NoteRenderer.SetPropertyBlock(block);
-                }
-            }
-            catch { }
-        }
-    }
-
-    [HarmonyPatch(typeof(GuitarControllerNoteController), "SetFingers", new Type[] { typeof(bool), typeof(bool), typeof(int) })]
-    public static class Patch_GuitarControllerNoteController_SetFingers_Bools
-    {
-        public static void Prefix(GuitarControllerNoteController __instance, ref bool triggerActive, ref bool gripActive)
-        {
-            if (!triggerActive && !gripActive)
-            {
-                int tier = 0;
-                if (__instance.Note is GuitarNote gn) tier = gn.Tier;
-                triggerActive = tier < 2;
-                gripActive = tier >= 2;
-            }
-        }
-
-        public static void Postfix(GuitarControllerNoteController __instance)
-        {
-            try
-            {
-                var block = Traverse.Create(__instance).Field("notePropertyBlock").GetValue<MaterialPropertyBlock>();
-                if (__instance.NoteRenderer != null && block != null)
-                {
-                    __instance.NoteRenderer.SetPropertyBlock(block);
-                }
-            }
-            catch { }
-        }
-    }
 
     [HarmonyPatch(typeof(GameManager), "Finish")]
     public static class Patch_GameManager_Finish
