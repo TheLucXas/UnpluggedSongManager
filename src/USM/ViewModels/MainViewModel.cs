@@ -52,8 +52,8 @@ namespace USM.ViewModels
 
             SearchVM = new SearchViewModel(GameDetector, Notify);
             ConverterVM = new ConverterViewModel(GameDetector, Notify);
-            LibraryVM = new LibraryViewModel(GameDetector, Notify);
             QuestVM = new QuestViewModel(GameDetector, Notify);
+            LibraryVM = new LibraryViewModel(GameDetector, Notify, QuestVM);
             SettingsVM = new SettingsViewModel(GameDetector, Notify);
 
             USM.Core.Services.Localization.LocalizationService.Instance.LanguageChanged += _ =>

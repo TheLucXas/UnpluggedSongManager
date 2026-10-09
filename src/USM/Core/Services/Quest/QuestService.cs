@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net;
+using System.Net.Sockets;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Text.Json;
@@ -13,6 +15,8 @@ using USM.Core.Services.Localization;
 
 namespace USM.Core.Services.Quest
 {
+    public sealed record WirelessAdbEndpoint(string Ip, int Port, string ServiceName, string DeviceName);
+
     public class QuestService
     {
         public const string OriginalPackage = "com.Anotherway.UnpluggedVR";
@@ -331,6 +335,110 @@ namespace USM.Core.Services.Quest
             }
             return result;
         }
+
+        public async Task<WirelessAdbEndpoint?> DiscoverWirelessAdbAsync(Action<string>? log = null, int attempts = 2)
+        {
+            int maxAttempts = Math.Clamp(attempts, 1, 2);
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                log?.Invoke($"Searching for wireless ADB through mDNS ({attempt}/{maxAttempts})...");
+
+                var (_, snapshot, _) = await RunProcessAsync(GetAdbPath(), "mdns services", 3000);
+                WirelessAdbEndpoint? endpoint = ParseWirelessAdbEndpoint(snapshot);
+
+                if (endpoint == null)
+                {
+                    // Newer platform-tools expose IP, port, and device model in a stream.
+                    // Capture a short window, then stop the long-running tracker.
+                    var (_, tracked, _) = await RunProcessForWindowAsync(
+                        GetAdbPath(), "mdns track-services --proto-text", 1400);
+                    endpoint = ParseWirelessAdbEndpoint(tracked);
+                }
+
+                if (endpoint != null)
+                {
+                    log?.Invoke($"mDNS found {endpoint.DeviceName} at {endpoint.Ip}:{endpoint.Port} ({endpoint.ServiceName}).");
+                    return endpoint;
+                }
+
+                if (attempt < maxAttempts) await Task.Delay(800);
+            }
+
+            log?.Invoke("mDNS did not find a connectable wireless ADB service.");
+            return null;
+        }
+
+        private static WirelessAdbEndpoint? ParseWirelessAdbEndpoint(string output)
+        {
+            if (string.IsNullOrWhiteSpace(output)) return null;
+
+            var candidates = new List<WirelessAdbEndpoint>();
+            foreach (Match blockMatch in Regex.Matches(output, @"\bservice\s*\{(?<body>.*?)\}", RegexOptions.IgnoreCase | RegexOptions.Singleline))
+            {
+                string body = blockMatch.Groups["body"].Value;
+                string serviceName = ReadProtoString(body, "service");
+                if (!IsConnectableAdbService(serviceName)) continue;
+
+                string ip = ReadProtoString(body, "ipv4");
+                int port = ReadProtoInt(body, "port");
+                if (!IsValidIpv4(ip) || port is < 1 or > 65535) continue;
+
+                string deviceName = ReadProtoString(body, "product_model");
+                if (string.IsNullOrWhiteSpace(deviceName)) deviceName = ReadProtoString(body, "given_name");
+                if (string.IsNullOrWhiteSpace(deviceName)) deviceName = ReadProtoString(body, "instance");
+                candidates.Add(new WirelessAdbEndpoint(ip, port, serviceName, deviceName));
+            }
+
+            if (candidates.Count == 0)
+            {
+                // Older platform-tools return a one-line service list instead of proto text.
+                foreach (string line in output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    string serviceName = line.Contains("_adb-tls-connect._tcp", StringComparison.OrdinalIgnoreCase)
+                        ? "_adb-tls-connect._tcp"
+                        : line.Contains("_adb._tcp", StringComparison.OrdinalIgnoreCase) &&
+                          !line.Contains("_adb-tls-pairing._tcp", StringComparison.OrdinalIgnoreCase)
+                            ? "_adb._tcp"
+                            : string.Empty;
+                    if (serviceName.Length == 0) continue;
+
+                    Match address = Regex.Match(line, @"(?<ip>(?:\d{1,3}\.){3}\d{1,3})[:\s]+(?<port>\d{1,5})");
+                    if (!address.Success) continue;
+
+                    string ip = address.Groups["ip"].Value;
+                    if (!IsValidIpv4(ip) || !int.TryParse(address.Groups["port"].Value, out int port) || port is < 1 or > 65535)
+                        continue;
+
+                    candidates.Add(new WirelessAdbEndpoint(ip, port, serviceName, "ADB device"));
+                }
+            }
+
+            if (candidates.Count == 1) return candidates[0];
+
+            var questCandidates = candidates
+                .Where(candidate => candidate.DeviceName.Contains("Quest", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            return questCandidates.Count == 1 ? questCandidates[0] : null;
+        }
+
+        private static bool IsConnectableAdbService(string serviceName) =>
+            serviceName.Equals("_adb-tls-connect._tcp", StringComparison.OrdinalIgnoreCase) ||
+            serviceName.Equals("_adb._tcp", StringComparison.OrdinalIgnoreCase);
+
+        private static string ReadProtoString(string block, string property)
+        {
+            Match match = Regex.Match(block, $@"(?m)^\s*{Regex.Escape(property)}\s*:\s*""(?<value>[^""]*)""");
+            return match.Success ? match.Groups["value"].Value.Trim() : string.Empty;
+        }
+
+        private static int ReadProtoInt(string block, string property)
+        {
+            Match match = Regex.Match(block, $@"(?m)^\s*{Regex.Escape(property)}\s*:\s*(?<value>\d+)");
+            return match.Success && int.TryParse(match.Groups["value"].Value, out int value) ? value : 0;
+        }
+
+        private static bool IsValidIpv4(string value) =>
+            IPAddress.TryParse(value, out IPAddress? address) && address.AddressFamily == AddressFamily.InterNetwork;
 
         public async Task<(bool Success, string Message)> ConnectWirelessAsync(string ip, int port = 5555)
         {
@@ -1349,6 +1457,50 @@ namespace USM.Core.Services.Quest
             return installed;
         }
 
+        public async Task<(bool DirectoryExists, List<string> SongFiles, string Message)> ListQuestSongsAsync(string serial)
+        {
+            var (directoryCode, _, directoryError) = await RunProcessAsync(
+                GetAdbPath(), $"-s {serial} shell test -d {ModdedSongsPath}", 15000);
+            if (directoryCode != 0)
+            {
+                string message = string.IsNullOrWhiteSpace(directoryError)
+                    ? "Quest custom-songs folder was not found."
+                    : directoryError.Trim();
+                return (false, new List<string>(), message);
+            }
+
+            var (listCode, stdout, stderr) = await RunProcessAsync(
+                GetAdbPath(), $"-s {serial} shell ls -1 {ModdedSongsPath}", 15000);
+            if (listCode != 0)
+            {
+                return (true, new List<string>(), (stdout + " " + stderr).Trim());
+            }
+
+            var songs = stdout.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(name => name.Trim())
+                .Where(name => name.EndsWith(".usm", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            return (true, songs, songs.Count == 0 ? "No .usm songs found on Quest." : $"Found {songs.Count} song(s) on Quest.");
+        }
+
+        public async Task<(bool Success, string Message)> DeleteQuestSongAsync(string serial, string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(fileName) ||
+                fileName.Contains('/') || fileName.Contains('\\') ||
+                !fileName.EndsWith(".usm", StringComparison.OrdinalIgnoreCase))
+            {
+                return (false, "Invalid Quest song filename.");
+            }
+
+            string remotePath = $"{ModdedSongsPath}/{fileName}";
+            string shellQuotedPath = "'" + remotePath.Replace("'", "'\\''", StringComparison.Ordinal) + "'";
+            var (code, stdout, stderr) = await RunProcessAsync(
+                GetAdbPath(), $"-s {serial} shell rm -f -- {shellQuotedPath}", 30000);
+            if (code == 0) return (true, $"Deleted {fileName} from Quest.");
+            return (false, (stdout + " " + stderr).Trim());
+        }
+
         public async Task<int> SyncSongsToQuestAsync(
             string serial,
             string localSongsDir,
@@ -1437,6 +1589,44 @@ namespace USM.Core.Services.Quest
                 try { process.Kill(true); } catch { }
                 return (-1, string.Empty, "Process timed out.");
             }
+        }
+
+        private static async Task<(int ExitCode, string StdOut, string StdErr)> RunProcessForWindowAsync(
+            string fileName,
+            string arguments,
+            int captureWindowMs)
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = fileName,
+                Arguments = arguments,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var process = new Process { StartInfo = psi };
+            try
+            {
+                process.Start();
+            }
+            catch (Exception ex)
+            {
+                return (-1, string.Empty, ex.Message);
+            }
+
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
+            var exitTask = process.WaitForExitAsync();
+            if (await Task.WhenAny(exitTask, Task.Delay(captureWindowMs)) != exitTask)
+            {
+                try { process.Kill(true); } catch { }
+                try { await process.WaitForExitAsync(); } catch { }
+                return (-1, await stdoutTask, await stderrTask);
+            }
+
+            return (process.ExitCode, await stdoutTask, await stderrTask);
         }
     }
 }

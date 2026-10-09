@@ -29,8 +29,71 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
+
+        <Style TargetType="TabControl">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabControl">
+                        <Grid KeyboardNavigation.TabNavigation="Local">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <TabPanel Grid.Row="0"
+                                      IsItemsHost="True"
+                                      Background="Transparent"
+                                      Margin="0,0,0,8" />
+                            <ContentPresenter x:Name="PART_SelectedContentHost"
+                                              Grid.Row="1"
+                                              ContentSource="SelectedContent"
+                                              SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="TabItem">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Padding" Value="14,8" />
+            <Setter Property="Margin" Value="3,0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="TabBorder"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="8,8,0,0"
+                                BorderThickness="0,0,0,2"
+                                BorderBrush="Transparent"
+                                Padding="{TemplateBinding Padding}"
+                                Cursor="Hand">
+                            <ContentPresenter ContentSource="Header"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="TabBorder" Property="Background" Value="{StaticResource BrushBgCard}" />
+                                <Setter TargetName="TabBorder" Property="BorderBrush" Value="{StaticResource BrushAccentPink}" />
+                                <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
+    <TabControl Background="Transparent" BorderThickness="0">
+        <TabItem Header="PC Library">
     <Grid Margin="20,10,20,15">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -265,4 +328,131 @@
             </ItemsControl>
         </ScrollViewer>
     </Grid>
+        </TabItem>
+
+        <TabItem Header="Quest Songs"
+                 Visibility="{Binding IsQuestSongsAvailable, Converter={StaticResource BoolToVis}}">
+            <Grid Margin="20,10,20,15">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0"
+                        Background="{StaticResource BrushBgCard}"
+                        BorderBrush="{StaticResource BrushBorder}"
+                        BorderThickness="1"
+                        CornerRadius="12"
+                        Padding="16,14"
+                        Margin="0,0,0,10">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="Quest Custom Songs"
+                                       FontSize="16"
+                                       FontWeight="Bold"
+                                       Foreground="{StaticResource BrushTextPrimary}"
+                                       VerticalAlignment="Center" />
+                            <Border Background="{StaticResource BrushBgInput}"
+                                    CornerRadius="6"
+                                    Padding="8,3"
+                                    Margin="10,0,0,0"
+                                    VerticalAlignment="Center">
+                                <TextBlock Text="{Binding QuestSongsCountText}"
+                                           FontSize="12"
+                                           FontWeight="Bold"
+                                           Foreground="{StaticResource BrushAccentBlue}" />
+                            </Border>
+                        </StackPanel>
+                        <TextBlock Grid.Column="2"
+                                   Text="{Binding QuestSongsStatusText}"
+                                   FontSize="11"
+                                   Foreground="{StaticResource BrushTextMuted}"
+                                   VerticalAlignment="Center"
+                                   Margin="14,0,14,0"
+                                   TextTrimming="CharacterEllipsis" />
+                        <Button Grid.Column="3"
+                                Content="🔄 Refresh Quest Songs"
+                                Command="{Binding RefreshQuestSongsCommand}"
+                                Style="{StaticResource SecondaryButton}"
+                                Padding="12,6"
+                                FontSize="12" />
+                        <Button Grid.Column="4"
+                                Content="{Binding SelectAllQuestSongsText}"
+                                Command="{Binding ToggleSelectAllQuestSongsCommand}"
+                                Style="{StaticResource SecondaryButton}"
+                                Margin="8,0,0,0"
+                                Padding="12,6"
+                                FontSize="12" />
+                        <Button Grid.Column="5"
+                                Content="{Binding DeleteSelectedQuestSongsText}"
+                                Command="{Binding DeleteSelectedQuestSongsCommand}"
+                                Style="{StaticResource DangerButton}"
+                                Margin="8,0,0,0"
+                                Padding="12,6"
+                                FontSize="12" />
+                    </Grid>
+                </Border>
+
+                <Grid Grid.Row="1">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding QuestSongs}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{StaticResource BrushBgCard}"
+                                            BorderBrush="{StaticResource BrushBorder}"
+                                            BorderThickness="1"
+                                            CornerRadius="10"
+                                            Padding="14,10"
+                                            Margin="0,0,0,8">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <CheckBox Grid.Column="0"
+                                                      IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                      VerticalAlignment="Center"
+                                                      Margin="0,0,14,0"
+                                                      ToolTip="Select this Quest song" />
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Title}"
+                                                           FontSize="14"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{StaticResource BrushTextPrimary}"
+                                                           TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                            <Button Grid.Column="2"
+                                                    Content="🗑"
+                                                    Command="{Binding DataContext.DeleteQuestSongCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding FileName}"
+                                                    Style="{StaticResource IconDangerButton}"
+                                                    ToolTip="Delete this song from Quest" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                    <Border Background="{StaticResource BrushBgCard}"
+                            CornerRadius="10"
+                            Visibility="{Binding HasNoQuestSongs, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="No .usm songs were found in the Quest songs folder."
+                                   FontSize="13"
+                                   Foreground="{StaticResource BrushTextMuted}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+                    </Border>
+                </Grid>
+            </Grid>
+        </TabItem>
+    </TabControl>
 </UserControl>

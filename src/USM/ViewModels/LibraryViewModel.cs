@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
@@ -8,24 +9,51 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media.Imaging;
 using USM.Core.Models;
 using USM.Core.Services;
+using USM.Core.Services.Quest;
 
 namespace USM.ViewModels
 {
+    public sealed class QuestSongListItem : ViewModelBase
+    {
+        public string FileName { get; }
+        public string Title { get; }
+        private bool _isSelected;
+
+        public bool IsSelected
+        {
+            get => _isSelected;
+            set => SetProperty(ref _isSelected, value);
+        }
+
+        public QuestSongListItem(string fileName)
+        {
+            FileName = fileName;
+            Title = Path.GetFileNameWithoutExtension(fileName);
+        }
+    }
+
     public class LibraryViewModel : ViewModelBase
     {
         private readonly GameDetector _gameDetector;
         private readonly Action<string> _notifyCallback;
+        private readonly QuestViewModel _questViewModel;
+        private readonly SemaphoreSlim _questSongsRefreshGate = new(1, 1);
 
         private string _filterQuery = string.Empty;
         private int _selectedTrackTypeFilterIndex;
         private string _songCountText = "0 songs";
         private bool _allSelected;
         private InstalledSong? _currentlyPreviewingSong;
+        private bool _isQuestSongsAvailable;
+        private bool _isRefreshingQuestSongs;
+        private string _questSongsStatusText = "Connect a Quest to manage its songs.";
 
         private readonly List<InstalledSong> _allSongs = new();
 
@@ -86,6 +114,44 @@ namespace USM.ViewModels
         }
 
         public ObservableCollection<InstalledSong> DisplayedSongs { get; } = new();
+        public ObservableCollection<QuestSongListItem> QuestSongs { get; } = new();
+
+        public bool IsQuestSongsAvailable
+        {
+            get => _isQuestSongsAvailable;
+            private set => SetProperty(ref _isQuestSongsAvailable, value);
+        }
+
+        public bool IsRefreshingQuestSongs
+        {
+            get => _isRefreshingQuestSongs;
+            private set
+            {
+                if (SetProperty(ref _isRefreshingQuestSongs, value))
+                    CommandManager.InvalidateRequerySuggested();
+            }
+        }
+
+        public bool HasNoQuestSongs => IsQuestSongsAvailable && QuestSongs.Count == 0 &&
+            !IsRefreshingQuestSongs && QuestSongsStatusText.StartsWith("No .usm songs found", StringComparison.OrdinalIgnoreCase);
+        public string QuestSongsCountText => $"{QuestSongs.Count} songs";
+        public string SelectAllQuestSongsText => QuestSongs.Count > 0 && QuestSongs.All(song => song.IsSelected)
+            ? "Deselect All"
+            : "Select All";
+        public string DeleteSelectedQuestSongsText
+        {
+            get
+            {
+                int count = QuestSongs.Count(song => song.IsSelected);
+                return count > 0 ? $"🗑 Delete Selected ({count})" : "🗑 Delete Selected";
+            }
+        }
+
+        public string QuestSongsStatusText
+        {
+            get => _questSongsStatusText;
+            private set => SetProperty(ref _questSongsStatusText, value);
+        }
 
         public ICommand RefreshCommand { get; }
         public ICommand OpenCustomSongsCommand { get; }
@@ -95,11 +161,16 @@ namespace USM.ViewModels
         public ICommand DeleteSongCommand { get; }
         public ICommand OpenSongFolderCommand { get; }
         public ICommand PreviewSongCommand { get; }
+        public ICommand RefreshQuestSongsCommand { get; }
+        public ICommand DeleteQuestSongCommand { get; }
+        public ICommand ToggleSelectAllQuestSongsCommand { get; }
+        public ICommand DeleteSelectedQuestSongsCommand { get; }
 
-        public LibraryViewModel(GameDetector gameDetector, Action<string> notifyCallback)
+        public LibraryViewModel(GameDetector gameDetector, Action<string> notifyCallback, QuestViewModel questViewModel)
         {
             _gameDetector = gameDetector;
             _notifyCallback = notifyCallback;
+            _questViewModel = questViewModel;
 
             RefreshCommand = new RelayCommand(RefreshLibrary);
             OpenCustomSongsCommand = new RelayCommand(OpenCustomSongsFolder);
@@ -109,9 +180,184 @@ namespace USM.ViewModels
             DeleteSongCommand = new RelayCommand(DeleteSingleSong);
             OpenSongFolderCommand = new RelayCommand(OpenSongFolder);
             PreviewSongCommand = new RelayCommand(PreviewSong);
+            RefreshQuestSongsCommand = new AsyncRelayCommand(_ => RefreshQuestSongsAsync(), _ => !IsRefreshingQuestSongs);
+            DeleteQuestSongCommand = new AsyncRelayCommand(DeleteQuestSongAsync, _ => IsQuestSongsAvailable && !IsRefreshingQuestSongs);
+            ToggleSelectAllQuestSongsCommand = new RelayCommand(_ => ToggleSelectAllQuestSongs(), _ => QuestSongs.Count > 0 && !IsRefreshingQuestSongs);
+            DeleteSelectedQuestSongsCommand = new AsyncRelayCommand(_ => DeleteSelectedQuestSongsAsync(),
+                _ => IsQuestSongsAvailable && !IsRefreshingQuestSongs && QuestSongs.Any(song => song.IsSelected));
             AudioPlayerService.Instance.PlaybackStopped += OnPreviewStopped;
+            _questViewModel.PropertyChanged += OnQuestViewModelPropertyChanged;
+            _questViewModel.QuestSongsChanged += OnQuestSongsChanged;
 
             RefreshLibrary();
+            _ = RefreshQuestSongsAsync();
+        }
+
+        private void OnQuestViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(QuestViewModel.SelectedDevice))
+                _ = RefreshQuestSongsAsync();
+        }
+
+        private void OnQuestSongsChanged(object? sender, EventArgs e) => _ = RefreshQuestSongsAsync();
+
+        private async Task RefreshQuestSongsAsync()
+        {
+            await _questSongsRefreshGate.WaitAsync();
+            try
+            {
+                QuestDevice? device = _questViewModel.SelectedDevice;
+                if (device == null || !device.Status.Equals("device", StringComparison.OrdinalIgnoreCase))
+                {
+                    ClearQuestSongs();
+                    IsQuestSongsAvailable = false;
+                    QuestSongsStatusText = "Connect a Quest to manage its songs.";
+                    OnPropertyChanged(nameof(QuestSongsCountText));
+                    OnPropertyChanged(nameof(HasNoQuestSongs));
+                    UpdateQuestSongSelectionState();
+                    return;
+                }
+
+                IsRefreshingQuestSongs = true;
+                QuestSongsStatusText = "Checking the Quest custom-songs folder...";
+                var result = await _questViewModel.QuestService.ListQuestSongsAsync(device.Serial);
+
+                if (_questViewModel.SelectedDevice?.Serial != device.Serial) return;
+
+                ClearQuestSongs();
+                foreach (string song in result.SongFiles)
+                {
+                    var item = new QuestSongListItem(song);
+                    item.PropertyChanged += OnQuestSongPropertyChanged;
+                    QuestSongs.Add(item);
+                }
+                IsQuestSongsAvailable = result.DirectoryExists;
+                QuestSongsStatusText = result.DirectoryExists
+                    ? result.Message
+                    : "The Quest custom-songs folder does not exist.";
+                OnPropertyChanged(nameof(QuestSongsCountText));
+                OnPropertyChanged(nameof(HasNoQuestSongs));
+                UpdateQuestSongSelectionState();
+            }
+            catch (Exception ex)
+            {
+                ClearQuestSongs();
+                IsQuestSongsAvailable = false;
+                QuestSongsStatusText = $"Could not read Quest songs: {ex.Message}";
+                OnPropertyChanged(nameof(QuestSongsCountText));
+                OnPropertyChanged(nameof(HasNoQuestSongs));
+                UpdateQuestSongSelectionState();
+            }
+            finally
+            {
+                IsRefreshingQuestSongs = false;
+                OnPropertyChanged(nameof(HasNoQuestSongs));
+                _questSongsRefreshGate.Release();
+            }
+        }
+
+        private void ClearQuestSongs()
+        {
+            foreach (QuestSongListItem song in QuestSongs)
+                song.PropertyChanged -= OnQuestSongPropertyChanged;
+            QuestSongs.Clear();
+        }
+
+        private void OnQuestSongPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(QuestSongListItem.IsSelected))
+                UpdateQuestSongSelectionState();
+        }
+
+        private void UpdateQuestSongSelectionState()
+        {
+            OnPropertyChanged(nameof(SelectAllQuestSongsText));
+            OnPropertyChanged(nameof(DeleteSelectedQuestSongsText));
+            CommandManager.InvalidateRequerySuggested();
+        }
+
+        private void ToggleSelectAllQuestSongs()
+        {
+            if (QuestSongs.Count == 0) return;
+            bool select = !QuestSongs.All(song => song.IsSelected);
+            foreach (QuestSongListItem song in QuestSongs)
+                song.IsSelected = select;
+            UpdateQuestSongSelectionState();
+        }
+
+        private async Task DeleteSelectedQuestSongsAsync()
+        {
+            List<QuestSongListItem> selected = QuestSongs.Where(song => song.IsSelected).ToList();
+            if (selected.Count == 0) return;
+
+            var confirm = MessageBox.Show(
+                $"Delete {selected.Count} selected song(s) from the Quest? This cannot be undone.",
+                "Delete Quest Songs",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+            if (confirm != MessageBoxResult.Yes) return;
+
+            QuestDevice? device = _questViewModel.SelectedDevice;
+            if (device == null || !device.Status.Equals("device", StringComparison.OrdinalIgnoreCase)) return;
+
+            IsRefreshingQuestSongs = true;
+            try
+            {
+                var failures = new List<string>();
+                foreach (QuestSongListItem song in selected)
+                {
+                    var result = await _questViewModel.QuestService.DeleteQuestSongAsync(device.Serial, song.FileName);
+                    if (!result.Success) failures.Add($"{song.Title}: {result.Message}");
+                }
+
+                if (failures.Count == 0)
+                    _notifyCallback($"Deleted {selected.Count} song(s) from the Quest.");
+                else
+                    _notifyCallback($"Some Quest songs could not be deleted: {string.Join(" | ", failures)}");
+
+                await RefreshQuestSongsAsync();
+            }
+            finally
+            {
+                IsRefreshingQuestSongs = false;
+                OnPropertyChanged(nameof(HasNoQuestSongs));
+                UpdateQuestSongSelectionState();
+            }
+        }
+
+        private async Task DeleteQuestSongAsync(object? parameter)
+        {
+            if (parameter is not string fileName || !IsQuestSongsAvailable) return;
+            QuestDevice? device = _questViewModel.SelectedDevice;
+            if (device == null || !device.Status.Equals("device", StringComparison.OrdinalIgnoreCase)) return;
+
+            string title = Path.GetFileNameWithoutExtension(fileName);
+            var confirm = MessageBox.Show(
+                $"Delete '{title}' from the Quest? This cannot be undone.",
+                "Delete Quest Song",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+            if (confirm != MessageBoxResult.Yes) return;
+
+            IsRefreshingQuestSongs = true;
+            try
+            {
+                var result = await _questViewModel.QuestService.DeleteQuestSongAsync(device.Serial, fileName);
+                if (result.Success)
+                {
+                    _notifyCallback(result.Message);
+                    await RefreshQuestSongsAsync();
+                }
+                else
+                {
+                    _notifyCallback($"Could not delete Quest song: {result.Message}");
+                }
+            }
+            finally
+            {
+                IsRefreshingQuestSongs = false;
+                OnPropertyChanged(nameof(HasNoQuestSongs));
+            }
         }
 
         public void OpenCustomSongsFolder()

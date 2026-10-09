@@ -10,6 +10,9 @@ namespace USM.Core.Services
 {
     public class GameDetector
     {
+        public const string DefaultQuestWirelessIp = "192.168.1.";
+        public const int DefaultQuestWirelessPort = 5555;
+
         private static readonly string ConfigPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             ".unplugged_studio_config.json"
@@ -125,6 +128,50 @@ namespace USM.Core.Services
         public void SaveConfig(string key, object value)
         {
             _config[key] = value;
+            WriteConfig();
+        }
+
+        public (string Ip, int Port, bool IsManual) GetQuestWirelessSettings()
+        {
+            string ip = ReadConfigString("quest_wireless_ip", DefaultQuestWirelessIp);
+            int port = ReadConfigInt("quest_wireless_port", DefaultQuestWirelessPort);
+            bool isManual = ReadConfigBool("quest_wireless_is_manual", false);
+            return (ip, Math.Clamp(port, 1, 65535), isManual);
+        }
+
+        public void SaveQuestWirelessSettings(string ip, int port, bool isManual)
+        {
+            _config["quest_wireless_ip"] = ip;
+            _config["quest_wireless_port"] = Math.Clamp(port, 1, 65535);
+            _config["quest_wireless_is_manual"] = isManual;
+            WriteConfig();
+        }
+
+        private string ReadConfigString(string key, string fallback)
+        {
+            if (!_config.TryGetValue(key, out var value) || value == null) return fallback;
+            if (value is JsonElement element && element.ValueKind == JsonValueKind.String)
+                return element.GetString() ?? fallback;
+            return value.ToString() ?? fallback;
+        }
+
+        private int ReadConfigInt(string key, int fallback)
+        {
+            if (!_config.TryGetValue(key, out var value) || value == null) return fallback;
+            if (value is JsonElement element && element.TryGetInt32(out int parsed)) return parsed;
+            return int.TryParse(value.ToString(), out int result) ? result : fallback;
+        }
+
+        private bool ReadConfigBool(string key, bool fallback)
+        {
+            if (!_config.TryGetValue(key, out var value) || value == null) return fallback;
+            if (value is JsonElement element && element.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                return element.GetBoolean();
+            return bool.TryParse(value.ToString(), out bool result) ? result : fallback;
+        }
+
+        private void WriteConfig()
+        {
             try
             {
                 string json = JsonSerializer.Serialize(_config, new JsonSerializerOptions { WriteIndented = true });

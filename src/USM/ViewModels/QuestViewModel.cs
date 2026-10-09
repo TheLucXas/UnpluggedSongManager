@@ -19,11 +19,13 @@ namespace USM.ViewModels
         private readonly GameDetector _gameDetector;
         private readonly Action<string> _notifyCallback;
         private readonly QuestService _questService;
+        private bool _wirelessSettingsAreManual;
+        private bool _applyingDetectedWirelessSettings;
 
         private ObservableCollection<QuestDevice> _devices = new();
         private QuestDevice? _selectedDevice;
-        private string _wirelessIp = "192.168.1.";
-        private int _wirelessPort = 5555;
+        private string _wirelessIp = GameDetector.DefaultQuestWirelessIp;
+        private int _wirelessPort = GameDetector.DefaultQuestWirelessPort;
         private bool _isConnectingWireless;
         private bool _isBusy;
         private int _progressPercent;
@@ -60,14 +62,26 @@ namespace USM.ViewModels
         public string WirelessIp
         {
             get => _wirelessIp;
-            set => SetProperty(ref _wirelessIp, value);
+            set
+            {
+                if (SetProperty(ref _wirelessIp, value) && !_applyingDetectedWirelessSettings)
+                    SaveWirelessSettingsAfterUserEdit();
+            }
         }
 
         public int WirelessPort
         {
             get => _wirelessPort;
-            set => SetProperty(ref _wirelessPort, value);
+            set
+            {
+                if (SetProperty(ref _wirelessPort, value) && !_applyingDetectedWirelessSettings)
+                    SaveWirelessSettingsAfterUserEdit();
+            }
         }
+
+        public QuestService QuestService => _questService;
+
+        public event EventHandler? QuestSongsChanged;
 
         public bool IsConnectingWireless
         {
@@ -215,8 +229,13 @@ namespace USM.ViewModels
             _notifyCallback = notifyCallback;
             _questService = new QuestService();
 
-            RefreshDevicesCommand = new AsyncRelayCommand(_ => RefreshDevicesAsync(), _ => !IsBusy);
-            ConnectWirelessCommand = new AsyncRelayCommand(_ => ConnectWirelessAsync(), _ => !IsBusy && !string.IsNullOrWhiteSpace(WirelessIp));
+            var wirelessSettings = _gameDetector.GetQuestWirelessSettings();
+            _wirelessIp = wirelessSettings.Ip;
+            _wirelessPort = wirelessSettings.Port;
+            _wirelessSettingsAreManual = wirelessSettings.IsManual;
+
+            RefreshDevicesCommand = new AsyncRelayCommand(_ => RefreshDevicesAsync(discoverWireless: true), _ => !IsBusy);
+            ConnectWirelessCommand = new AsyncRelayCommand(_ => ConnectWirelessAsync(), _ => !IsBusy && !string.IsNullOrWhiteSpace(WirelessIp) && WirelessPort is >= 1 and <= 65535);
             BrowseApkCommand = new RelayCommand(BrowseApk, _ => !IsBusy);
             StartPatchCommand = new AsyncRelayCommand(_ => StartPatchPipelineAsync(), _ => !IsBusy && (IsDeviceConnected || (!string.IsNullOrEmpty(CustomApkPath) && File.Exists(CustomApkPath))));
             UninstallModdedCommand = new AsyncRelayCommand(_ => UninstallModdedAsync(), _ => !IsBusy && IsDeviceConnected && IsModdedInstalled);
@@ -231,7 +250,7 @@ namespace USM.ViewModels
                 _ = CheckInstalledPackagesAsync();
             };
             AppendLog(LocalizationService.T("Log_QuestInit"));
-            _ = RefreshDevicesAsync();
+            _ = RefreshDevicesAsync(discoverWireless: true);
         }
 
         private async Task DownloadQuestToolsAsync()
@@ -283,11 +302,31 @@ namespace USM.ViewModels
             LogText = string.Empty;
         }
 
-        private async Task RefreshDevicesAsync()
+        private async Task RefreshDevicesAsync(bool discoverWireless)
         {
             try
             {
                 var list = await _questService.GetDevicesAsync();
+
+                if (discoverWireless && !_wirelessSettingsAreManual)
+                {
+                    WirelessAdbEndpoint? endpoint = await _questService.DiscoverWirelessAdbAsync(AppendLog, attempts: 2);
+                    if (endpoint != null)
+                    {
+                        SetDetectedWirelessSettings(endpoint.Ip, endpoint.Port);
+                        var (connected, message) = await _questService.ConnectWirelessAsync(endpoint.Ip, endpoint.Port);
+                        AppendLog(connected
+                            ? $"Connected to the mDNS-discovered Quest: {message}"
+                            : $"mDNS found {endpoint.Ip}:{endpoint.Port}, but ADB could not connect: {message}");
+                        list = await _questService.GetDevicesAsync();
+                    }
+                    else
+                    {
+                        SetDetectedWirelessSettings(GameDetector.DefaultQuestWirelessIp, GameDetector.DefaultQuestWirelessPort);
+                        AppendLog($"Wireless ADB was not found. Enter the Quest IP manually (default: {GameDetector.DefaultQuestWirelessIp} / port {GameDetector.DefaultQuestWirelessPort}).");
+                    }
+                }
+
                 Devices.Clear();
                 foreach (var d in list)
                 {
@@ -314,7 +353,8 @@ namespace USM.ViewModels
 
         private async Task ConnectWirelessAsync()
         {
-            if (string.IsNullOrWhiteSpace(WirelessIp)) return;
+            if (string.IsNullOrWhiteSpace(WirelessIp) || WirelessPort is < 1 or > 65535) return;
+            _gameDetector.SaveQuestWirelessSettings(WirelessIp, WirelessPort, _wirelessSettingsAreManual);
             IsConnectingWireless = true;
             AppendLog(LocalizationService.T("Log_ConnectingWireless", WirelessIp, WirelessPort));
 
@@ -325,7 +365,7 @@ namespace USM.ViewModels
                 {
                     AppendLog(LocalizationService.T("Log_WirelessConnected", msg));
                     _notifyCallback($"Quest Wi-Fi connected ({WirelessIp})");
-                    await RefreshDevicesAsync();
+                    await RefreshDevicesAsync(discoverWireless: false);
                 }
                 else
                 {
@@ -337,6 +377,31 @@ namespace USM.ViewModels
             {
                 IsConnectingWireless = false;
             }
+        }
+
+        private void SaveWirelessSettingsAfterUserEdit()
+        {
+            _wirelessSettingsAreManual =
+                !string.Equals(WirelessIp, GameDetector.DefaultQuestWirelessIp, StringComparison.OrdinalIgnoreCase) ||
+                WirelessPort != GameDetector.DefaultQuestWirelessPort;
+            _gameDetector.SaveQuestWirelessSettings(WirelessIp, WirelessPort, _wirelessSettingsAreManual);
+        }
+
+        private void SetDetectedWirelessSettings(string ip, int port)
+        {
+            _applyingDetectedWirelessSettings = true;
+            try
+            {
+                WirelessIp = ip;
+                WirelessPort = port;
+            }
+            finally
+            {
+                _applyingDetectedWirelessSettings = false;
+            }
+
+            _wirelessSettingsAreManual = false;
+            _gameDetector.SaveQuestWirelessSettings(WirelessIp, WirelessPort, isManual: false);
         }
 
         private async Task CheckInstalledPackagesAsync()
@@ -501,6 +566,7 @@ namespace USM.ViewModels
 
                 if (success)
                 {
+                    QuestSongsChanged?.Invoke(this, EventArgs.Empty);
                     ProgressPercent = 100;
                     ProgressStatus = "Done!";
                     _notifyCallback("Unplugged Modded successfully deployed to Quest!");
@@ -784,6 +850,8 @@ namespace USM.ViewModels
                     cts.Token,
                     songsToSync
                 );
+
+                QuestSongsChanged?.Invoke(this, EventArgs.Empty);
 
                 ProgressPercent = 100;
                 ProgressStatus = $"Sync Complete! ({transferred} songs)";
