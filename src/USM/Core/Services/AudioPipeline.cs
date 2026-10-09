@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using USM.Core.Models;
 
 namespace USM.Core.Services
 {
@@ -82,10 +83,11 @@ namespace USM.Core.Services
             }
         }
 
-        public static async Task<bool> ProcessAudioAsync(
+        public static async Task<(bool HasMultiTrack, bool IsHalfTrack)> ProcessAudioAsync(
             string srcDir,
             string outDir,
             double previewStart,
+            AudioLayoutMode audioLayout = AudioLayoutMode.FullMultitrack,
             Action<string>? log = null,
             CancellationToken ct = default)
         {
@@ -98,7 +100,8 @@ namespace USM.Core.Services
                 ["guitar"] = new[] { "guitar.ogg", "guitar.opus", "guitar.ogg", "guitar.wav" },
                 ["bass"] = new[] { "bass.ogg", "bass.opus", "bass.ogg", "rhythm.ogg", "rhythm.opus", "rhythm.ogg" },
                 ["vocals"] = new[] { "vocals.ogg", "vocals.opus", "vocals.ogg", "vocals.wav" },
-                ["other"] = new[] { "song.ogg", "song.opus", "song.ogg", "band.ogg", "band.opus", "crowd.ogg" }
+                // song.ogg is usually the full stereo mix, not an independent stem.
+                ["other"] = new[] { "band.ogg", "band.opus", "crowd.ogg" }
             };
 
             foreach (var kvp in stemMap)
@@ -129,8 +132,59 @@ namespace USM.Core.Services
             }
 
             bool hasMultiTrack = stemsFound.ContainsKey("guitar") && stemsFound.Count > 1;
+            bool isHalfTrack = false;
 
-            if (hasMultiTrack)
+            if (audioLayout == AudioLayoutMode.InstrumentalAndVocals && !hasMultiTrack)
+            {
+                log?.Invoke("  [Audio] 2-track layout unavailable: this chart has no separate instrumental stems. Keeping the single stereo mix.");
+            }
+
+            if (hasMultiTrack && audioLayout == AudioLayoutMode.InstrumentalAndVocals)
+            {
+                if (stemsFound.TryGetValue("vocals", out var vocalSource))
+                {
+                    var instrumentalSources = new List<string>();
+                    foreach (string key in new[] { "guitar", "bass", "drums", "other" })
+                    {
+                        if (!stemsFound.TryGetValue(key, out var source)) continue;
+                        instrumentalSources.AddRange(GetSourceFiles(source)
+                            .Where(path => !string.Equals(Path.GetFileNameWithoutExtension(path), "song", StringComparison.OrdinalIgnoreCase)));
+                    }
+
+                    if (instrumentalSources.Count > 0)
+                    {
+                        log?.Invoke("  [Audio] Creating 2-track layout: all instrumental stems mixed together, vocals kept separate...");
+                        string instrumentalPath = Path.Combine(outDir, "song-guitar.ogg");
+                        string vocalsPath = Path.Combine(outDir, "song-vocals.ogg");
+                        await MixToOggAsync(instrumentalSources, instrumentalPath, ct);
+                        await EncodeOrCopyAsync(GetSourceFiles(vocalSource).First(), vocalsPath, ct);
+
+                        string masterPath = Path.Combine(outDir, "song.ogg");
+                        string? originalMaster = new[] { "song.ogg", "song.opus", "song.mp3", "song.wav" }
+                            .Select(name => Path.Combine(srcDir, name))
+                            .FirstOrDefault(File.Exists);
+                        if (originalMaster != null)
+                        {
+                            await EncodeOrCopyAsync(originalMaster, masterPath, ct);
+                        }
+                        else
+                        {
+                            await MixToOggAsync(new[] { instrumentalPath, vocalsPath }, masterPath, ct);
+                        }
+                        isHalfTrack = true;
+                    }
+                    else
+                    {
+                        log?.Invoke("  [Audio] 2-track layout unavailable: no separate instrumental stems were found. Keeping the full source layout.");
+                    }
+                }
+                else
+                {
+                    log?.Invoke("  [Audio] 2-track layout unavailable: no separate vocals stem was found. Keeping the full source layout.");
+                }
+            }
+
+            if (hasMultiTrack && !isHalfTrack)
             {
                 log?.Invoke("  [Audio] Multitrack stems detected. Encoding channels in parallel...");
 
@@ -186,7 +240,18 @@ namespace USM.Core.Services
                 log?.Invoke("  [Audio] Standard stereo audio track detected. Converting...");
                 string? audioSrc = null;
 
-                if (stemsFound.Count == 1)
+                string[] fullMixCandidates = { "song.ogg", "song.opus", "song.mp3", "song.wav" };
+                foreach (string candidate in fullMixCandidates)
+                {
+                    string candidatePath = Path.Combine(srcDir, candidate);
+                    if (File.Exists(candidatePath))
+                    {
+                        audioSrc = candidatePath;
+                        break;
+                    }
+                }
+
+                if (audioSrc == null && stemsFound.Count == 1)
                 {
                     var single = stemsFound.Values.First();
                     if (single is string s && File.Exists(s)) audioSrc = s;
@@ -240,7 +305,38 @@ namespace USM.Core.Services
                 }
             }
 
-            return hasMultiTrack;
+            return (hasMultiTrack, isHalfTrack);
+        }
+
+        private static IEnumerable<string> GetSourceFiles(object source)
+        {
+            if (source is string single && File.Exists(single))
+            {
+                yield return single;
+            }
+            else if (source is List<string> files)
+            {
+                foreach (string file in files)
+                {
+                    if (File.Exists(file)) yield return file;
+                }
+            }
+        }
+
+        private static async Task MixToOggAsync(IEnumerable<string> sourceFiles, string outputPath, CancellationToken ct)
+        {
+            var files = sourceFiles.Where(File.Exists).ToList();
+            if (files.Count == 0) throw new FileNotFoundException("No audio inputs were available for mixing.");
+            if (files.Count == 1)
+            {
+                await EncodeOrCopyAsync(files[0], outputPath, ct);
+                return;
+            }
+
+            string inputs = string.Join(" ", files.Select(file => $"-i \"{file}\""));
+            await RunFfmpegAsync(
+                $"-y -threads 0 {inputs} -filter_complex \"amix=inputs={files.Count}:dropout_transition=0:normalize=0\" -b:a 192k \"{outputPath}\"",
+                ct);
         }
 
         public static async Task ProcessCoverAsync(string srcDir, string outDir, CancellationToken ct = default)

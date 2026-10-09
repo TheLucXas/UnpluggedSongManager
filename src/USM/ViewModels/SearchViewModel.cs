@@ -20,10 +20,11 @@ namespace USM.ViewModels
         private bool _isSearching;
         private string _statusText = "Type a song or artist name to search Chorus Encore / Clone Hero database.";
 
-        private readonly ConcurrentQueue<ChorusChart> _downloadQueue = new();
+        private readonly ConcurrentQueue<(ChorusChart Chart, AudioLayoutMode AudioLayout)> _downloadQueue = new();
         private int _activeDownloads = 0;
         private readonly object _queueLock = new();
         private readonly List<ChorusChart> _rawCharts = new();
+        private bool _searchPending;
 
         public string SearchQuery
         {
@@ -51,36 +52,32 @@ namespace USM.ViewModels
             {
                 if (SetProperty(ref _selectedSortIndex, value))
                 {
-                    if (_rawCharts.Count > 0)
-                    {
-                        ApplyFilterAndSort();
-                    }
-                    else if (!string.IsNullOrWhiteSpace(SearchQuery))
-                    {
-                        _ = PerformSearchAsync();
-                    }
+                    OnPropertyChanged(nameof(CanChooseSortDirection));
+                    RequestSearch();
                 }
             }
         }
 
-        private int _selectedTrackFilterIndex = 0;
-        public int SelectedTrackFilterIndex
+        public bool CanChooseSortDirection => SelectedSortIndex != 0;
+
+        private int _selectedSortDirectionIndex;
+        public int SelectedSortDirectionIndex
         {
-            get => _selectedTrackFilterIndex;
+            get => _selectedSortDirectionIndex;
             set
             {
-                if (SetProperty(ref _selectedTrackFilterIndex, value))
+                if (SetProperty(ref _selectedSortDirectionIndex, value) && SelectedSortIndex != 0)
                 {
-                    if (string.IsNullOrWhiteSpace(SearchQuery) && value == 1 && (_rawCharts.Count == 0 || !_rawCharts.Any(c => c.IsMultiTrack)))
-                    {
-                        _ = PerformSearchAsync();
-                    }
-                    else
-                    {
-                        ApplyFilterAndSort();
-                    }
+                    RequestSearch();
                 }
             }
+        }
+
+        private int _selectedAudioLayoutIndex;
+        public int SelectedAudioLayoutIndex
+        {
+            get => _selectedAudioLayoutIndex;
+            set => SetProperty(ref _selectedAudioLayoutIndex, value);
         }
 
         private int _selectedDifficultyFilterIndex = 0;
@@ -126,13 +123,14 @@ namespace USM.ViewModels
             {
                 _selectedSortIndex = 0;
                 OnPropertyChanged(nameof(SelectedSortIndex));
-                _selectedTrackFilterIndex = 0;
-                OnPropertyChanged(nameof(SelectedTrackFilterIndex));
+                OnPropertyChanged(nameof(CanChooseSortDirection));
+                _selectedSortDirectionIndex = 0;
+                OnPropertyChanged(nameof(SelectedSortDirectionIndex));
                 _selectedDifficultyFilterIndex = 0;
                 OnPropertyChanged(nameof(SelectedDifficultyFilterIndex));
                 _selectedStatusFilterIndex = 0;
                 OnPropertyChanged(nameof(SelectedStatusFilterIndex));
-                ApplyFilterAndSort();
+                RequestSearch();
             });
 
             _gameDetector.MaxConcurrentDownloadsChanged += _ => ProcessDownloadQueue();
@@ -145,28 +143,12 @@ namespace USM.ViewModels
             string query = string.IsNullOrWhiteSpace(SearchQuery) ? "*" : SearchQuery.Trim();
             string apiQuery = query;
 
-            // When searching multitrack only without a specific keyword query, query Harmonix (official Rock Band / GH multitrack masters)
-            if (apiQuery == "*" && SelectedTrackFilterIndex == 1)
-            {
-                apiQuery = "Harmonix";
-            }
-
             IsSearching = true;
             StatusText = query == "*"
-                ? (SelectedTrackFilterIndex == 1
-                    ? "Browsing MultiTrack charts on Chorus Encore..."
-                    : "Browsing latest charts on Chorus Encore...")
+                ? "Browsing charts on Chorus Encore..."
                 : $"Searching Chorus Encore for '{query}'...";
 
-            string? sortType = null;
-            string? sortDirection = null;
-
-            // When browsing latest without specific keyword query, request newest from server
-            if (SelectedSortIndex == 1 && (query == "*" || string.IsNullOrWhiteSpace(SearchQuery)))
-            {
-                sortType = "modifiedTime";
-                sortDirection = "desc";
-            }
+            var (sortType, sortDirection) = GetSortRequest();
 
             try
             {
@@ -210,23 +192,29 @@ namespace USM.ViewModels
             finally
             {
                 IsSearching = false;
+                if (_searchPending)
+                {
+                    _searchPending = false;
+                    RequestSearch();
+                }
             }
+        }
+
+        private void RequestSearch()
+        {
+            if (IsSearching)
+            {
+                _searchPending = true;
+                return;
+            }
+
+            _ = PerformSearchAsync();
         }
 
         private void ApplyFilterAndSort()
         {
             Results.Clear();
             var filtered = System.Linq.Enumerable.AsEnumerable(_rawCharts);
-
-            // MultiTrack filter
-            if (SelectedTrackFilterIndex == 1) // MultiTrack Only
-            {
-                filtered = System.Linq.Enumerable.Where(filtered, c => c.IsMultiTrack);
-            }
-            else if (SelectedTrackFilterIndex == 2) // Single Track Only
-            {
-                filtered = System.Linq.Enumerable.Where(filtered, c => !c.IsMultiTrack);
-            }
 
             // Difficulty filter
             if (SelectedDifficultyFilterIndex == 1) // Beginner Tier 0-1
@@ -252,51 +240,7 @@ namespace USM.ViewModels
                 filtered = System.Linq.Enumerable.Where(filtered, c => c.IsInstalled);
             }
 
-            // Sorting
-            string q = string.IsNullOrWhiteSpace(SearchQuery) || SearchQuery == "*" ? "" : SearchQuery.Trim().ToLowerInvariant();
-
-            switch (SelectedSortIndex)
-            {
-                case 1: // Newest
-                    filtered = System.Linq.Enumerable.OrderByDescending(filtered, c => c.ModifiedTime ?? DateTime.MinValue);
-                    break;
-
-                case 2: // Title (A - Z) with smart match prioritization
-                    filtered = System.Linq.Enumerable.ThenBy(
-                        System.Linq.Enumerable.OrderBy(filtered, c =>
-                        {
-                            if (string.IsNullOrEmpty(q)) return 0;
-                            string title = (c.Title ?? "").ToLowerInvariant().Trim();
-                            if (title.StartsWith(q)) return 0;
-                            if (title.Contains(q)) return 1;
-                            return 2;
-                        }),
-                        c => c.Title,
-                        StringComparer.OrdinalIgnoreCase);
-                    break;
-
-                case 3: // Artist (A - Z) with smart match prioritization
-                    filtered = System.Linq.Enumerable.ThenBy(
-                        System.Linq.Enumerable.OrderBy(filtered, c =>
-                        {
-                            if (string.IsNullOrEmpty(q)) return 0;
-                            string artist = (c.Artist ?? "").ToLowerInvariant().Trim();
-                            if (artist.StartsWith(q)) return 0;
-                            if (artist.Contains(q)) return 1;
-                            return 2;
-                        }),
-                        c => c.Artist,
-                        StringComparer.OrdinalIgnoreCase);
-                    break;
-
-                case 4: // Duration (Longest)
-                    filtered = System.Linq.Enumerable.OrderByDescending(filtered, c => c.DurationSeconds);
-                    break;
-
-                default: // 0 = Relevance (Preserve search relevance from server)
-                    break;
-            }
-
+            // Chorus returns the selected server-side ordering; filtering preserves that order.
             foreach (var chart in filtered)
             {
                 Results.Add(chart);
@@ -306,6 +250,32 @@ namespace USM.ViewModels
             {
                 StatusText = $"Showing {Results.Count} of {_rawCharts.Count} charts found:";
             }
+        }
+
+        private (string? SortType, string? SortDirection) GetSortRequest()
+        {
+            (string? type, string? defaultDirection) = SelectedSortIndex switch
+            {
+                1 => ("modifiedTime", "desc"),
+                2 => ("name", "asc"),
+                3 => ("artist", "asc"),
+                4 => ("length", "desc"),
+                5 => ("album", "asc"),
+                6 => ("genre", "asc"),
+                7 => ("year", "desc"),
+                8 => ("charter", "asc"),
+                _ => ((string?)null, (string?)null)
+            };
+
+            if (type == null) return (null, null);
+
+            string? direction = SelectedSortDirectionIndex switch
+            {
+                1 => "asc",
+                2 => "desc",
+                _ => defaultDirection
+            };
+            return (type, direction);
         }
 
         private void EnqueueDownload(object? param)
@@ -327,7 +297,10 @@ namespace USM.ViewModels
 
             chart.IsQueued = true;
             chart.StatusText = "⏳ Queued...";
-            _downloadQueue.Enqueue(chart);
+            var audioLayout = SelectedAudioLayoutIndex == 1
+                ? AudioLayoutMode.InstrumentalAndVocals
+                : AudioLayoutMode.FullMultitrack;
+            _downloadQueue.Enqueue((chart, audioLayout));
 
             ProcessDownloadQueue();
         }
@@ -337,14 +310,14 @@ namespace USM.ViewModels
             lock (_queueLock)
             {
                 int maxConcurrent = _gameDetector.MaxConcurrentDownloads;
-                while (_activeDownloads < maxConcurrent && _downloadQueue.TryDequeue(out var nextChart))
+                while (_activeDownloads < maxConcurrent && _downloadQueue.TryDequeue(out var nextDownload))
                 {
                     _activeDownloads++;
                     _ = Task.Run(async () =>
                     {
                         try
                         {
-                            await RunDownloadAndConversionAsync(nextChart);
+                            await RunDownloadAndConversionAsync(nextDownload.Chart, nextDownload.AudioLayout);
                         }
                         finally
                         {
@@ -359,7 +332,7 @@ namespace USM.ViewModels
             }
         }
 
-        private async Task RunDownloadAndConversionAsync(ChorusChart chart)
+        private async Task RunDownloadAndConversionAsync(ChorusChart chart, AudioLayoutMode audioLayout)
         {
             Application.Current?.Dispatcher?.Invoke(() =>
             {
@@ -399,7 +372,7 @@ namespace USM.ViewModels
                     chart.StatusText = cp.Message;
                 });
 
-                bool success = await SongConverter.ConvertSongAsync(tempSng, customSongsDir, convProgress);
+                bool success = await SongConverter.ConvertSongAsync(tempSng, customSongsDir, convProgress, audioLayout: audioLayout);
                 Application.Current?.Dispatcher?.Invoke(() =>
                 {
                     if (success)

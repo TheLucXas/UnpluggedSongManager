@@ -69,29 +69,48 @@
                                VerticalAlignment="Center"
                                Margin="0,0,6,0" />
                     <ComboBox SelectedIndex="{Binding SelectedSortIndex}"
-                              Width="140"
+                              Width="180"
                               Height="32">
                         <ComboBoxItem Content="Relevance" />
                         <ComboBoxItem Content="Newest" />
                         <ComboBoxItem Content="Title (A - Z)" />
                         <ComboBoxItem Content="Artist (A - Z)" />
-                        <ComboBoxItem Content="Duration" />
+                        <ComboBoxItem Content="Duration (Longest)" />
+                        <ComboBoxItem Content="Album (A - Z)" />
+                        <ComboBoxItem Content="Genre (A - Z)" />
+                        <ComboBoxItem Content="Year (Newest)" />
+                        <ComboBoxItem Content="Charter (A - Z)" />
                     </ComboBox>
                 </StackPanel>
 
-                <!-- Track Filter ComboBox (MultiTrack) -->
                 <StackPanel Orientation="Horizontal" Margin="0,2,16,2" VerticalAlignment="Center">
-                    <TextBlock Text="Tracks:"
+                    <TextBlock Text="Order:"
                                Foreground="{StaticResource BrushTextSecondary}"
                                FontSize="12"
                                VerticalAlignment="Center"
                                Margin="0,0,6,0" />
-                    <ComboBox SelectedIndex="{Binding SelectedTrackFilterIndex}"
-                              Width="150"
+                    <ComboBox SelectedIndex="{Binding SelectedSortDirectionIndex}"
+                              Width="112"
+                              Height="32"
+                              IsEnabled="{Binding CanChooseSortDirection}">
+                        <ComboBoxItem Content="Default" />
+                        <ComboBoxItem Content="Ascending" />
+                        <ComboBoxItem Content="Descending" />
+                    </ComboBox>
+                </StackPanel>
+
+                <!-- Audio layout used when converting downloaded charts -->
+                <StackPanel Orientation="Horizontal" Margin="0,2,16,2" VerticalAlignment="Center">
+                    <TextBlock Text="Install audio:"
+                               Foreground="{StaticResource BrushTextSecondary}"
+                               FontSize="12"
+                               VerticalAlignment="Center"
+                               Margin="0,0,6,0" />
+                    <ComboBox SelectedIndex="{Binding SelectedAudioLayoutIndex}"
+                              Width="210"
                               Height="32">
-                        <ComboBoxItem Content="All Tracks" />
-                        <ComboBoxItem Content="MultiTrack Only" />
-                        <ComboBoxItem Content="Single Track Only" />
+                        <ComboBoxItem Content="Preserve available stems" />
+                        <ComboBoxItem Content="2-track (instrumental + vocals)" />
                     </ComboBox>
                 </StackPanel>
 
@@ -192,20 +211,6 @@
                                                    MaxWidth="400"
                                                    VerticalAlignment="Center" />
 
-                                        <!-- MultiTrack Badge -->
-                                        <Border Background="#2E1B4E"
-                                                BorderBrush="{StaticResource BrushAccentPurple}"
-                                                BorderThickness="1"
-                                                CornerRadius="4"
-                                                Padding="6,2"
-                                                Margin="8,0,0,0"
-                                                VerticalAlignment="Center"
-                                                Visibility="{Binding IsMultiTrack, Converter={StaticResource BoolToVis}}">
-                                            <TextBlock Text="🎛️ MULTITRACK"
-                                                       FontSize="10"
-                                                       FontWeight="Bold"
-                                                       Foreground="#C084FC" />
-                                        </Border>
                                     </StackPanel>
 
                                     <TextBlock Text="{Binding SubtitleDisplay}"

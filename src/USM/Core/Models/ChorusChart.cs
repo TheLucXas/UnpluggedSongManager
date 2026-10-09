@@ -11,6 +11,7 @@ namespace USM.Core.Models
         public string Title { get; set; } = "Unknown Title";
         public string Artist { get; set; } = "Unknown Artist";
         public string Album { get; set; } = string.Empty;
+        public string Genre { get; set; } = string.Empty;
         public string Year { get; set; } = string.Empty;
         public string Charter { get; set; } = "Unknown";
         public string Duration { get; set; } = "--:--";
@@ -20,7 +21,6 @@ namespace USM.Core.Models
         public double PreviewStart { get; set; } = 30.0;
         public string? DownloadUrl { get; set; }
         public string? ArtUrl { get; set; }
-        public bool IsMultiTrack { get; set; }
         public DateTime? ModifiedTime { get; set; }
 
         public string SubtitleDisplay => string.IsNullOrEmpty(Album)
@@ -28,7 +28,6 @@ namespace USM.Core.Models
             : $"{Artist} • {Album}{(string.IsNullOrEmpty(Year) ? "" : $" ({Year})")}";
 
         public string MetaDisplay => $"Charter: {Charter} | Duration: {Duration} | {(DiffGuitar >= 0 ? $"Guitar: Tier {DiffGuitar}" : "Guitar: Yes")}";
-        public string TrackTypeDisplay => IsMultiTrack ? "🎛️ MultiTrack" : "🎸 Single Track";
         public string GuitarDifficultyDisplay => DiffGuitar >= 0 ? $"🎸 Tier {DiffGuitar}" : "🎸 Guitar";
 
         private bool _isInstalled;
@@ -108,6 +107,8 @@ namespace USM.Core.Models
         public string? AudioPath { get; set; }
         public bool HasCover => CoverImage != null || (!string.IsNullOrEmpty(CoverPath) && System.IO.File.Exists(CoverPath));
         public bool IsMultiTrack { get; set; } = false;
+        public bool IsHalfTrack { get; set; } = false;
+        public string TrackTypeDisplay => IsHalfTrack ? "🎚 2-Track (Instrumental + Vocals)" : IsMultiTrack ? "🎸 MultiTrack" : "🎵 Stereo";
 
         private bool _isSelected;
         public bool IsSelected

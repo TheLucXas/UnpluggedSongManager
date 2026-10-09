@@ -22,6 +22,7 @@ namespace USM.ViewModels
         private readonly Action<string> _notifyCallback;
 
         private string _filterQuery = string.Empty;
+        private int _selectedTrackTypeFilterIndex;
         private string _songCountText = "0 songs";
         private bool _allSelected;
         private InstalledSong? _currentlyPreviewingSong;
@@ -34,6 +35,18 @@ namespace USM.ViewModels
             set
             {
                 if (SetProperty(ref _filterQuery, value))
+                {
+                    ApplyFilter();
+                }
+            }
+        }
+
+        public int SelectedTrackTypeFilterIndex
+        {
+            get => _selectedTrackTypeFilterIndex;
+            set
+            {
+                if (SetProperty(ref _selectedTrackTypeFilterIndex, value))
                 {
                     ApplyFilter();
                 }
@@ -146,6 +159,8 @@ namespace USM.ViewModels
             string artist = "Unknown Artist";
             string charter = "Unknown";
             bool isMulti = false;
+            bool isHalfTrack = false;
+            bool hasKnownAudioLayout = false;
             BitmapImage? coverImage = null;
 
             try
@@ -160,7 +175,26 @@ namespace USM.ViewModels
                     title = CleanUsmDisplayName(ReadMetaValue(meta, "SongName", "Name") ?? title);
                     artist = ReadMetaValue(meta, "BandName", "Artist") ?? artist;
                     charter = ReadMetaValue(meta, "LevelAuthorName", "Charter") ?? charter;
-                    if (meta.TryGetProperty("IsMultiTrack", out var multiTrack))
+                    if (meta.TryGetProperty("AudioLayout", out var audioLayout) && audioLayout.ValueKind == JsonValueKind.String)
+                    {
+                        string layout = audioLayout.GetString() ?? string.Empty;
+                        if (string.Equals(layout, "two-track-instrumental-vocals", StringComparison.OrdinalIgnoreCase))
+                        {
+                            isHalfTrack = true;
+                            isMulti = true;
+                            hasKnownAudioLayout = true;
+                        }
+                        else if (string.Equals(layout, "full-multitrack", StringComparison.OrdinalIgnoreCase))
+                        {
+                            isMulti = true;
+                            hasKnownAudioLayout = true;
+                        }
+                        else if (string.Equals(layout, "single-track", StringComparison.OrdinalIgnoreCase))
+                        {
+                            hasKnownAudioLayout = true;
+                        }
+                    }
+                    if (!hasKnownAudioLayout && meta.TryGetProperty("IsMultiTrack", out var multiTrack))
                     {
                         isMulti = multiTrack.ValueKind == JsonValueKind.True ||
                             (multiTrack.ValueKind == JsonValueKind.String && bool.TryParse(multiTrack.GetString(), out var parsed) && parsed);
@@ -189,8 +223,11 @@ namespace USM.ViewModels
                     coverImage = bitmap;
                 }
 
-                isMulti |= archive.Entries.Any(entry => entry.Name.StartsWith("song-", StringComparison.OrdinalIgnoreCase)
-                    && entry.Name.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase));
+                if (!hasKnownAudioLayout)
+                {
+                    isMulti |= archive.Entries.Any(entry => entry.Name.StartsWith("song-", StringComparison.OrdinalIgnoreCase)
+                        && entry.Name.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase));
+                }
             }
             catch
             {
@@ -207,7 +244,8 @@ namespace USM.ViewModels
                 CoverPath = null,
                 CoverImage = coverImage,
                 AudioPath = null,
-                IsMultiTrack = isMulti
+                IsMultiTrack = isMulti,
+                IsHalfTrack = isHalfTrack
             };
         }
 
@@ -292,13 +330,21 @@ namespace USM.ViewModels
             DisplayedSongs.Clear();
             string q = FilterQuery.Trim().ToLowerInvariant();
 
-            var matches = string.IsNullOrEmpty(q)
+            IEnumerable<InstalledSong> matches = string.IsNullOrEmpty(q)
                 ? _allSongs
                 : _allSongs.Where(s =>
                     s.Title.ToLowerInvariant().Contains(q) ||
                     s.Artist.ToLowerInvariant().Contains(q) ||
                     s.Charter.ToLowerInvariant().Contains(q) ||
                     s.FolderName.ToLowerInvariant().Contains(q));
+
+            matches = SelectedTrackTypeFilterIndex switch
+            {
+                1 => matches.Where(song => song.IsMultiTrack && !song.IsHalfTrack),
+                2 => matches.Where(song => song.IsHalfTrack),
+                3 => matches.Where(song => !song.IsMultiTrack),
+                _ => matches
+            };
 
             foreach (var song in matches)
             {

@@ -87,7 +87,8 @@ namespace USM.Core.Services
             string outputParentDir,
             IProgress<ConversionProgress>? progress = null,
             Action<string>? log = null,
-            CancellationToken ct = default)
+            CancellationToken ct = default,
+            AudioLayoutMode audioLayout = AudioLayoutMode.FullMultitrack)
         {
             string? tempDir = null;
             string? outDir = null;
@@ -171,10 +172,11 @@ namespace USM.Core.Services
                 progress?.Report(new ConversionProgress(0.15, "Converting audio and stems..."));
 
                 // 4. Audio Conversion (Stems / Downmix) -> Outputs .ogg
-                bool hasMultiTrack = await AudioPipeline.ProcessAudioAsync(
+                var audioResult = await AudioPipeline.ProcessAudioAsync(
                     inputDir,
                     outDir,
                     iniInfo.PreviewStart,
+                    audioLayout,
                     log,
                     ct
                 );
@@ -220,7 +222,8 @@ namespace USM.Core.Services
 ""FileName"":""{folderName}"",
 ""InitialDelay"":{iniInfo.Delay.ToString("F1", CultureInfo.InvariantCulture)},
 ""IsBuiltIn"":false,
-""IsMultiTrack"":{(hasMultiTrack ? "true" : "false")},
+""IsMultiTrack"":{(audioResult.HasMultiTrack ? "true" : "false")},
+""AudioLayout"":""{(audioResult.IsHalfTrack ? "two-track-instrumental-vocals" : audioResult.HasMultiTrack ? "full-multitrack" : "single-track")}"",
 ""LevelAuthorName"":""{CleanJsonText(iniInfo.Charter)}"",
 ""SongID"":""CUSTOM_{folderName}"",
 ""SongName"":""{CleanJsonText(iniInfo.Name)}""

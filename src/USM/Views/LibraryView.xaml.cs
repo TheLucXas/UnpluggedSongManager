@@ -8,7 +8,6 @@ namespace USM.Views
 {
     public partial class LibraryView : UserControl
     {
-        public static readonly IValueConverter MultiTrackTextConverter = new MultiTrackTextConv();
         public static readonly IValueConverter MultiTrackColorConverter = new MultiTrackColorConv();
         public static readonly IValueConverter PlayIconConverter = new PlayIconConv();
 
@@ -27,15 +26,6 @@ namespace USM.Views
                     vm.UpdateSelectionState();
                 }
             }
-        }
-
-        private class MultiTrackTextConv : IValueConverter
-        {
-            public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
-            {
-                return (value is bool b && b) ? "🎸 MultiTrack" : "🎵 Stereo";
-            }
-            public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotImplementedException();
         }
 
         private class MultiTrackColorConv : IValueConverter

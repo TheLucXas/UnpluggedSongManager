@@ -105,51 +105,9 @@ namespace USM.Core.Services
                         string title = item.TryGetProperty("name", out var nameP) ? nameP.GetString() ?? "Unknown Title" : "Unknown Title";
                         string artist = item.TryGetProperty("artist", out var artNameP) ? artNameP.GetString() ?? "Unknown Artist" : "Unknown Artist";
                         string album = item.TryGetProperty("album", out var albP) ? albP.GetString() ?? "" : "";
+                        string genre = item.TryGetProperty("genre", out var genreP) ? genreP.GetString() ?? "" : "";
                         string year = item.TryGetProperty("year", out var yrP) ? yrP.ToString() : "";
                         string charter = item.TryGetProperty("charter", out var chP) ? chP.GetString() ?? "Unknown" : "Unknown";
-
-                        // MultiTrack detection: strictly check for actual audio stems / multitrack indicators.
-                        // Covers explicit stems keywords, official Guitar Hero / Rock Band game icons (gh*, rb*),
-                        // official studio charters (Harmonix, Neversoft, Vicarious Visions, etc.), and official pack names.
-                        bool isMultiTrack = false;
-                        string drivePath = item.TryGetProperty("drivePath", out var dpP) ? dpP.GetString() ?? "" : "";
-                        string driveFileName = item.TryGetProperty("driveFileName", out var dfnP) ? dfnP.GetString() ?? "" : "";
-                        string chartName = item.TryGetProperty("chartName", out var cnP) ? cnP.GetString() ?? "" : "";
-                        string packName = item.TryGetProperty("packName", out var pnP) ? pnP.GetString() ?? "" : "";
-                        string internalPath = item.TryGetProperty("internalPath", out var ipP) ? ipP.GetString() ?? "" : "";
-                        string icon = item.TryGetProperty("icon", out var icP) ? (icP.GetString() ?? "").ToLowerInvariant().Trim() : "";
-                        string charterLower = charter.ToLowerInvariant();
-
-                        string combinedAudioInfo = $"{title} {chartName} {drivePath} {driveFileName} {packName} {internalPath}";
-                        if (combinedAudioInfo.IndexOf("stem", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            combinedAudioInfo.IndexOf("multitrack", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            combinedAudioInfo.IndexOf("multi-track", StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            isMultiTrack = true;
-                        }
-                        else if (!string.IsNullOrEmpty(icon) && (
-                            icon.StartsWith("gh") ||
-                            icon.StartsWith("rb") ||
-                            icon == "tbrb" || icon == "gdrb" || icon == "lrb" ||
-                            icon == "rbn" || icon == "rbn2" || icon == "bandhero" || icon == "bh"))
-                        {
-                            isMultiTrack = true;
-                        }
-                        else if (charterLower.Contains("harmonix") ||
-                                 charterLower.Contains("neversoft") ||
-                                 charterLower.Contains("vicarious visions") ||
-                                 charterLower.Contains("redoctane") ||
-                                 charterLower.Contains("freestylegames"))
-                        {
-                            isMultiTrack = true;
-                        }
-                        else if (packName.IndexOf("guitar hero", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                 packName.IndexOf("rock band", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                 drivePath.IndexOf("guitar hero", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                 drivePath.IndexOf("rock band", StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            isMultiTrack = true;
-                        }
 
                         DateTime? modifiedTime = null;
                         if (item.TryGetProperty("modifiedTime", out var mtP) && mtP.ValueKind == JsonValueKind.String)
@@ -164,6 +122,7 @@ namespace USM.Core.Services
                             Title = title,
                             Artist = artist,
                             Album = album,
+                            Genre = genre,
                             Year = year,
                             Charter = charter,
                             Duration = durationStr,
@@ -171,7 +130,6 @@ namespace USM.Core.Services
                             DiffGuitar = diffGuitar,
                             DiffBass = diffBass,
                             PreviewStart = previewSec,
-                            IsMultiTrack = isMultiTrack,
                             ModifiedTime = modifiedTime,
                             DownloadUrl = !string.IsNullOrEmpty(md5) ? $"{FilesUrl}/{md5}.sng" : null,
                             ArtUrl = !string.IsNullOrEmpty(artMd5) ? $"{FilesUrl}/{artMd5}.jpg" : null
