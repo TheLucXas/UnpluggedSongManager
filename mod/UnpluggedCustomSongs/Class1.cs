@@ -226,9 +226,14 @@ namespace UnpluggedCustomSongs
             PrefVerbose = PrefsCategory.CreateEntry("VerboseLogging", false, "Enable Verbose Debug Logging");
             PrefChartDiagnostics = PrefsCategory.CreateEntry("ChartDiagnostics", true, "Log custom chart loading and note results");
             PrefDiscordClientId = PrefsCategory.CreateEntry("DiscordClientId", "1441987286022619299", "Discord Application Client ID");
+#if !QUEST_IL2CPP
             PrefDebugMode = PrefsCategory.CreateEntry("EnableDebugMode", false, "Enable Desktop WASD/Mouse Look & Testing Controls");
-
             DebugMode = PrefDebugMode?.Value ?? false;
+#else
+            // The desktop camera, mouse and simulated note controls can interfere with
+            // Quest's tracked hands and controller input. Never activate that path on IL2CPP.
+            DebugMode = false;
+#endif
             DiscordRpcManager.Init();
 
             try
@@ -406,22 +411,24 @@ namespace UnpluggedCustomSongs
             // VR Thumbstick & Keyboard song carousel navigation (with hold-acceleration)
             HandleSongMenuNavigation();
 
+#if !QUEST_IL2CPP
             if (Input.GetKeyDown(KeyCode.F1))
             {
                 DebugMode = !DebugMode;
                 LoggerInstance.Msg($"[CustomSongs] Debug Mode is now {(DebugMode ? "ENABLED" : "DISABLED")}");
             }
+#endif
 
             IntroSkipManager.Update();
 
+#if !QUEST_IL2CPP
             if (!DebugMode) return;
 
             HandleCameraAndMovement();
-#if !QUEST_IL2CPP
             RefreshClickTargets();
-#endif
             HandleActionKeybinds();
             HandleGuitarPlaying();
+#endif
         }
 
         public override void OnLateUpdate()
@@ -1306,8 +1313,19 @@ namespace UnpluggedCustomSongs
         private static System.IO.Compression.ZipArchiveEntry FindArchiveEntry(System.IO.Compression.ZipArchive archive, params string[] names)
         {
             if (archive == null || names == null) return null;
-            return archive.Entries.FirstOrDefault(entry => names.Any(name =>
-                string.Equals(Path.GetFileName(entry.FullName), name, StringComparison.OrdinalIgnoreCase)));
+
+            // Honor the caller's requested difficulty / preferred format. Searching
+            // entries first made ZIP insertion order win, so an Easy request could
+            // silently load Normal or Hard when those entries appeared earlier.
+            foreach (string name in names)
+            {
+                if (string.IsNullOrWhiteSpace(name)) continue;
+                var match = archive.Entries.FirstOrDefault(entry =>
+                    string.Equals(Path.GetFileName(entry.FullName), Path.GetFileName(name), StringComparison.OrdinalIgnoreCase));
+                if (match != null) return match;
+            }
+
+            return null;
         }
 
         private static Texture2D LoadArchiveCover(string archivePath)
@@ -1739,10 +1757,12 @@ namespace UnpluggedCustomSongs
             using (var archive = System.IO.Compression.ZipFile.OpenRead(usmPath))
             {
                 string jsonDiff = Path.ChangeExtension(Path.GetFileName(diff), ".json");
-                var jsonEntry = FindArchiveEntry(archive, jsonDiff, "songdata-Normal.json", "songdata-Hard.json", "songdata-Easy.json", "songdata-SuperEasy.json");
+                var jsonEntry = FindArchiveEntry(archive, GetChartEntryCandidates(jsonDiff));
                 if (jsonEntry != null)
                 {
                     loadedJson = jsonEntry.Name;
+                    if (ModMain.ConfigChartDiagnostics)
+                        MelonLogger.Msg($"[ChartDiag] Requested difficulty {jsonDiff}; selected .usm entry '{jsonEntry.FullName}'.");
                     using (var sr = new StreamReader(jsonEntry.Open()))
                     {
                         jsonContent = sr.ReadToEnd();
@@ -1750,10 +1770,12 @@ namespace UnpluggedCustomSongs
                 }
                 else
                 {
-                    var xmlEntry = FindArchiveEntry(archive, diff, "songdata-Normal.xml", "songdata-Hard.xml", "songdata-Easy.xml", "songdata-SuperEasy.xml");
+                    var xmlEntry = FindArchiveEntry(archive, GetChartEntryCandidates(diff));
                     if (xmlEntry != null)
                     {
                         loadedDiff = xmlEntry.Name;
+                        if (ModMain.ConfigChartDiagnostics)
+                            MelonLogger.Msg($"[ChartDiag] Requested difficulty {diff}; selected legacy .usm entry '{xmlEntry.FullName}'.");
                         using (var sr = new StreamReader(xmlEntry.Open()))
                         {
                             xmlContent = sr.ReadToEnd();
@@ -1928,6 +1950,35 @@ namespace UnpluggedCustomSongs
             }
 
             return mapping;
+        }
+
+        private static string[] GetChartEntryCandidates(string requestedEntry)
+        {
+            string fileName = Path.GetFileName(requestedEntry ?? string.Empty);
+            string extension = Path.GetExtension(fileName);
+            string stem = Path.GetFileNameWithoutExtension(fileName);
+            string[] preferredStems;
+
+            switch (stem.ToLowerInvariant())
+            {
+                case "songdata-supereasy":
+                    preferredStems = new[] { "songdata-SuperEasy", "songdata-Easy", "songdata-Normal", "songdata-Hard" };
+                    break;
+                case "songdata-easy":
+                    preferredStems = new[] { "songdata-Easy", "songdata-SuperEasy", "songdata-Normal", "songdata-Hard" };
+                    break;
+                case "songdata-normal":
+                    preferredStems = new[] { "songdata-Normal", "songdata-Easy", "songdata-Hard", "songdata-SuperEasy" };
+                    break;
+                case "songdata-hard":
+                    preferredStems = new[] { "songdata-Hard", "songdata-Normal", "songdata-Easy", "songdata-SuperEasy" };
+                    break;
+                default:
+                    return new[] { fileName, "songdata-Normal" + extension, "songdata-Hard" + extension,
+                        "songdata-Easy" + extension, "songdata-SuperEasy" + extension };
+            }
+
+            return preferredStems.Select(candidate => candidate + extension).ToArray();
         }
 
         private static JSONArray RequireJsonArray(JSONNode root, string propertyName, string archiveName)
@@ -2963,16 +3014,27 @@ namespace UnpluggedCustomSongs
             if (controllerGuitarNote == null) return;
             try
             {
+                // The chart JSON already stores the controller input for each note.
+                // Replacing that list on every recognition check discards the chart's
+                // trigger/grip mapping and makes valid custom notes impossible to hit.
+                var existingButtons = controllerGuitarNote.Buttons;
+                if (existingButtons != null && existingButtons.Count >= 2 &&
+                    (existingButtons[0] || existingButtons[1]))
+                    return;
+
+                bool hasPartialButtons = existingButtons != null && existingButtons.Count > 0 && existingButtons[0];
+                bool trigger = hasPartialButtons || (!hasPartialButtons && controllerGuitarNote.Tier < 2);
+                bool grip = existingButtons != null && existingButtons.Count > 1 && existingButtons[1];
+                if (!hasPartialButtons && (existingButtons == null || existingButtons.Count < 2 || (!trigger && !grip)))
+                    grip = controllerGuitarNote.Tier >= 2;
+
 #if QUEST_IL2CPP
-                    controllerGuitarNote.Buttons = new Il2CppSystem.Collections.Generic.List<bool>();
+                controllerGuitarNote.Buttons = new Il2CppSystem.Collections.Generic.List<bool>();
 #else
-                    controllerGuitarNote.Buttons = new List<bool>();
+                controllerGuitarNote.Buttons = new List<bool>();
 #endif
-                while (controllerGuitarNote.Buttons.Count < 2)
-                {
-                    int tier = controllerGuitarNote.Tier;
-                    controllerGuitarNote.Buttons.Add(controllerGuitarNote.Buttons.Count == 0 ? (tier < 2) : (tier >= 2));
-                }
+                controllerGuitarNote.Buttons.Add(trigger);
+                controllerGuitarNote.Buttons.Add(grip);
             }
             catch { }
         }
