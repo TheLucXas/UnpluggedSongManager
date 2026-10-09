@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -27,6 +28,13 @@ namespace USM.Core.Services
             if (string.IsNullOrEmpty(text)) return string.Empty;
             string noTags = Regex.Replace(text, @"<[^>]*>", "").Trim();
             return SecurityElement.Escape(noTags) ?? noTags;
+        }
+        
+        public static string CleanJsonText(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return string.Empty;
+            string noTags = Regex.Replace(text, @"<[^>]*>", "").Trim();
+            return noTags.Replace("\"", "\\\"");
         }
 
         public static SongIni ParseSongIni(string iniPath)
@@ -68,6 +76,11 @@ namespace USM.Core.Services
             catch { }
             return info;
         }
+        
+        public static void CleanupOutDir(string? outDir)
+        {
+            try { if (outDir != null && Directory.Exists(outDir)) Directory.Delete(outDir, true); } catch { }
+        }
 
         public static async Task<bool> ConvertSongAsync(
             string inputPath,
@@ -107,7 +120,6 @@ namespace USM.Core.Services
                         progress?.Report(new ConversionProgress(0.05, "Extracting .zip archive..."));
                         ZipFile.ExtractToDirectory(inputPath, tempDir, overwriteFiles: true);
 
-                        // Locate inner directory containing chart notes or song files
                         inputDir = tempDir;
                         foreach (var dir in Directory.GetDirectories(tempDir, "*", SearchOption.AllDirectories))
                         {
@@ -128,7 +140,7 @@ namespace USM.Core.Services
                     throw new FileNotFoundException($"Specified path does not exist: {inputPath}");
                 }
 
-                // 2. Validate that chart notes and audio exist before proceeding
+                // 2. Validate
                 string midPath = Path.Combine(inputDir, "notes.mid");
                 string chartPath = Path.Combine(inputDir, "notes.chart");
                 if (!File.Exists(chartPath)) chartPath = Path.Combine(inputDir, "song.chart");
@@ -147,18 +159,18 @@ namespace USM.Core.Services
                     throw new FileNotFoundException("No playable audio track files found in the song package.");
                 }
 
-                // 3. Read song.ini and determine song folder name
+                // 3. Read song.ini
                 string iniPath = Path.Combine(inputDir, "song.ini");
                 var iniInfo = ParseSongIni(iniPath);
 
                 string folderName = SanitizeFolderName($"{iniInfo.Artist} - {iniInfo.Name}");
-                outDir = Path.Combine(outputParentDir, folderName);
+                outDir = Path.Combine(Path.GetTempPath(), $"usm_out_{Guid.NewGuid():N}");
                 Directory.CreateDirectory(outDir);
 
                 log?.Invoke($"--- Starting conversion: {iniInfo.Artist} - {iniInfo.Name} ---");
                 progress?.Report(new ConversionProgress(0.15, "Converting audio and stems..."));
 
-                // 4. Audio Conversion (Stems / Downmix)
+                // 4. Audio Conversion (Stems / Downmix) -> Outputs .ogg
                 bool hasMultiTrack = await AudioPipeline.ProcessAudioAsync(
                     inputDir,
                     outDir,
@@ -167,88 +179,70 @@ namespace USM.Core.Services
                     ct
                 );
 
-                if (ct.IsCancellationRequested)
-                {
-                    CleanupOutDir(outDir);
-                    return false;
-                }
+                if (ct.IsCancellationRequested) { CleanupOutDir(outDir); return false; }
 
-                // 5. Album Cover
+                // 5. Album Cover -> Outputs cover.jpg
                 progress?.Report(new ConversionProgress(0.55, "Processing album art..."));
                 await AudioPipeline.ProcessCoverAsync(inputDir, outDir, ct);
 
-                if (ct.IsCancellationRequested)
-                {
-                    CleanupOutDir(outDir);
-                    return false;
-                }
+                if (ct.IsCancellationRequested) { CleanupOutDir(outDir); return false; }
 
-                // 6. Chart Note Generation (.mid or .chart)
-                progress?.Report(new ConversionProgress(0.70, "Generating chart note XML..."));
+                // 6. Chart Note Generation -> Outputs .json
+                progress?.Report(new ConversionProgress(0.70, "Generating USM 2.0 chart notes..."));
+
+                System.Collections.Generic.Dictionary<string, string>? jsonCharts = null;
 
                 if (File.Exists(midPath))
                 {
                     log?.Invoke("  [Chart] Detected notes.mid (Standard MIDI format).");
                     var midi = MidiParser.Parse(midPath);
-                    XmlGenerator.GenerateAllDifficulties(midi.BpmGrid, midi.TickToSec, midi.Difficulties, midi.TicksPerBeat, outDir, log);
+                    jsonCharts = XmlGeneratorNoButtons.GenerateAllDifficulties(midi.BpmGrid, midi.TickToSec, midi.Difficulties, midi.TicksPerBeat);
                 }
                 else if (File.Exists(chartPath))
                 {
                     log?.Invoke("  [Chart] Detected notes.chart (Clone Hero text format).");
                     var chart = ChartParser.Parse(chartPath);
-                    XmlGenerator.GenerateAllDifficulties(chart.BpmGrid, chart.TickToSec, chart.Difficulties, chart.Resolution, outDir, log);
+                    jsonCharts = XmlGeneratorNoButtons.GenerateAllDifficulties(chart.BpmGrid, chart.TickToSec, chart.Difficulties, chart.Resolution);
                 }
-
-                // 7. Copy / Write song.ini
-                string destIni = Path.Combine(outDir, "song.ini");
-                if (File.Exists(iniPath))
+                
+                if (jsonCharts != null)
                 {
-                    File.Copy(iniPath, destIni, overwrite: true);
-                }
-                else
-                {
-                    File.WriteAllText(destIni, $"[song]\nname = {iniInfo.Name}\nartist = {iniInfo.Artist}\ncharter = {iniInfo.Charter}\n", Encoding.UTF8);
+                    foreach (var kvp in jsonCharts)
+                    {
+                        File.WriteAllText(Path.Combine(outDir, kvp.Key), kvp.Value, Encoding.UTF8);
+                    }
                 }
 
-                // 8. Generate data.xml
-                string xmlData = $@"<?xml version=""1.0"" encoding=""utf-8""?>
-<SongLevelData xmlns:i=""http://www.w3.org/2001/XMLSchema-instance"" xmlns=""http://schemas.datacontract.org/2004/07/"">
-  <BandName>{CleanXmlText(iniInfo.Artist)}</BandName>
-  <FileName>{folderName}</FileName>
-  <InitialDelay>{iniInfo.Delay:F1}</InitialDelay>
-  <IsBuiltIn>false</IsBuiltIn>
-  <IsMultiTrack>{(hasMultiTrack ? "true" : "false")}</IsMultiTrack>
-  <LevelAuthorName>{CleanXmlText(iniInfo.Charter)}</LevelAuthorName>
-  <SongID>CUSTOM_{folderName}</SongID>
-  <SongName>{CleanXmlText(iniInfo.Name)}</SongName>
-</SongLevelData>";
+                // 7. Generate meta.json
+                string metaJson = $@"{{
+""BandName"":""{CleanJsonText(iniInfo.Artist)}"",
+""FileName"":""{folderName}"",
+""InitialDelay"":{iniInfo.Delay.ToString("F1", CultureInfo.InvariantCulture)},
+""IsBuiltIn"":false,
+""IsMultiTrack"":{(hasMultiTrack ? "true" : "false")},
+""LevelAuthorName"":""{CleanJsonText(iniInfo.Charter)}"",
+""SongID"":""CUSTOM_{folderName}"",
+""SongName"":""{CleanJsonText(iniInfo.Name)}""
+}}";
 
-                File.WriteAllText(Path.Combine(outDir, "data.xml"), xmlData, Encoding.UTF8);
+                // 8. Pack to .usm
+                progress?.Report(new ConversionProgress(0.90, "Packaging .usm archive..."));
+                string finalUsmPath = Path.Combine(outputParentDir, $"{folderName}.usm");
+                UsmPacker.Pack(outDir, finalUsmPath, metaJson);
 
                 progress?.Report(new ConversionProgress(1.0, "Conversion complete!"));
-                log?.Invoke($"[SUCCESS] Song converted and installed: {folderName}");
+                log?.Invoke($"[SUCCESS] Song packaged to: {folderName}.usm");
+                
+                CleanupOutDir(outDir);
+                if (tempDir != null) CleanupOutDir(tempDir);
                 return true;
             }
             catch (Exception ex)
             {
                 CleanupOutDir(outDir);
+                if (tempDir != null) CleanupOutDir(tempDir);
                 log?.Invoke($"[ERROR] Conversion failed: {ex.Message}");
                 return false;
-            }
-            finally
-            {
-                if (tempDir != null && Directory.Exists(tempDir))
-                {
-                    try { Directory.Delete(tempDir, recursive: true); } catch { }
-                }
-            }
-        }
-
-        private static void CleanupOutDir(string? outDir)
-        {
-            if (!string.IsNullOrEmpty(outDir) && Directory.Exists(outDir))
-            {
-                try { Directory.Delete(outDir, recursive: true); } catch { }
             }
         }
     }

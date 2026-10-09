@@ -72,7 +72,7 @@ namespace USM.Core.Services
         {
             if (!File.Exists(srcFile)) return;
 
-            if (srcFile.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase))
+            if (srcFile.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase))
             {
                 File.Copy(srcFile, outFile, overwrite: true);
             }
@@ -95,10 +95,10 @@ namespace USM.Core.Services
 
             var stemMap = new Dictionary<string, string[]>
             {
-                ["guitar"] = new[] { "guitar.ogg", "guitar.opus", "guitar.mp3", "guitar.wav" },
-                ["bass"] = new[] { "bass.ogg", "bass.opus", "bass.mp3", "rhythm.ogg", "rhythm.opus", "rhythm.mp3" },
-                ["vocals"] = new[] { "vocals.ogg", "vocals.opus", "vocals.mp3", "vocals.wav" },
-                ["other"] = new[] { "song.ogg", "song.opus", "song.mp3", "band.ogg", "band.opus", "crowd.ogg" }
+                ["guitar"] = new[] { "guitar.ogg", "guitar.opus", "guitar.ogg", "guitar.wav" },
+                ["bass"] = new[] { "bass.ogg", "bass.opus", "bass.ogg", "rhythm.ogg", "rhythm.opus", "rhythm.ogg" },
+                ["vocals"] = new[] { "vocals.ogg", "vocals.opus", "vocals.ogg", "vocals.wav" },
+                ["other"] = new[] { "song.ogg", "song.opus", "song.ogg", "band.ogg", "band.opus", "crowd.ogg" }
             };
 
             foreach (var kvp in stemMap)
@@ -135,11 +135,11 @@ namespace USM.Core.Services
                 log?.Invoke("  [Audio] Multitrack stems detected. Encoding channels in parallel...");
 
                 var tasks = new List<(string Name, object Source, string TargetFile)>();
-                if (stemsFound.TryGetValue("guitar", out var gSrc)) tasks.Add(("guitar", gSrc, "song-guitar.mp3"));
-                if (stemsFound.TryGetValue("bass", out var bSrc)) tasks.Add(("bass", bSrc, "song-bass.mp3"));
-                if (stemsFound.TryGetValue("vocals", out var vSrc)) tasks.Add(("vocals", vSrc, "song-vocals.mp3"));
-                if (stemsFound.TryGetValue("drums", out var dSrc)) tasks.Add(("drums", dSrc, "song-drums.mp3"));
-                if (stemsFound.TryGetValue("other", out var oSrc)) tasks.Add(("other", oSrc, "song-other.mp3"));
+                if (stemsFound.TryGetValue("guitar", out var gSrc)) tasks.Add(("guitar", gSrc, "song-guitar.ogg"));
+                if (stemsFound.TryGetValue("bass", out var bSrc)) tasks.Add(("bass", bSrc, "song-bass.ogg"));
+                if (stemsFound.TryGetValue("vocals", out var vSrc)) tasks.Add(("vocals", vSrc, "song-vocals.ogg"));
+                if (stemsFound.TryGetValue("drums", out var dSrc)) tasks.Add(("drums", dSrc, "song-drums.ogg"));
+                if (stemsFound.TryGetValue("other", out var oSrc)) tasks.Add(("other", oSrc, "song-other.ogg"));
 
                 var encodeTasks = tasks.Select(t => Task.Run(async () =>
                 {
@@ -164,13 +164,13 @@ namespace USM.Core.Services
 
                 await Task.WhenAll(encodeTasks);
 
-                // Mixdown all generated stems into song.mp3
+                // Mixdown all generated stems into song.ogg
                 var generatedStems = tasks
                     .Select(t => Path.Combine(outDir, t.TargetFile))
                     .Where(File.Exists)
                     .ToList();
 
-                string masterPath = Path.Combine(outDir, "song.mp3");
+                string masterPath = Path.Combine(outDir, "song.ogg");
                 if (generatedStems.Count > 1)
                 {
                     var inputs = string.Join(" ", generatedStems.Select(f => $"-i \"{f}\""));
@@ -196,9 +196,9 @@ namespace USM.Core.Services
                 if (audioSrc == null)
                 {
                     string[] fallbacks = {
-                        "song.opus", "song.ogg", "song.mp3", "song.wav",
-                        "guitar.opus", "guitar.ogg", "guitar.mp3", "guitar.wav",
-                        "rhythm.opus", "rhythm.ogg", "rhythm.mp3"
+                        "song.opus", "song.ogg", "song.ogg", "song.wav",
+                        "guitar.opus", "guitar.ogg", "guitar.ogg", "guitar.wav",
+                        "rhythm.opus", "rhythm.ogg", "rhythm.ogg"
                     };
                     foreach (var fn in fallbacks)
                     {
@@ -213,7 +213,7 @@ namespace USM.Core.Services
                         .FirstOrDefault(f => audioExts.Any(ext => f.EndsWith(ext, StringComparison.OrdinalIgnoreCase)));
                 }
 
-                string masterPath = Path.Combine(outDir, "song.mp3");
+                string masterPath = Path.Combine(outDir, "song.ogg");
                 if (audioSrc != null)
                 {
                     await EncodeOrCopyAsync(audioSrc, masterPath, ct);
@@ -224,11 +224,11 @@ namespace USM.Core.Services
                 }
             }
 
-            // Generate sample.mp3 preview
-            string masterMp3 = Path.Combine(outDir, "song.mp3");
+            // Generate sample.ogg preview
+            string masterMp3 = Path.Combine(outDir, "song.ogg");
             if (File.Exists(masterMp3))
             {
-                string samplePath = Path.Combine(outDir, "sample.mp3");
+                string samplePath = Path.Combine(outDir, "sample.ogg");
                 try
                 {
                     await RunFfmpegAsync($"-y -threads 0 -ss {previewStart:F1} -t 25 -i \"{masterMp3}\" -b:a 192k \"{samplePath}\"", ct);
@@ -246,7 +246,7 @@ namespace USM.Core.Services
         public static async Task ProcessCoverAsync(string srcDir, string outDir, CancellationToken ct = default)
         {
             string[] coverNames = {
-                "album.jpg", "album.png", "album.jpeg",
+                "cover.jpg", "album.png", "album.jpeg",
                 "cover.jpg", "cover.png", "cover.jpeg",
                 "background.jpg", "background.png"
             };
@@ -263,7 +263,7 @@ namespace USM.Core.Services
                                      f.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
                                      f.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase));
 
-            string destCover = Path.Combine(outDir, "album.jpg");
+            string destCover = Path.Combine(outDir, "cover.jpg");
             if (coverSrc != null)
             {
                 try

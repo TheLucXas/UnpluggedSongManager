@@ -36,25 +36,21 @@ namespace USM.Core.Services
             string? sortDirection = null,
             CancellationToken ct = default)
         {
-            var payload = new Dictionary<string, object?>
+            var payload = new
             {
-                ["search"] = string.IsNullOrWhiteSpace(query) ? "*" : query.Trim(),
-                ["page"] = page,
-                ["per_page"] = perPage,
-                ["instrument"] = string.IsNullOrEmpty(instrument) ? null : instrument,
-                ["source"] = "api"
+                search = string.IsNullOrWhiteSpace(query) ? "*" : query.Trim(),
+                page = page,
+                per_page = perPage,
+                instrument = string.IsNullOrEmpty(instrument) ? null : instrument,
+                source = "api",
+                sort = string.IsNullOrEmpty(sortType) ? null : new
+                {
+                    type = sortType,
+                    direction = sortDirection ?? "desc"
+                }
             };
 
-            if (!string.IsNullOrEmpty(sortType))
-            {
-                payload["sort"] = new Dictionary<string, string>
-                {
-                    ["type"] = sortType,
-                    ["direction"] = sortDirection ?? "desc"
-                };
-            }
-
-            string jsonString = JsonSerializer.Serialize(payload);
+            string jsonString = JsonSerializer.Serialize(payload, new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
             using var content = new StringContent(jsonString, Encoding.UTF8, "application/json");
 
             try
