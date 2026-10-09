@@ -21,14 +21,6 @@ namespace USM.ViewModels
         private string _statusText = "Status: Ready (Drop or select files to convert automatically)";
         private string _logText = string.Empty;
         private CancellationTokenSource? _cts;
-        private int _selectedAudioLayoutIndex;
-
-        public int SelectedAudioLayoutIndex
-        {
-            get => _selectedAudioLayoutIndex;
-            set => SetProperty(ref _selectedAudioLayoutIndex, value);
-        }
-
         public bool IsConverting
         {
             get => _isConverting;
@@ -216,10 +208,7 @@ namespace USM.ViewModels
                         customSongsDir,
                         progress,
                         AppendLog,
-                        _cts.Token,
-                        SelectedAudioLayoutIndex == 1
-                            ? AudioLayoutMode.InstrumentalAndVocals
-                            : AudioLayoutMode.FullMultitrack
+                        _cts.Token
                     );
 
                     Queue.RemoveAt(0);

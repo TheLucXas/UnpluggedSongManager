@@ -20,7 +20,7 @@ namespace USM.ViewModels
         private bool _isSearching;
         private string _statusText = "Type a song or artist name to search Chorus Encore / Clone Hero database.";
 
-        private readonly ConcurrentQueue<(ChorusChart Chart, AudioLayoutMode AudioLayout)> _downloadQueue = new();
+        private readonly ConcurrentQueue<ChorusChart> _downloadQueue = new();
         private int _activeDownloads = 0;
         private readonly object _queueLock = new();
         private readonly List<ChorusChart> _rawCharts = new();
@@ -71,13 +71,6 @@ namespace USM.ViewModels
                     RequestSearch();
                 }
             }
-        }
-
-        private int _selectedAudioLayoutIndex;
-        public int SelectedAudioLayoutIndex
-        {
-            get => _selectedAudioLayoutIndex;
-            set => SetProperty(ref _selectedAudioLayoutIndex, value);
         }
 
         private int _selectedDifficultyFilterIndex = 0;
@@ -297,10 +290,7 @@ namespace USM.ViewModels
 
             chart.IsQueued = true;
             chart.StatusText = "⏳ Queued...";
-            var audioLayout = SelectedAudioLayoutIndex == 1
-                ? AudioLayoutMode.InstrumentalAndVocals
-                : AudioLayoutMode.FullMultitrack;
-            _downloadQueue.Enqueue((chart, audioLayout));
+            _downloadQueue.Enqueue(chart);
 
             ProcessDownloadQueue();
         }
@@ -317,7 +307,7 @@ namespace USM.ViewModels
                     {
                         try
                         {
-                            await RunDownloadAndConversionAsync(nextDownload.Chart, nextDownload.AudioLayout);
+                            await RunDownloadAndConversionAsync(nextDownload);
                         }
                         finally
                         {
@@ -332,7 +322,7 @@ namespace USM.ViewModels
             }
         }
 
-        private async Task RunDownloadAndConversionAsync(ChorusChart chart, AudioLayoutMode audioLayout)
+        private async Task RunDownloadAndConversionAsync(ChorusChart chart)
         {
             Application.Current?.Dispatcher?.Invoke(() =>
             {
@@ -372,7 +362,7 @@ namespace USM.ViewModels
                     chart.StatusText = cp.Message;
                 });
 
-                bool success = await SongConverter.ConvertSongAsync(tempSng, customSongsDir, convProgress, audioLayout: audioLayout);
+                bool success = await SongConverter.ConvertSongAsync(tempSng, customSongsDir, convProgress);
                 Application.Current?.Dispatcher?.Invoke(() =>
                 {
                     if (success)

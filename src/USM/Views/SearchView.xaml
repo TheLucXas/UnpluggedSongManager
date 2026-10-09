@@ -99,21 +99,6 @@
                     </ComboBox>
                 </StackPanel>
 
-                <!-- Audio layout used when converting downloaded charts -->
-                <StackPanel Orientation="Horizontal" Margin="0,2,16,2" VerticalAlignment="Center">
-                    <TextBlock Text="Install audio:"
-                               Foreground="{StaticResource BrushTextSecondary}"
-                               FontSize="12"
-                               VerticalAlignment="Center"
-                               Margin="0,0,6,0" />
-                    <ComboBox SelectedIndex="{Binding SelectedAudioLayoutIndex}"
-                              Width="210"
-                              Height="32">
-                        <ComboBoxItem Content="Preserve available stems" />
-                        <ComboBoxItem Content="2-track (instrumental + vocals)" />
-                    </ComboBox>
-                </StackPanel>
-
                 <!-- Difficulty Filter ComboBox -->
                 <StackPanel Orientation="Horizontal" Margin="0,2,16,2" VerticalAlignment="Center">
                     <TextBlock Text="Difficulty:"

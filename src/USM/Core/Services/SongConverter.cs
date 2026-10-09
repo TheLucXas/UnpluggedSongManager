@@ -87,8 +87,7 @@ namespace USM.Core.Services
             string outputParentDir,
             IProgress<ConversionProgress>? progress = null,
             Action<string>? log = null,
-            CancellationToken ct = default,
-            AudioLayoutMode audioLayout = AudioLayoutMode.FullMultitrack)
+            CancellationToken ct = default)
         {
             string? tempDir = null;
             string? outDir = null;
@@ -176,7 +175,6 @@ namespace USM.Core.Services
                     inputDir,
                     outDir,
                     iniInfo.PreviewStart,
-                    audioLayout,
                     log,
                     ct
                 );
