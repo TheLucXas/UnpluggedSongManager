@@ -334,6 +334,11 @@ namespace UnpluggedCustomSongs
                 PerformSongRefresh();
             }
 
+            // SongMenu does not consistently request a preview when an album is opened
+            // with a song already selected. Polling the selected custom song also covers
+            // restoring the last album/song on startup, on both Mono and IL2CPP.
+            UpdateCustomSongPreview();
+
             // VR Thumbstick & Keyboard song carousel navigation (with hold-acceleration)
             HandleSongMenuNavigation();
 
@@ -383,6 +388,42 @@ namespace UnpluggedCustomSongs
         private static int _navHoldDir = 0;
         private static float _navHoldStartTime = 0f;
         private static float _navNextStepTime = 0f;
+        private static string _lastMenuPreviewSongKey = null;
+
+        private void UpdateCustomSongPreview()
+        {
+            try
+            {
+                var startSpace = StartSpace.I;
+                var album = AlbumsManager.SelectedAlbum;
+                if (startSpace == null || !startSpace.gameObject.activeInHierarchy ||
+                    startSpace.songMenu == null || !startSpace.songMenu.gameObject.activeInHierarchy ||
+                    album == null || album.AlbumID != "CustomSongsAlbum" || GameManager.IsPlaying)
+                {
+                    _lastMenuPreviewSongKey = null;
+                    return;
+                }
+
+                var selectedSong = startSpace.songMenu.SelectedSong;
+                if (selectedSong == null || string.IsNullOrWhiteSpace(selectedSong.FileName)) return;
+
+                string selectionKey = (selectedSong.SongID ?? "") + "|" + selectedSong.FileName;
+                if (string.Equals(selectionKey, _lastMenuPreviewSongKey, StringComparison.Ordinal)) return;
+
+                var player = GameManager.I != null ? GameManager.I.musicPlayer : null;
+                if (player == null) player = UnityEngine.Object.FindObjectOfType<Mp3Player>();
+                if (player == null || player.MusicAudioSource == null ||
+                    CustomSongLoader.ResolveUsmPath(selectedSong.FileName) == null) return;
+
+                _lastMenuPreviewSongKey = selectionKey;
+                CustomSongLoader.PlayCustomAudioSample(player, selectedSong.FileName);
+            }
+            catch (Exception ex)
+            {
+                _lastMenuPreviewSongKey = null;
+                if (ConfigVerbose) MelonLogger.Warning($"[CustomSongs] Could not update selected-song preview: {ex.Message}");
+            }
+        }
 
         private void HandleSongMenuNavigation()
         {
@@ -405,11 +446,12 @@ namespace UnpluggedCustomSongs
                 return;
             }
 
-            // Check if there are at least 2 songs to navigate between
+            // Do not cast SongMenu.songList to List<T>: Quest exposes an
+            // Il2CppSystem.Collections.Generic.List<T> and that cast silently
+            // disabled controller navigation on the IL2CPP build.
             try
             {
-                var songList = Traverse.Create(sm).Field("songList").GetValue<List<SongMappingMetaData>>();
-                if (songList == null || songList.Count <= 1)
+                if (sm.SelectedSong == null)
                 {
                     _navHoldDir = 0;
                     return;
@@ -417,6 +459,7 @@ namespace UnpluggedCustomSongs
             }
             catch
             {
+                _navHoldDir = 0;
                 return;
             }
 
@@ -459,6 +502,10 @@ namespace UnpluggedCustomSongs
                     _navNextStepTime = Time.unscaledTime + 0.38f; // Initial delay to prevent accidental multi-steps
 
                     TriggerSongStep(sm, currentDir);
+                    if (ConfigVerbose)
+                    {
+                        MelonLogger.Msg($"[CustomSongs][Nav] Stick/key x={stickX:F2}, direction={(currentDir > 0 ? "next" : "previous")}, selected='{sm.SelectedSong?.SongName}'.");
+                    }
                 }
                 else
                 {
@@ -1132,6 +1179,7 @@ namespace UnpluggedCustomSongs
 
         private static FileSystemWatcher watcher;
         private static readonly Dictionary<string, Texture2D> CoverTextureCache = new Dictionary<string, Texture2D>(StringComparer.OrdinalIgnoreCase);
+        private static string ActivePreviewArchivePath;
 
         public static string ResolveUsmPath(string fileName)
         {
@@ -2102,13 +2150,26 @@ namespace UnpluggedCustomSongs
                     return;
                 }
 
+                string previewArchivePath;
+                try { previewArchivePath = Path.GetFullPath(usmPath); }
+                catch { previewArchivePath = usmPath; }
+
+                string expectedClipName = "sample_" + Path.GetFileName(usmPath);
+                if (player != null && player.MusicAudioSource != null &&
+                    string.Equals(ActivePreviewArchivePath, previewArchivePath, StringComparison.OrdinalIgnoreCase) &&
+                    player.MusicAudioSource.clip != null && player.MusicAudioSource.clip.name == expectedClipName &&
+                    player.MusicAudioSource.isPlaying)
+                {
+                    return;
+                }
+
                 string tempDir = Path.Combine(Application.temporaryCachePath, "USM_RUNTIME");
                 if (!Directory.Exists(tempDir)) Directory.CreateDirectory(tempDir);
                 string samplePath = null;
 
                 using (var archive = System.IO.Compression.ZipFile.OpenRead(usmPath))
                 {
-                    var entry = archive.GetEntry("sample.ogg") ?? archive.GetEntry("sample.mp3") ?? archive.GetEntry("song.ogg") ?? archive.GetEntry("song.mp3");
+                    var entry = FindArchiveEntry(archive, "sample.ogg", "sample.mp3", "song.ogg", "song.mp3");
                     if (entry != null)
                     {
                         samplePath = Path.Combine(tempDir, entry.Name);
@@ -2124,11 +2185,12 @@ namespace UnpluggedCustomSongs
                     AudioClip clip = LoadClip(samplePath);
                     if (clip != null && player.MusicAudioSource != null)
                     {
-                        clip.name = "sample_" + folderName;
+                        clip.name = expectedClipName;
                         player.MusicAudioSource.clip = clip;
                         player.MusicAudioSource.loop = true;
                         player.MusicAudioSource.volume = 1f;
                         player.MusicAudioSource.Play();
+                        ActivePreviewArchivePath = previewArchivePath;
                         MelonLogger.Msg($"[CustomSongs] Turntable audio preview started for '{folderName}'");
 
                         // Live update Turntable Vinyl Texture to this song's cover!
@@ -2780,6 +2842,7 @@ namespace UnpluggedCustomSongs
         public static float SkipTargetTime = 0f;
         private static GameObject _promptObj = null;
         private static TextMeshPro _promptText = null;
+        private static float _nextInputDiagnosticTime = 0f;
 
         public static void OnSongStarted()
         {
@@ -2861,6 +2924,11 @@ namespace UnpluggedCustomSongs
             {
                 float leftTrig = OVRInput.Get(OVRInput.Axis1D.PrimaryIndexTrigger);
                 float rightTrig = OVRInput.Get(OVRInput.Axis1D.SecondaryIndexTrigger);
+                if (ModMain.ConfigVerbose && Time.unscaledTime >= _nextInputDiagnosticTime)
+                {
+                    _nextInputDiagnosticTime = Time.unscaledTime + 1.0f;
+                    MelonLogger.Msg($"[IntroSkip][Input] L2={leftTrig:F2}, R2={rightTrig:F2}, target={SkipTargetTime:F2}s, song={GameManager.SongTime:F2}s.");
+                }
                 if (leftTrig > 0.55f && rightTrig > 0.55f)
                 {
                     return true;
