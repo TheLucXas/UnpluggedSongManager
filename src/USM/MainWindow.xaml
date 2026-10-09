@@ -8,10 +8,11 @@
         mc:Ignorable="d"
         Title="USM • Unplugged Song Manager"
         Icon="assets/icon.png"
-        Width="1040"
-        Height="740"
-        MinWidth="880"
-        MinHeight="600"
+        Width="1280"
+        Height="820"
+        MinWidth="1040"
+        MinHeight="660"
+        FontFamily="Segoe UI"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource BrushBgMain}">
     <Window.DataContext>
@@ -99,40 +100,63 @@
         <!-- 2. Main TabControl -->
         <TabControl Grid.Row="1"
                     SelectedIndex="{Binding SelectedTabIndex}"
+                    TabStripPlacement="Left"
                     Background="Transparent"
                     BorderThickness="0"
-                    Margin="10,6,10,0">
+                    Margin="12,8,12,0">
             <TabControl.Resources>
-                <!-- Sleek Dark TabItem Style -->
+                <!-- Fluent-style left navigation used throughout the app. -->
                 <Style TargetType="TabItem">
                     <Setter Property="Background" Value="Transparent" />
                     <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
                     <Setter Property="FontSize" Value="13" />
                     <Setter Property="FontWeight" Value="SemiBold" />
-                    <Setter Property="Padding" Value="16,10" />
-                    <Setter Property="Margin" Value="4,0" />
+                    <Setter Property="Padding" Value="12,8" />
+                    <Setter Property="Width" Value="208" />
+                    <Setter Property="Height" Value="46" />
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    <Setter Property="VerticalContentAlignment" Value="Center" />
+                    <Setter Property="Margin" Value="0,2,8,2" />
                     <Setter Property="Template">
                         <Setter.Value>
                             <ControlTemplate TargetType="TabItem">
-                                <Border x:Name="TabBorder"
+                                <Border x:Name="NavItemBackground"
                                         Background="{TemplateBinding Background}"
-                                        CornerRadius="8,8,0,0"
-                                        BorderThickness="0,0,0,2"
-                                        BorderBrush="Transparent"
+                                        CornerRadius="6"
                                         Padding="{TemplateBinding Padding}"
-                                        Cursor="Hand">
-                                    <ContentPresenter ContentSource="Header"
-                                                      HorizontalAlignment="Center"
-                                                      VerticalAlignment="Center" />
+                                        Cursor="Hand"
+                                        SnapsToDevicePixels="True">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="3" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Border x:Name="SelectionIndicator"
+                                                Grid.Column="0"
+                                                Width="3"
+                                                Height="22"
+                                                CornerRadius="2"
+                                                Background="{StaticResource BrushAccentBlue}"
+                                                Visibility="Collapsed"
+                                                VerticalAlignment="Center" />
+                                        <ContentPresenter Grid.Column="1"
+                                                          ContentSource="Header"
+                                                          HorizontalAlignment="Stretch"
+                                                          VerticalAlignment="Center" />
+                                    </Grid>
                                 </Border>
                                 <ControlTemplate.Triggers>
                                     <Trigger Property="IsSelected" Value="True">
-                                        <Setter TargetName="TabBorder" Property="Background" Value="{StaticResource BrushBgCard}" />
-                                        <Setter TargetName="TabBorder" Property="BorderBrush" Value="{StaticResource BrushAccentPink}" />
+                                        <Setter TargetName="NavItemBackground" Property="Background" Value="{StaticResource BrushBgCardHover}" />
+                                        <Setter TargetName="SelectionIndicator" Property="Visibility" Value="Visible" />
                                         <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
                                     </Trigger>
                                     <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="NavItemBackground" Property="Background" Value="{StaticResource BrushBgCardHover}" />
                                         <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+                                    </Trigger>
+                                    <Trigger Property="IsEnabled" Value="False">
+                                        <Setter TargetName="NavItemBackground" Property="Opacity" Value="0.45" />
                                     </Trigger>
                                 </ControlTemplate.Triggers>
                             </ControlTemplate>
@@ -141,28 +165,99 @@
                 </Style>
             </TabControl.Resources>
 
+            <TabControl.Template>
+                <ControlTemplate TargetType="TabControl">
+                    <Grid KeyboardNavigation.TabNavigation="Local">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="226" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <Border Grid.Column="0"
+                                Background="{StaticResource BrushBgCard}"
+                                BorderBrush="{StaticResource BrushBorder}"
+                                BorderThickness="1"
+                                CornerRadius="10"
+                                Padding="8,14"
+                                Margin="0,0,12,8">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0"
+                                           Text="WORKSPACE"
+                                           Foreground="{StaticResource BrushTextMuted}"
+                                           FontSize="10"
+                                           FontWeight="Bold"
+                                           Margin="12,2,0,12" />
+                                <TabPanel Grid.Row="1"
+                                          x:Name="HeaderPanel"
+                                          IsItemsHost="True"
+                                          KeyboardNavigation.TabIndex="1" />
+                            </Grid>
+                        </Border>
+
+                        <ContentPresenter Grid.Column="1"
+                                          x:Name="PART_SelectedContentHost"
+                                          ContentSource="SelectedContent"
+                                          SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
+                    </Grid>
+                </ControlTemplate>
+            </TabControl.Template>
+
             <!-- Tab 1: Chorus Search & Download -->
-            <TabItem Header="{DynamicResource Loc_Tab_Download}">
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="&#xE721;" FontFamily="Segoe MDL2 Assets" FontSize="16" Width="24" VerticalAlignment="Center" />
+                        <TextBlock Text="{DynamicResource Loc_Tab_Download}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </TabItem.Header>
                 <views:SearchView DataContext="{Binding SearchVM}" />
             </TabItem>
 
             <!-- Tab 2: Local Converter Drag & Drop -->
-            <TabItem Header="{DynamicResource Loc_Tab_Converter}">
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="&#xE8D4;" FontFamily="Segoe MDL2 Assets" FontSize="16" Width="24" VerticalAlignment="Center" />
+                        <TextBlock Text="{DynamicResource Loc_Tab_Converter}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </TabItem.Header>
                 <views:ConverterView DataContext="{Binding ConverterVM}" />
             </TabItem>
 
             <!-- Tab 3: Song Library Manager -->
-            <TabItem Header="{DynamicResource Loc_Tab_Library}">
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="&#xE8F1;" FontFamily="Segoe MDL2 Assets" FontSize="16" Width="24" VerticalAlignment="Center" />
+                        <TextBlock Text="{DynamicResource Loc_Tab_Library}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </TabItem.Header>
                 <views:LibraryView DataContext="{Binding LibraryVM}" />
             </TabItem>
 
             <!-- Tab 4: Quest Patcher -->
-            <TabItem Header="{DynamicResource Loc_Tab_QuestPatcher}">
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="&#xE7EF;" FontFamily="Segoe MDL2 Assets" FontSize="16" Width="24" VerticalAlignment="Center" />
+                        <TextBlock Text="{DynamicResource Loc_Tab_QuestPatcher}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </TabItem.Header>
                 <views:QuestView DataContext="{Binding QuestVM}" />
             </TabItem>
 
             <!-- Tab 5: Settings -->
-            <TabItem Header="{DynamicResource Loc_Tab_Settings}">
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="16" Width="24" VerticalAlignment="Center" />
+                        <TextBlock Text="{DynamicResource Loc_Tab_Settings}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </TabItem.Header>
                 <views:SettingsView DataContext="{Binding SettingsVM}" />
             </TabItem>
         </TabControl>

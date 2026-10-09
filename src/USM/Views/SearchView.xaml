@@ -216,6 +216,18 @@
                                                Margin="0,2,0,0"
                                                TextTrimming="CharacterEllipsis"
                                                ToolTip="Chorus chart tracks and video metadata. This does not indicate whether the audio contains separated stems." />
+
+                                    <Border Background="{StaticResource BrushBgInput}"
+                                            CornerRadius="8"
+                                            Padding="8,3"
+                                            Margin="0,5,0,0"
+                                            HorizontalAlignment="Left"
+                                            ToolTip="Read from the SNG file index. Audio payloads and video are not downloaded for this check.">
+                                        <TextBlock Text="{Binding TrackLayoutDisplay}"
+                                                   FontSize="10"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{StaticResource BrushAccentBlue}" />
+                                    </Border>
                                 </StackPanel>
 
                                 <!-- Actions & Progress -->

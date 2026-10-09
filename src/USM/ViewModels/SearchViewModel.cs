@@ -26,6 +26,8 @@ namespace USM.ViewModels
         private readonly object _queueLock = new();
         private readonly List<ChorusChart> _rawCharts = new();
         private bool _searchPending;
+        private static readonly SemaphoreSlim AudioLayoutProbeLimit = new(3);
+        private static readonly ConcurrentDictionary<string, AudioTrackLayout> AudioLayoutCache = new(StringComparer.OrdinalIgnoreCase);
 
         public string SearchQuery
         {
@@ -172,6 +174,7 @@ namespace USM.ViewModels
                     _rawCharts.Add(chart);
                 }
 
+                StartAudioLayoutProbes(charts);
                 ApplyFilterAndSort();
 
                 if (_rawCharts.Count == 0)
@@ -191,6 +194,56 @@ namespace USM.ViewModels
                     _searchPending = false;
                     RequestSearch();
                 }
+            }
+        }
+
+        private static void StartAudioLayoutProbes(IEnumerable<ChorusChart> charts)
+        {
+            foreach (ChorusChart chart in charts)
+            {
+                if (string.IsNullOrWhiteSpace(chart.Md5) || string.IsNullOrWhiteSpace(chart.DownloadUrl))
+                {
+                    chart.TrackLayout = AudioTrackLayout.Unknown;
+                    continue;
+                }
+
+                if (AudioLayoutCache.TryGetValue(chart.Md5, out AudioTrackLayout cachedLayout))
+                {
+                    chart.TrackLayout = cachedLayout;
+                    continue;
+                }
+
+                chart.TrackLayout = AudioTrackLayout.Checking;
+                _ = ProbeAudioLayoutAsync(chart);
+            }
+        }
+
+        private static async Task ProbeAudioLayoutAsync(ChorusChart chart)
+        {
+            try
+            {
+                await AudioLayoutProbeLimit.WaitAsync();
+                try
+                {
+                    if (AudioLayoutCache.TryGetValue(chart.Md5, out AudioTrackLayout cachedLayout))
+                    {
+                        chart.TrackLayout = cachedLayout;
+                        return;
+                    }
+
+                    AudioTrackLayout layout = await SngDecoder.ProbeRemoteAudioLayoutAsync(chart.DownloadUrl!);
+                    if (layout != AudioTrackLayout.Unknown)
+                        AudioLayoutCache[chart.Md5] = layout;
+                    chart.TrackLayout = layout;
+                }
+                finally
+                {
+                    AudioLayoutProbeLimit.Release();
+                }
+            }
+            catch
+            {
+                chart.TrackLayout = AudioTrackLayout.Unknown;
             }
         }
 

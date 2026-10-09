@@ -1,5 +1,6 @@
 using System;
 using System.Text.Json.Serialization;
+using USM.Core.Services;
 using USM.ViewModels;
 
 namespace USM.Core.Models
@@ -24,6 +25,26 @@ namespace USM.Core.Models
         public DateTime? ModifiedTime { get; set; }
         public string ChartContentDisplay { get; set; } = string.Empty;
         public string ResyncChoiceLabel => $"{Artist} — {Title}  |  {Charter}  |  {Id}";
+
+        private AudioTrackLayout _audioTrackLayout = AudioTrackLayout.Unknown;
+        public AudioTrackLayout TrackLayout
+        {
+            get => _audioTrackLayout;
+            set
+            {
+                if (SetProperty(ref _audioTrackLayout, value))
+                    OnPropertyChanged(nameof(TrackLayoutDisplay));
+            }
+        }
+
+        public string TrackLayoutDisplay => TrackLayout switch
+        {
+            AudioTrackLayout.Checking => "Checking audio layout…",
+            AudioTrackLayout.SingleTrack => "Single Track",
+            AudioTrackLayout.HalfTrack => "Half-Track · Instrumental + Vocals",
+            AudioTrackLayout.MultiTrack => "Multi Track",
+            _ => "Audio layout unavailable"
+        };
 
         public string SubtitleDisplay => string.IsNullOrEmpty(Album)
             ? (string.IsNullOrEmpty(Year) ? Artist : $"{Artist} ({Year})")
@@ -114,7 +135,9 @@ namespace USM.Core.Models
         public string? ChorusChartMd5 { get; set; }
         public int ChartParserVersion { get; set; }
         public bool NeedsChartResync => ChartParserVersion < USM.Core.Parsers.JsonGenerator.ParserVersion;
-        public string TrackTypeDisplay => IsHalfTrack ? "🎚 2-Track (Instrumental + Vocals)" : IsMultiTrack ? "🎸 MultiTrack" : "🎵 Stereo";
+        public string TrackTypeDisplay => IsHalfTrack
+            ? "Half-Track · Instrumental + Vocals"
+            : IsMultiTrack ? "Multi Track" : "Single Track";
 
         private bool _isSelected;
         public bool IsSelected

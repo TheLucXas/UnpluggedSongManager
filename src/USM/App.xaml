@@ -4,19 +4,20 @@
              xmlns:local="clr-namespace:USM">
     <Application.Resources>
         <!-- Colors -->
-        <Color x:Key="ColorBgMain">#0F1015</Color>
-        <Color x:Key="ColorBgCard">#181920</Color>
-        <Color x:Key="ColorBgCardHover">#22232D</Color>
-        <Color x:Key="ColorBgInput">#232530</Color>
-        <Color x:Key="ColorBorder">#2E303E</Color>
-        <Color x:Key="ColorAccentPink">#FF2A70</Color>
-        <Color x:Key="ColorAccentPurple">#8B5CF6</Color>
-        <Color x:Key="ColorAccentGreen">#10B981</Color>
-        <Color x:Key="ColorAccentBlue">#00C2CB</Color>
-        <Color x:Key="ColorAccentYellow">#F59E0B</Color>
+        <Color x:Key="ColorBgMain">#202020</Color>
+        <Color x:Key="ColorBgCard">#292929</Color>
+        <Color x:Key="ColorBgCardHover">#353535</Color>
+        <Color x:Key="ColorBgInput">#303030</Color>
+        <Color x:Key="ColorBorder">#454545</Color>
+        <Color x:Key="ColorAccentPink">#60CDFF</Color>
+        <Color x:Key="ColorAccentPurple">#8A84FF</Color>
+        <Color x:Key="ColorAccentGreen">#6CCB5F</Color>
+        <Color x:Key="ColorAccentBlue">#60CDFF</Color>
+        <Color x:Key="ColorAccentYellow">#FCE100</Color>
         <Color x:Key="ColorTextPrimary">#FFFFFF</Color>
-        <Color x:Key="ColorTextSecondary">#94A3B8</Color>
-        <Color x:Key="ColorTextMuted">#64748B</Color>
+        <Color x:Key="ColorTextSecondary">#C5C5C5</Color>
+        <Color x:Key="ColorTextMuted">#969696</Color>
+        <Color x:Key="ColorTextOnAccent">#00344A</Color>
 
         <!-- SolidColorBrushes -->
         <SolidColorBrush x:Key="BrushBgMain" Color="{StaticResource ColorBgMain}" />
@@ -32,13 +33,14 @@
         <SolidColorBrush x:Key="BrushTextPrimary" Color="{StaticResource ColorTextPrimary}" />
         <SolidColorBrush x:Key="BrushTextSecondary" Color="{StaticResource ColorTextSecondary}" />
         <SolidColorBrush x:Key="BrushTextMuted" Color="{StaticResource ColorTextMuted}" />
+        <SolidColorBrush x:Key="BrushTextOnAccent" Color="{StaticResource ColorTextOnAccent}" />
 
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
 
         <!-- Modern Button Style -->
         <Style TargetType="Button">
             <Setter Property="Background" Value="{StaticResource BrushAccentPink}" />
-            <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+            <Setter Property="Foreground" Value="{StaticResource BrushTextOnAccent}" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="FontSize" Value="13" />
             <Setter Property="Padding" Value="14,8" />
@@ -49,7 +51,7 @@
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="border"
                                 Background="{TemplateBinding Background}"
-                                CornerRadius="8"
+                                CornerRadius="6"
                                 Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
@@ -81,7 +83,7 @@
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{StaticResource BrushBorder}"
                                 BorderThickness="1"
-                                CornerRadius="8"
+                                CornerRadius="6"
                                 Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
@@ -107,7 +109,7 @@
         <!-- Purple Button Style -->
         <Style x:Key="PurpleButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Background" Value="{StaticResource BrushAccentPurple}" />
-            <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+            <Setter Property="Foreground" Value="{StaticResource BrushTextOnAccent}" />
         </Style>
 
         <!-- Square Icon Button Style (No padding so icons are never clipped) -->
@@ -182,7 +184,7 @@
             <Setter Property="CaretBrush" Value="{StaticResource BrushAccentPink}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="BorderBrush" Value="{StaticResource BrushBorder}" />
-            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="Padding" Value="12,8" />
             <Setter Property="FontSize" Value="13" />
             <Setter Property="Cursor" Value="IBeam" />
             <Setter Property="Template">
@@ -383,7 +385,7 @@
                                 <Setter Property="Foreground" Value="{StaticResource BrushAccentPink}" />
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="itemBorder" Property="Background" Value="#33FF2A70" />
+                                <Setter TargetName="itemBorder" Property="Background" Value="#3360CDFF" />
                                 <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
                                 <Setter Property="FontWeight" Value="SemiBold" />
                             </Trigger>

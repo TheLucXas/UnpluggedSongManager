@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using USM.Core.Services;
 
 namespace USM.Core.Parsers
 {
@@ -36,6 +38,26 @@ namespace USM.Core.Parsers
             public byte[] XorMask { get; init; } = Array.Empty<byte>();
             public Dictionary<string, string> Metadata { get; init; } = new(StringComparer.OrdinalIgnoreCase);
             public List<SngFileEntry> Files { get; init; } = new();
+        }
+
+        /// <summary>
+        /// Reads only the SNG package index and infers its audio layout from the
+        /// listed filenames. It never downloads audio or video payloads.
+        /// </summary>
+        public static async Task<AudioTrackLayout> ProbeRemoteAudioLayoutAsync(string sngUrl, CancellationToken ct = default)
+        {
+            if (!Uri.TryCreate(sngUrl, UriKind.Absolute, out var uri) ||
+                uri.Scheme != Uri.UriSchemeHttps ||
+                !uri.Host.Equals("files.enchor.us", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException("Only HTTPS SNG downloads from files.enchor.us are supported.");
+            }
+
+            SngPackageIndex? index = await ReadRemotePackageIndexAsync(uri, ct);
+            if (index == null)
+                return AudioTrackLayout.Unknown;
+
+            return AudioLayoutDetector.Detect(index.Files.Select(entry => entry.FileName));
         }
 
         /// <summary>
@@ -232,6 +254,45 @@ namespace USM.Core.Parsers
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
             request.Headers.Range = new RangeHeaderValue(start, end);
             return await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        }
+
+        private static async Task<SngPackageIndex?> ReadRemotePackageIndexAsync(Uri uri, CancellationToken ct)
+        {
+            using var firstResponse = await GetRangeAsync(uri, 0, InitialRangeSize - 1, ct);
+            if (firstResponse.StatusCode == HttpStatusCode.OK)
+                return null; // The server ignored Range; do not download the whole chart just to inspect it.
+            if (firstResponse.StatusCode != HttpStatusCode.PartialContent)
+                firstResponse.EnsureSuccessStatusCode();
+
+            long packageLength = firstResponse.Content.Headers.ContentRange?.Length
+                ?? throw new InvalidDataException("The SNG server did not report the package length for its byte range.");
+            if (firstResponse.Content.Headers.ContentRange?.From != 0)
+                throw new InvalidDataException("The SNG server returned an unexpected initial byte range.");
+
+            byte[] prefix = await firstResponse.Content.ReadAsByteArrayAsync(ct);
+            int requestedPrefixSize = InitialRangeSize;
+            while (true)
+            {
+                try
+                {
+                    return ReadPackageIndex(prefix);
+                }
+                catch (EndOfStreamException) when (requestedPrefixSize < MaximumIndexSize && prefix.Length < packageLength)
+                {
+                    requestedPrefixSize = Math.Min(requestedPrefixSize * 2, MaximumIndexSize);
+                    long requestedEnd = Math.Min(requestedPrefixSize - 1L, packageLength - 1);
+                    using var prefixResponse = await GetRangeAsync(uri, 0, requestedEnd, ct);
+                    if (prefixResponse.StatusCode == HttpStatusCode.OK)
+                        return null;
+                    if (prefixResponse.StatusCode != HttpStatusCode.PartialContent)
+                        prefixResponse.EnsureSuccessStatusCode();
+
+                    var contentRange = prefixResponse.Content.Headers.ContentRange;
+                    if (contentRange?.From != 0 || contentRange.Length != packageLength)
+                        throw new InvalidDataException("The SNG package length changed while reading its index.");
+                    prefix = await prefixResponse.Content.ReadAsByteArrayAsync(ct);
+                }
+            }
         }
 
         private static async Task SaveFullResponseAndDecodeAsync(

@@ -28,10 +28,10 @@ namespace USM.Core.Services
 
         private static readonly Dictionary<string, string[]> StemNames = new(StringComparer.OrdinalIgnoreCase)
         {
-            ["guitar"] = new[] { "guitar" },
+            ["guitar"] = new[] { "guitar", "lead" },
             ["bass"] = new[] { "bass", "rhythm" },
             ["vocals"] = new[] { "vocals", "vocal" },
-            ["other"] = new[] { "band", "crowd", "other" }
+            ["other"] = new[] { "band", "crowd", "other", "keys", "keyboard", "instrumental", "backing" }
         };
 
         private static string? FindExistingFfmpeg()
@@ -205,8 +205,8 @@ namespace USM.Core.Services
             var stems = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             foreach (var (stem, names) in StemNames)
             {
-                string? file = FindAudioFile(srcDir, names);
-                if (file != null) stems[stem] = new List<string> { file };
+                List<string> files = FindAudioFiles(srcDir, names);
+                if (files.Count > 0) stems[stem] = files;
             }
 
             var drums = Directory.GetFiles(srcDir)
@@ -217,40 +217,66 @@ namespace USM.Core.Services
             if (drums.Count > 0) stems["drums"] = drums;
 
             string? songAudio = FindAudioFile(srcDir, new[] { "song" });
-            List<string> instrumentalStems = stems
-                .Where(entry => !entry.Key.Equals("vocals", StringComparison.OrdinalIgnoreCase))
-                .SelectMany(entry => entry.Value)
-                .ToList();
-            string? vocals = stems.TryGetValue("vocals", out var vocalFiles) ? vocalFiles.FirstOrDefault() : null;
-            int sourceTrackCount = instrumentalStems.Count + (vocals == null ? 0 : vocalFiles!.Count) + (songAudio == null ? 0 : 1);
+            string[] audioFiles = Directory.GetFiles(srcDir)
+                .Where(path => AudioExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
+                .ToArray();
+            AudioTrackLayout layout = AudioLayoutDetector.Detect(audioFiles.Select(path => Path.GetFileName(path) ?? string.Empty));
+            bool isHalfTrack = layout == AudioTrackLayout.HalfTrack;
+            bool hasMultiTrack = layout is AudioTrackLayout.HalfTrack or AudioTrackLayout.MultiTrack;
+            List<string>? vocalFiles = stems.TryGetValue("vocals", out var foundVocals) ? foundVocals : null;
 
-            bool isHalfTrack = false;
-            bool hasMultiTrack = false;
-
-            // A chart with one vocal stem and one backing/instrumental source is
-            // represented in-game as guitar + vocals so misses only mute the backing.
-            if (vocals != null && sourceTrackCount == 2)
+            // In a two-track chart the game's guitar channel represents the
+            // instrumental/backing source; the vocal channel remains untouched.
+            if (isHalfTrack && vocalFiles is { Count: > 0 })
             {
-                string instrumental = instrumentalStems.Count == 1 ? instrumentalStems[0] : songAudio!;
-                log?.Invoke("  [Audio] Detected one instrumental track and one vocal track; creating the game's 2-track layout automatically.");
-                string instrumentalPath = Path.Combine(outDir, "song-guitar.ogg");
-                string vocalPath = Path.Combine(outDir, "song-vocals.ogg");
-                await EncodeOrCopyAsync(instrumental, instrumentalPath, ct);
-                await EncodeOrCopyAsync(vocals, vocalPath, ct);
-                await MixToOggAsync(new[] { instrumentalPath, vocalPath }, Path.Combine(outDir, "song.ogg"), ct);
-                hasMultiTrack = true;
-                isHalfTrack = true;
+                List<string> instrumentalFiles = stems
+                    .Where(entry => !entry.Key.Equals("vocals", StringComparison.OrdinalIgnoreCase))
+                    .SelectMany(entry => entry.Value)
+                    .ToList();
+                if (instrumentalFiles.Count == 0 && songAudio != null)
+                    instrumentalFiles.Add(songAudio);
+                if (instrumentalFiles.Count == 0)
+                {
+                    var vocalFileSet = new HashSet<string>(vocalFiles!, StringComparer.OrdinalIgnoreCase);
+                    instrumentalFiles.AddRange(audioFiles.Where(path => !vocalFileSet.Contains(path)
+                        && !Path.GetFileNameWithoutExtension(path).StartsWith("sample", StringComparison.OrdinalIgnoreCase)
+                        && !Path.GetFileNameWithoutExtension(path).StartsWith("preview", StringComparison.OrdinalIgnoreCase)));
+                }
+
+                if (instrumentalFiles.Count == 0)
+                {
+                    log?.Invoke("  [WARN] The two-track layout was detected, but its instrumental source could not be found.");
+                    isHalfTrack = false;
+                    hasMultiTrack = false;
+                    layout = AudioTrackLayout.SingleTrack;
+                }
+                else
+                {
+                    log?.Invoke("  [Audio] Detected one instrumental track and one vocal track; creating the game's 2-track layout automatically.");
+                    string instrumentalPath = Path.Combine(outDir, "song-guitar.ogg");
+                    string vocalPath = Path.Combine(outDir, "song-vocals.ogg");
+                    await MixToOggAsync(instrumentalFiles, instrumentalPath, ct);
+                    await MixToOggAsync(vocalFiles, vocalPath, ct);
+                    await MixToOggAsync(new[] { instrumentalPath, vocalPath }, Path.Combine(outDir, "song.ogg"), ct);
+                }
             }
-            else
+
+            if (!isHalfTrack && layout == AudioTrackLayout.MultiTrack)
             {
-                // In Clone Hero style packages, song.ogg is the background mix
-                // when separate instrument stems are present. Preserve it as the
-                // game's Other track instead of losing it or flattening the stems.
-                if (songAudio != null && stems.Count > 0)
+                // song.opus is a master mix when chart stems are present. Do not
+                // package it as another stem or it would bypass miss muting.
+                var knownFiles = new HashSet<string>(stems.Values.SelectMany(files => files), StringComparer.OrdinalIgnoreCase);
+                var unclassifiedFiles = audioFiles
+                    .Where(path => !knownFiles.Contains(path)
+                        && !string.Equals(path, songAudio, StringComparison.OrdinalIgnoreCase)
+                        && !Path.GetFileNameWithoutExtension(path).StartsWith("sample", StringComparison.OrdinalIgnoreCase)
+                        && !Path.GetFileNameWithoutExtension(path).StartsWith("preview", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (unclassifiedFiles.Count > 0)
                 {
                     if (!stems.TryGetValue("other", out var otherTracks))
                         stems["other"] = otherTracks = new List<string>();
-                    otherTracks.Add(songAudio);
+                    otherTracks.AddRange(unclassifiedFiles);
                 }
 
                 if (stems.Count >= 2)
@@ -272,24 +298,34 @@ namespace USM.Core.Services
                     });
                     var generatedStems = await Task.WhenAll(tasks);
                     await MixToOggAsync(generatedStems, Path.Combine(outDir, "song.ogg"), ct);
-                    hasMultiTrack = true;
                 }
                 else
                 {
-                    string? audioSource = songAudio
-                        ?? stems.Values.SelectMany(files => files).FirstOrDefault()
-                        ?? Directory.GetFiles(srcDir).FirstOrDefault(path =>
-                            AudioExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase));
+                    string? fallbackMix = songAudio ?? audioFiles.FirstOrDefault();
+                    if (fallbackMix != null)
+                    {
+                        log?.Invoke("  [WARN] The chart has multiple audio files, but its names cannot be mapped to independent game channels. Keeping the available mix as a single track.");
+                        await EncodeOrCopyAsync(fallbackMix, Path.Combine(outDir, "song.ogg"), ct);
+                    }
+                    hasMultiTrack = false;
+                }
+            }
 
-                    if (audioSource == null)
-                    {
-                        log?.Invoke("  [WARN] No audio track found in chart.");
-                    }
-                    else
-                    {
-                        log?.Invoke("  [Audio] One playable mix detected; keeping it as a single track.");
-                        await EncodeOrCopyAsync(audioSource, Path.Combine(outDir, "song.ogg"), ct);
-                    }
+            if (!isHalfTrack && layout != AudioTrackLayout.MultiTrack)
+            {
+                string? audioSource = songAudio
+                    ?? stems.Values.SelectMany(files => files).FirstOrDefault()
+                    ?? audioFiles.FirstOrDefault();
+
+                if (audioSource == null)
+                {
+                    log?.Invoke("  [WARN] No audio track found in chart.");
+                }
+                else
+                {
+                    log?.Invoke("  [Audio] One playable mix detected; keeping it as a single track.");
+                    await EncodeOrCopyAsync(audioSource, Path.Combine(outDir, "song.ogg"), ct);
+                    hasMultiTrack = false;
                 }
             }
 
@@ -321,6 +357,28 @@ namespace USM.Core.Services
                 }
             }
             return null;
+        }
+
+        private static List<string> FindAudioFiles(string directory, IEnumerable<string> baseNames)
+        {
+            string[] names = baseNames.ToArray();
+            return Directory.GetFiles(directory)
+                .Where(path => AudioExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
+                .Where(path =>
+                {
+                    string fileStem = Path.GetFileNameWithoutExtension(path);
+                    return names.Any(name =>
+                        fileStem.Equals(name, StringComparison.OrdinalIgnoreCase)
+                        || fileStem.StartsWith(name + "_", StringComparison.OrdinalIgnoreCase)
+                        || fileStem.StartsWith(name + "-", StringComparison.OrdinalIgnoreCase)
+                        || fileStem.StartsWith(name + " ", StringComparison.OrdinalIgnoreCase)
+                        || (fileStem.StartsWith(name, StringComparison.OrdinalIgnoreCase)
+                            && fileStem.Length > name.Length
+                            && char.IsDigit(fileStem[name.Length]))
+                        || (name.EndsWith('s') && fileStem.StartsWith(name, StringComparison.OrdinalIgnoreCase)));
+                })
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .ToList();
         }
 
         private static async Task MixToOggAsync(IEnumerable<string> sourceFiles, string outputPath, CancellationToken ct)
