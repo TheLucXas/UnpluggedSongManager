@@ -11,6 +11,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
+using USM.Core.Services;
 using USM.Core.Services.Localization;
 
 namespace USM.Core.Services.Quest
@@ -186,8 +187,10 @@ namespace USM.Core.Services.Quest
             // Keep the PC and Quest builds separate. The generic DLL is the PC build;
             // never send it to LemonLoader just because it is beside the USM app.
             string appDir = AppDomain.CurrentDomain.BaseDirectory;
+            string? embeddedQuestMod = PackagedModAssemblyProvider.ExtractQuestModAssembly();
             string[] modCandidates =
             {
+                embeddedQuestMod ?? string.Empty,
                 Path.Combine(appDir, "UnpluggedCustomSongs.Quest.dll"),
                 Path.Combine(appDir, @"..\..\..\..\mod\UnpluggedCustomSongs\bin\Release\net8.0\UnpluggedCustomSongs.Quest.dll"),
                 Path.Combine(Directory.GetCurrentDirectory(), @"mod\UnpluggedCustomSongs\bin\Release\net8.0\UnpluggedCustomSongs.Quest.dll"),
@@ -1389,8 +1392,10 @@ namespace USM.Core.Services.Quest
                 if (string.IsNullOrEmpty(modDll) || !File.Exists(modDll))
                 {
                     string appDir = AppDomain.CurrentDomain.BaseDirectory;
+                    string? embeddedQuestMod = PackagedModAssemblyProvider.ExtractQuestModAssembly();
                     string[] candidates =
                     {
+                        embeddedQuestMod ?? string.Empty,
                         Path.Combine(appDir, "UnpluggedCustomSongs.Quest.dll"),
                         Path.Combine(appDir, "UnpluggedCustomSongs.dll")
                     };

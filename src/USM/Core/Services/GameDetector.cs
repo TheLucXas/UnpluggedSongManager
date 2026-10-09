@@ -283,20 +283,7 @@ namespace USM.Core.Services
 
         public string? GetPackagedModVersion()
         {
-            string appDir = AppDomain.CurrentDomain.BaseDirectory;
-            var candidates = new[]
-            {
-                Path.Combine(appDir, "UnpluggedCustomSongs.PC.dll"),
-                Path.Combine(appDir, "UnpluggedCustomSongs.dll"),
-                Path.Combine(appDir, @"..\..\..\..\mod\UnpluggedCustomSongs\bin\Release\netstandard2.0\UnpluggedCustomSongs.dll"),
-                Path.Combine(appDir, @"..\..\..\..\mod\UnpluggedCustomSongs\UnpluggedCustomSongs.dll"),
-                Path.Combine(Directory.GetCurrentDirectory(), "UnpluggedCustomSongs.PC.dll"),
-                Path.Combine(Directory.GetCurrentDirectory(), @"mod\UnpluggedCustomSongs\bin\Release\netstandard2.0\UnpluggedCustomSongs.dll"),
-                Path.Combine(Directory.GetCurrentDirectory(), @"mod\UnpluggedCustomSongs\UnpluggedCustomSongs.dll"),
-                Path.Combine(Directory.GetCurrentDirectory(), "UnpluggedCustomSongs.dll")
-            };
-
-            string? pcMod = FindPcModAssembly(candidates);
+            string? pcMod = FindPcModAssembly(GetPcModAssemblyCandidates());
             if (pcMod != null)
             {
                 try
@@ -320,21 +307,7 @@ namespace USM.Core.Services
             string modsDir = GetModsDir()!;
             string dest = Path.Combine(modsDir, "UnpluggedCustomSongs.dll");
 
-            // Look for compiled mod dll next to app, in mod/ folder, or build outputs
-            string appDir = AppDomain.CurrentDomain.BaseDirectory;
-            var candidates = new[]
-            {
-                Path.Combine(appDir, "UnpluggedCustomSongs.PC.dll"),
-                Path.Combine(appDir, "UnpluggedCustomSongs.dll"),
-                Path.Combine(appDir, @"..\..\..\..\mod\UnpluggedCustomSongs\bin\Release\netstandard2.0\UnpluggedCustomSongs.dll"),
-                Path.Combine(appDir, @"..\..\..\..\mod\UnpluggedCustomSongs\UnpluggedCustomSongs.dll"),
-                Path.Combine(Directory.GetCurrentDirectory(), "UnpluggedCustomSongs.PC.dll"),
-                Path.Combine(Directory.GetCurrentDirectory(), @"mod\UnpluggedCustomSongs\bin\Release\netstandard2.0\UnpluggedCustomSongs.dll"),
-                Path.Combine(Directory.GetCurrentDirectory(), @"mod\UnpluggedCustomSongs\UnpluggedCustomSongs.dll"),
-                Path.Combine(Directory.GetCurrentDirectory(), "UnpluggedCustomSongs.dll")
-            };
-
-            string? srcDll = FindPcModAssembly(candidates);
+            string? srcDll = FindPcModAssembly(GetPcModAssemblyCandidates());
 
             if (srcDll != null)
             {
@@ -345,6 +318,22 @@ namespace USM.Core.Services
 
             message = "UnpluggedCustomSongs.dll source file not found in application package.";
             return false;
+        }
+
+        private static IEnumerable<string> GetPcModAssemblyCandidates()
+        {
+            string? embeddedMod = PackagedModAssemblyProvider.ExtractPcModAssembly();
+            if (!string.IsNullOrWhiteSpace(embeddedMod)) yield return embeddedMod;
+
+            string appDir = AppDomain.CurrentDomain.BaseDirectory;
+            yield return Path.Combine(appDir, "UnpluggedCustomSongs.PC.dll");
+            yield return Path.Combine(appDir, "UnpluggedCustomSongs.dll");
+            yield return Path.Combine(appDir, @"..\..\..\..\mod\UnpluggedCustomSongs\bin\Release\netstandard2.0\UnpluggedCustomSongs.dll");
+            yield return Path.Combine(appDir, @"..\..\..\..\mod\UnpluggedCustomSongs\UnpluggedCustomSongs.dll");
+            yield return Path.Combine(Directory.GetCurrentDirectory(), "UnpluggedCustomSongs.PC.dll");
+            yield return Path.Combine(Directory.GetCurrentDirectory(), @"mod\UnpluggedCustomSongs\bin\Release\netstandard2.0\UnpluggedCustomSongs.dll");
+            yield return Path.Combine(Directory.GetCurrentDirectory(), @"mod\UnpluggedCustomSongs\UnpluggedCustomSongs.dll");
+            yield return Path.Combine(Directory.GetCurrentDirectory(), "UnpluggedCustomSongs.dll");
         }
 
         internal static string? FindPcModAssembly(IEnumerable<string> candidates)
