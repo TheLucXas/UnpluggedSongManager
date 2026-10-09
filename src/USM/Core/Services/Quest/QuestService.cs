@@ -1084,33 +1084,6 @@ namespace USM.Core.Services.Quest
             manifest = Regex.Replace(manifest, @"package=""[^""]*""", $"package=\"{ModdedPackage}\"");
             manifest = Regex.Replace(manifest, @"android:authorities=""[^""]*""", $"android:authorities=\"{ModdedPackage}\"");
 
-            // The stock Unplugged APK marks hand tracking as required, which makes
-            // Horizon OS classify the cloned app as "hands only" and put Touch
-            // controllers to sleep. Keep the hand-tracking permission, but mark the
-            // feature optional so the modded app can accept both hands and controllers.
-            bool handTrackingFeatureUpdated = false;
-            manifest = Regex.Replace(
-                manifest,
-                @"<uses-feature\b(?=[^>]*\bandroid:name=""oculus\.software\.handtracking"")[^>]*>",
-                match =>
-                {
-                    string featureTag = match.Value;
-                    if (Regex.IsMatch(featureTag, @"android:required=""true"""))
-                    {
-                        featureTag = Regex.Replace(featureTag, @"android:required=""true""", "android:required=\"false\"");
-                        handTrackingFeatureUpdated = true;
-                    }
-                    else if (!Regex.IsMatch(featureTag, @"android:required=""[^""]*"""))
-                    {
-                        int insertAt = featureTag.EndsWith("/>", StringComparison.Ordinal) ? featureTag.Length - 2 : featureTag.Length - 1;
-                        featureTag = featureTag.Insert(insertAt, " android:required=\"false\"");
-                        handTrackingFeatureUpdated = true;
-                    }
-                    return featureTag;
-                });
-            if (handTrackingFeatureUpdated)
-                log("Hand tracking manifest changed to optional: Quest can use controllers and hands.");
-
             // Add permissions
             string permissions = "\n    <uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\" />" +
                                  "\n    <uses-permission android:name=\"android.permission.WRITE_EXTERNAL_STORAGE\" />" +

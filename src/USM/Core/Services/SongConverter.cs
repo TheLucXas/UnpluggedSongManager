@@ -196,13 +196,13 @@ namespace USM.Core.Services
                 {
                     log?.Invoke("  [Chart] Detected notes.mid (Standard MIDI format).");
                     var midi = MidiParser.Parse(midPath);
-                    jsonCharts = XmlGeneratorNoButtons.GenerateAllDifficulties(midi.BpmGrid, midi.TickToSec, midi.Difficulties, midi.TicksPerBeat);
+                    jsonCharts = JsonGenerator.GenerateAllDifficultiesJson(midi.BpmGrid, midi.TickToSec, midi.Difficulties, midi.TicksPerBeat);
                 }
                 else if (File.Exists(chartPath))
                 {
                     log?.Invoke("  [Chart] Detected notes.chart (Clone Hero text format).");
                     var chart = ChartParser.Parse(chartPath);
-                    jsonCharts = XmlGeneratorNoButtons.GenerateAllDifficulties(chart.BpmGrid, chart.TickToSec, chart.Difficulties, chart.Resolution);
+                    jsonCharts = JsonGenerator.GenerateAllDifficultiesJson(chart.BpmGrid, chart.TickToSec, chart.Difficulties, chart.Resolution);
                 }
                 
                 if (jsonCharts != null)
@@ -211,6 +211,7 @@ namespace USM.Core.Services
                     {
                         File.WriteAllText(Path.Combine(outDir, kvp.Key), kvp.Value, Encoding.UTF8);
                     }
+                    log?.Invoke($"  [Chart] Generated {jsonCharts.Count} JSON difficulty files with both hand and controller tracks precomputed.");
                 }
 
                 // 7. Generate meta.json

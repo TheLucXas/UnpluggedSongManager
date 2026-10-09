@@ -13,6 +13,7 @@ using System.Linq;
 using UnityEngine;
 using HarmonyLib;
 using MelonLoader;
+using SimpleJSON;
 #if !QUEST_IL2CPP
 using TMPro;
 using Unplugged.Model;
@@ -200,11 +201,13 @@ namespace UnpluggedCustomSongs
         public static MelonPreferences_Category PrefsCategory;
         public static MelonPreferences_Entry<bool> PrefDiscordRPC;
         public static MelonPreferences_Entry<bool> PrefVerbose;
+        public static MelonPreferences_Entry<bool> PrefChartDiagnostics;
         public static MelonPreferences_Entry<string> PrefDiscordClientId;
         public static MelonPreferences_Entry<bool> PrefDebugMode;
 
         public static bool ConfigDiscordRPC => PrefDiscordRPC?.Value ?? true;
         public static bool ConfigVerbose => PrefVerbose?.Value ?? false;
+        public static bool ConfigChartDiagnostics => PrefChartDiagnostics?.Value ?? true;
         public static string ConfigDiscordClientId => !string.IsNullOrEmpty(PrefDiscordClientId?.Value) ? PrefDiscordClientId.Value : "1441987286022619299";
 
         public static bool DebugMode = false;
@@ -221,6 +224,7 @@ namespace UnpluggedCustomSongs
             PrefsCategory = MelonPreferences.CreateCategory("UnpluggedCustomSongs", "Unplugged Custom Songs");
             PrefDiscordRPC = PrefsCategory.CreateEntry("EnableDiscordRPC", true, "Enable Discord Rich Presence");
             PrefVerbose = PrefsCategory.CreateEntry("VerboseLogging", false, "Enable Verbose Debug Logging");
+            PrefChartDiagnostics = PrefsCategory.CreateEntry("ChartDiagnostics", true, "Log custom chart loading and note results");
             PrefDiscordClientId = PrefsCategory.CreateEntry("DiscordClientId", "1441987286022619299", "Discord Application Client ID");
             PrefDebugMode = PrefsCategory.CreateEntry("EnableDebugMode", false, "Enable Desktop WASD/Mouse Look & Testing Controls");
 
@@ -1102,6 +1106,8 @@ namespace UnpluggedCustomSongs
 
     public static class CustomSongLoader
     {
+        private static int ChartOutcomeLogCount;
+
         public static string CustomSongsFolder
         {
             get
@@ -1507,6 +1513,7 @@ namespace UnpluggedCustomSongs
 
         public static SongMapping LoadSongMapping(SongMappingMetaData song, bool isHandTracking)
         {
+            ChartOutcomeLogCount = 0;
             string usmPath = ResolveUsmPath(song?.FileName);
             if (string.IsNullOrEmpty(usmPath))
                 throw new FileNotFoundException($"Custom song archive was not found for '{song?.FileName}' in '{CustomSongsFolder}'.");
@@ -1514,24 +1521,42 @@ namespace UnpluggedCustomSongs
             string diff = GameStateManager.I != null
                 ? SongMapping.GetSongDataPathByDificulty(GameStateManager.I.CurrentDifficulty)
                 : "songdata-Normal.xml";
+            string jsonContent = null;
+            string loadedJson = null;
             string xmlContent = "";
             string loadedDiff = diff;
 
             using (var archive = System.IO.Compression.ZipFile.OpenRead(usmPath))
             {
-                var entry = FindArchiveEntry(archive, diff, "songdata-Normal.xml", "songdata-Hard.xml", "songdata-Easy.xml", "songdata-SuperEasy.xml");
-                if (entry != null)
+                string jsonDiff = Path.ChangeExtension(Path.GetFileName(diff), ".json");
+                var jsonEntry = FindArchiveEntry(archive, jsonDiff, "songdata-Normal.json", "songdata-Hard.json", "songdata-Easy.json", "songdata-SuperEasy.json");
+                if (jsonEntry != null)
                 {
-                    loadedDiff = entry.Name;
-                    using (var sr = new StreamReader(entry.Open()))
+                    loadedJson = jsonEntry.Name;
+                    using (var sr = new StreamReader(jsonEntry.Open()))
                     {
-                        xmlContent = sr.ReadToEnd();
+                        jsonContent = sr.ReadToEnd();
+                    }
+                }
+                else
+                {
+                    var xmlEntry = FindArchiveEntry(archive, diff, "songdata-Normal.xml", "songdata-Hard.xml", "songdata-Easy.xml", "songdata-SuperEasy.xml");
+                    if (xmlEntry != null)
+                    {
+                        loadedDiff = xmlEntry.Name;
+                        using (var sr = new StreamReader(xmlEntry.Open()))
+                        {
+                            xmlContent = sr.ReadToEnd();
+                        }
                     }
                 }
             }
 
+            if (loadedJson != null)
+                return LoadSongMappingJson(jsonContent, loadedJson, usmPath, isHandTracking);
+
             if (string.IsNullOrWhiteSpace(xmlContent))
-                throw new InvalidDataException($"No chart XML was found in '{Path.GetFileName(usmPath)}' for difficulty '{diff}'.");
+                throw new InvalidDataException($"No chart JSON or legacy XML was found in '{Path.GetFileName(usmPath)}' for difficulty '{diff}'.");
 
             MelonLogger.Msg($"[CustomSongs] Loading chart XML from .usm: {Path.GetFileName(usmPath)}!{loadedDiff} ({xmlContent.Length} characters)");
 #if QUEST_IL2CPP
@@ -1693,6 +1718,211 @@ namespace UnpluggedCustomSongs
             }
 
             return mapping;
+        }
+
+        private static JSONArray RequireJsonArray(JSONNode root, string propertyName, string archiveName)
+        {
+            JSONNode value = root[propertyName];
+            if (value == null || !value.IsArray)
+                throw new InvalidDataException($"Chart JSON '{archiveName}' is missing the '{propertyName}' array.");
+            return value.AsArray;
+        }
+
+        private static TierFinger ParseTierFinger(string fingerName, string archiveName)
+        {
+            switch (fingerName)
+            {
+                case "Index": return TierFinger.Index;
+                case "Middle": return TierFinger.Middle;
+                case "Ring": return TierFinger.Ring;
+                case "Pinky": return TierFinger.Pinky;
+                default: throw new InvalidDataException($"Chart JSON '{archiveName}' has an unknown finger '{fingerName}'.");
+            }
+        }
+
+        private static SongMapping LoadSongMappingJson(string jsonContent, string chartName, string usmPath, bool isHandTracking)
+        {
+            if (string.IsNullOrWhiteSpace(jsonContent))
+                throw new InvalidDataException($"Chart JSON '{chartName}' in '{Path.GetFileName(usmPath)}' is empty.");
+
+            JSONNode root;
+            try
+            {
+                root = JSONNode.Parse(jsonContent);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidDataException($"Chart JSON '{chartName}' in '{Path.GetFileName(usmPath)}' is invalid: {ex.Message}", ex);
+            }
+
+            int schemaVersion = root != null ? root["SchemaVersion"].AsInt : 0;
+            if (root == null || !root.IsObject || schemaVersion != 2)
+                throw new InvalidDataException($"Chart JSON '{chartName}' uses unsupported schema version {schemaVersion}; expected version 2.");
+
+            JSONArray handNotes = RequireJsonArray(root, "HandNotes", chartName);
+            JSONArray controllerNotes = RequireJsonArray(root, "ControllerNotes", chartName);
+            JSONArray bpmChanges = RequireJsonArray(root, "BPMGrid", chartName);
+            bool useHandTrack = isHandTracking;
+            JSONArray selectedNotes = useHandTrack ? handNotes : controllerNotes;
+            float chartDuration = root["Duration"].AsFloat;
+            int initialBpm = root["BPM"].AsInt;
+
+            var mapping = new SongMapping();
+#if QUEST_IL2CPP
+            mapping.BPMGrid = new Il2CppSystem.Collections.Generic.List<BPMKey>();
+            mapping.Keys = new Il2CppSystem.Collections.Generic.List<KeyTime>();
+#else
+            mapping.BPMGrid = new List<BPMKey>();
+            mapping.Keys = new List<KeyTime>();
+#endif
+            mapping.BPM = initialBpm > 0 ? initialBpm : 120;
+            mapping.IsHandTrackingMapping = useHandTrack;
+
+            for (int i = 0; i < bpmChanges.Count; i++)
+            {
+                JSONNode bpmNode = bpmChanges[i];
+                var bpmKey = new BPMKey
+                {
+                    Time = bpmNode["Time"].AsFloat,
+                    Duration = 0f,
+                    BPM = bpmNode["BPM"].AsFloat
+                };
+                mapping.BPMGrid.Add(bpmKey);
+            }
+
+            if (mapping.BPMGrid.Count == 0)
+            {
+                mapping.BPMGrid.Add(new BPMKey { Time = 0f, Duration = 0f, BPM = mapping.BPM });
+            }
+
+            int sampleLimit = ModMain.ConfigChartDiagnostics ? Math.Min(3, selectedNotes.Count) : 0;
+            string trackLabel = useHandTrack ? "hand" : "controller";
+            if (useHandTrack)
+            {
+#if QUEST_IL2CPP
+                var handGame = new GuitarGame { Time = 0f, Duration = chartDuration, PrewarmTime = 4f, Notes = new Il2CppSystem.Collections.Generic.List<GuitarNote>() };
+#else
+                var handGame = new GuitarGame { Time = 0f, Duration = chartDuration, PrewarmTime = 4f, Notes = new List<GuitarNote>() };
+#endif
+                for (int i = 0; i < handNotes.Count; i++)
+                {
+                    JSONNode noteNode = handNotes[i];
+                    var handNote = noteNode["IsPullOff"].AsBool
+                        ? (HandGuitarNote)new PullOffHandGuitarNote()
+                        : new HandGuitarNote();
+                    handNote.Time = noteNode["Time"].AsFloat;
+                    handNote.Duration = noteNode["Duration"].AsFloat;
+                    handNote.Tier = noteNode["Tier"].AsInt;
+                    handNote.CursableProbability = 0f;
+                    handNote.IsBlind = false;
+                    JSONArray fingers = RequireJsonArray(noteNode, "Fingers", chartName);
+#if QUEST_IL2CPP
+                    handNote.Fingers = new Il2CppSystem.Collections.Generic.List<TierFinger>();
+#else
+                    handNote.Fingers = new List<TierFinger>();
+#endif
+                    for (int fingerIndex = 0; fingerIndex < fingers.Count; fingerIndex++)
+                    {
+                        handNote.Fingers.Add(ParseTierFinger(fingers[fingerIndex].Value, chartName));
+                    }
+                    if (handNote.Fingers.Count == 0)
+                        throw new InvalidDataException($"Chart JSON '{chartName}' has a hand note without fingers (note {i}).");
+                    handGame.Notes.Add(handNote);
+
+                    if (i < sampleLimit)
+                    {
+                        var fingerNames = new List<string>();
+                        for (int fingerIndex = 0; fingerIndex < handNote.Fingers.Count; fingerIndex++)
+                            fingerNames.Add(handNote.Fingers[fingerIndex].ToString());
+                        MelonLogger.Msg($"[ChartDiag] hand sample {i}: t={handNote.Time:F3}s d={handNote.Duration:F3}s tier={handNote.Tier} fingers={string.Join("+", fingerNames)} pullOff={noteNode["IsPullOff"].AsBool}");
+                    }
+                }
+                mapping.Keys.Add(handGame);
+            }
+            else
+            {
+#if QUEST_IL2CPP
+                var controllerGame = new GuitarControllerGame { Time = 0f, Duration = chartDuration, PrewarmTime = 4f, Notes = new Il2CppSystem.Collections.Generic.List<ControllerGuitarNote>() };
+#else
+                var controllerGame = new GuitarControllerGame { Time = 0f, Duration = chartDuration, PrewarmTime = 4f, Notes = new List<ControllerGuitarNote>() };
+#endif
+                for (int i = 0; i < controllerNotes.Count; i++)
+                {
+                    JSONNode noteNode = controllerNotes[i];
+                    JSONArray buttons = RequireJsonArray(noteNode, "Buttons", chartName);
+                    if (buttons.Count != 2)
+                        throw new InvalidDataException($"Chart JSON '{chartName}' controller note {i} must contain exactly two button values.");
+
+                    var controllerNote = new ControllerGuitarNote
+                    {
+                        Time = noteNode["Time"].AsFloat,
+                        Duration = noteNode["Duration"].AsFloat,
+                        Tier = noteNode["Tier"].AsInt,
+                        CursableProbability = 0f,
+                        IsBlind = false,
+                        ChordRotation = noteNode["ChordRotation"].AsInt,
+                        Intensity = noteNode["Intensity"].AsInt
+                    };
+#if QUEST_IL2CPP
+                    controllerNote.Buttons = new Il2CppSystem.Collections.Generic.List<bool>();
+#else
+                    controllerNote.Buttons = new List<bool>();
+#endif
+                    controllerNote.Buttons.Add(buttons[0].AsBool);
+                    controllerNote.Buttons.Add(buttons[1].AsBool);
+                    if (!controllerNote.Buttons[0] && !controllerNote.Buttons[1])
+                        throw new InvalidDataException($"Chart JSON '{chartName}' controller note {i} has neither trigger nor grip set.");
+                    controllerGame.Notes.Add(controllerNote);
+
+                    if (i < sampleLimit)
+                    {
+                        MelonLogger.Msg($"[ChartDiag] controller sample {i}: t={controllerNote.Time:F3}s d={controllerNote.Duration:F3}s tier={controllerNote.Tier} trigger={controllerNote.Buttons[0]} grip={controllerNote.Buttons[1]} rotation={controllerNote.ChordRotation}");
+                    }
+                }
+                mapping.Keys.Add(controllerGame);
+            }
+
+            MelonLogger.Msg($"[ChartDiag] Loaded {Path.GetFileName(usmPath)}!{chartName}: schema={schemaVersion}, mode={trackLabel}, selectedNotes={selectedNotes.Count}, handNotes={handNotes.Count}, controllerNotes={controllerNotes.Count}, bpmChanges={mapping.BPMGrid.Count}, duration={chartDuration:F2}s");
+            if (selectedNotes.Count == 0)
+                MelonLogger.Warning($"[ChartDiag] The selected {trackLabel} track in {chartName} has no notes.");
+
+            return mapping;
+        }
+
+        public static void LogChartOutcome(KeyTime note, float timeStamp, bool succeeded)
+        {
+            if (!ModMain.ConfigChartDiagnostics || note == null)
+                return;
+            var currentSong = GameManager.CurrentSongData;
+            if (currentSong == null || string.IsNullOrEmpty(currentSong.SongID) || !currentSong.SongID.StartsWith("CUSTOM_", StringComparison.Ordinal))
+                return;
+
+            int eventIndex = ChartOutcomeLogCount++;
+            if (eventIndex >= 40)
+                return;
+
+            string input = "noteType=other";
+            if (note is ControllerGuitarNote controllerNote)
+            {
+                string trigger = controllerNote.Buttons != null && controllerNote.Buttons.Count > 0 ? controllerNote.Buttons[0].ToString() : "missing";
+                string grip = controllerNote.Buttons != null && controllerNote.Buttons.Count > 1 ? controllerNote.Buttons[1].ToString() : "missing";
+                input = $"noteType=controller tier={controllerNote.Tier} trigger={trigger} grip={grip}";
+            }
+            else if (note is HandGuitarNote handNote)
+            {
+                string fingers = "missing";
+                if (handNote.Fingers != null)
+                {
+                    var fingerNames = new List<string>();
+                    for (int i = 0; i < handNote.Fingers.Count; i++)
+                        fingerNames.Add(handNote.Fingers[i].ToString());
+                    fingers = string.Join("+", fingerNames);
+                }
+                input = $"noteType=hand tier={handNote.Tier} fingers={fingers}";
+            }
+
+            string mode = GameManager.CurrentSong != null && GameManager.CurrentSong.IsHandTrackingMapping ? "hand" : "controller";
+            MelonLogger.Msg($"[ChartDiag] {(succeeded ? "HIT" : "MISS")} #{eventIndex + 1} mode={mode} eventTime={timeStamp:F3}s noteTime={note.Time:F3}s duration={note.Duration:F3}s {input}");
         }
 
         public static void LoadCustomAudio(Mp3Player player, SongMappingMetaData data, bool loadSample)
@@ -2101,6 +2331,24 @@ namespace UnpluggedCustomSongs
                 return false;
             }
             return true;
+        }
+    }
+
+    [HarmonyPatch(typeof(KeyTime), "RaiseSuccessed")]
+    public static class Patch_CustomChart_NoteSucceeded
+    {
+        public static void Prefix(KeyTime __instance, float timeStamp)
+        {
+            CustomSongLoader.LogChartOutcome(__instance, timeStamp, true);
+        }
+    }
+
+    [HarmonyPatch(typeof(KeyTime), "RaiseFailed")]
+    public static class Patch_CustomChart_NoteFailed
+    {
+        public static void Prefix(KeyTime __instance, float timeStamp)
+        {
+            CustomSongLoader.LogChartOutcome(__instance, timeStamp, false);
         }
     }
 
