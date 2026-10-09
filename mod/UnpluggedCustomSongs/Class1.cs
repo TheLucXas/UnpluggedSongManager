@@ -1271,6 +1271,29 @@ namespace UnpluggedCustomSongs
             }
         }
 
+        private static string ReadAudioLayout(string archivePath)
+        {
+            try
+            {
+                using (var archive = System.IO.Compression.ZipFile.OpenRead(archivePath))
+                {
+                    var entry = FindArchiveEntry(archive, "meta.json");
+                    if (entry == null) return string.Empty;
+
+                    using (var reader = new StreamReader(entry.Open()))
+                    {
+                        var root = JSON.Parse(reader.ReadToEnd());
+                        return root?["AudioLayout"]?.Value ?? string.Empty;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[CustomSongs] Could not read audio layout from '{Path.GetFileName(archivePath)}': {ex.Message}");
+                return string.Empty;
+            }
+        }
+
         public static void Init()
         {
             MelonLogger.Msg($"[UnpluggedQuestMod] CustomSongLoader.Init called! Platform: {Application.platform}");
@@ -2017,12 +2040,16 @@ namespace UnpluggedCustomSongs
                 return;
             }
 
-            bool isMulti = data.IsMultiTrack && player.AllowMultitrack;
+            string audioLayout = ReadAudioLayout(usmPath);
+            bool layoutRequiresStems = string.Equals(audioLayout, "full-multitrack", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(audioLayout, "two-track-instrumental-vocals", StringComparison.OrdinalIgnoreCase);
+            bool layoutDeclaresSingleTrack = string.Equals(audioLayout, "single-track", StringComparison.OrdinalIgnoreCase);
+            bool isMulti = layoutRequiresStems || (!layoutDeclaresSingleTrack && data.IsMultiTrack && player.AllowMultitrack);
 
             // CRITICAL: Set IsMultiTrack property via Traverse
             Traverse.Create(player).Property("IsMultiTrack").SetValue(isMulti);
 
-            MelonLogger.Msg($"[CustomSongs] LoadCustomAudio: '{data.SongName}', IsMultiTrack set to: {isMulti}");
+            MelonLogger.Msg($"[CustomSongs] LoadCustomAudio: '{data.SongName}', AudioLayout='{audioLayout}', IsMultiTrack set to: {isMulti}");
 
             var musicMixerGroup = player.MusicAudioSource != null ? player.MusicAudioSource.outputAudioMixerGroup : null;
 
@@ -2463,30 +2490,6 @@ namespace UnpluggedCustomSongs
                 if (src != null && src.clip != null)
                 {
                     MelonLogger.Msg($"[CustomSongs] Track [{(Mp3Player.SongTrackNames)i}]: isPlaying={src.isPlaying}, vol={src.volume:F2}, clip={src.clip.name}");
-                }
-            }
-        }
-    }
-
-    [HarmonyPatch(typeof(Mp3Player), "SetTrackVolume")]
-    public static class Patch_Mp3Player_SetTrackVolume
-    {
-        public static void Postfix(Mp3Player __instance, Mp3Player.SongTrackNames track, float volume)
-        {
-            // If the song is NOT multitrack, the entire song plays through MusicAudioSource.
-            // Mute the entire instrumental when missing notes, providing audio feedback!
-            if (!__instance.IsMultiTrack && track == Mp3Player.SongTrackNames.Guitar)
-            {
-                if (__instance.MusicAudioSource != null)
-                {
-                    // During song intro before any notes have arrived, keep audible
-                    if (IntroSkipManager.FirstNoteTime > 1.0f && GameManager.SongTime < IntroSkipManager.FirstNoteTime - 0.5f)
-                    {
-                        __instance.MusicAudioSource.volume = 1f;
-                        return;
-                    }
-
-                    __instance.MusicAudioSource.volume = volume;
                 }
             }
         }
