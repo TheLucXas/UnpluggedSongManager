@@ -267,6 +267,28 @@ namespace UnpluggedCustomSongs
 #endif
 
             CustomSongLoader.Init();
+
+            try
+            {
+                if (Params.Global != null)
+                {
+                    Params.Global.DisableControllerMode = false;
+                    LoggerInstance.Msg("[CustomSongs] Set Params.Global.DisableControllerMode = false");
+                }
+            }
+            catch { }
+        }
+
+        public override void OnSceneWasLoaded(int buildIndex, string sceneName)
+        {
+            try
+            {
+                if (Params.Global != null)
+                {
+                    Params.Global.DisableControllerMode = false;
+                }
+            }
+            catch { }
         }
         // ===================== DESKTOP TEST CONTROLS =====================
         public static bool ShowButtonPanel = false; // Closed by default
@@ -304,18 +326,60 @@ namespace UnpluggedCustomSongs
         public static void PerformSongRefresh()
         {
             if (CustomSongLoader.CustomAlbumInstance == null) return;
-            int prevCount = CustomSongLoader.CustomAlbumInstance.SongFiles != null ? CustomSongLoader.CustomAlbumInstance.SongFiles.Count : 0;
             MelonLogger.Msg("[CustomSongs] Refreshing custom songs in real time...");
             CustomSongLoader.PopulateCustomSongs(CustomSongLoader.CustomAlbumInstance);
             int newCount = CustomSongLoader.CustomAlbumInstance.SongFiles != null ? CustomSongLoader.CustomAlbumInstance.SongFiles.Count : 0;
 
-            if (newCount != prevCount && StartSpace.I != null && StartSpace.I.gameObject.activeInHierarchy && StartSpace.I.songMenu != null)
+            if (StartSpace.I != null && StartSpace.I.gameObject.activeInHierarchy && StartSpace.I.songMenu != null)
             {
                 if (AlbumsManager.SelectedAlbum != null && AlbumsManager.SelectedAlbum.AlbumID == "CustomSongsAlbum")
                 {
+                    if (AlbumsManager.I != null)
+                    {
+                        AlbumsManager.I.CurrentAlbumSongs = CustomSongLoader.CustomAlbumInstance.SongsMetadata;
+                    }
+
+                    int targetIndex = CustomSongLoader.GetLatestSongIndex();
+                    if (targetIndex >= 0)
+                    {
+                        StartSpace.I.songMenu.InitialOffset = targetIndex;
+                        string sName = targetIndex < CustomSongLoader.CustomAlbumInstance.builtInSongsMetadata.Count
+                            ? CustomSongLoader.CustomAlbumInstance.builtInSongsMetadata[targetIndex].SongName
+                            : $"Index {targetIndex}";
+                        MelonLogger.Msg($"[CustomSongs] Auto-selecting newest song: '{sName}' (Index {targetIndex})");
+                    }
+
                     StartSpace.I.songMenu.ChangeAlbum(CustomSongLoader.CustomAlbumInstance.SongsMetadata);
                     MelonLogger.Msg($"[CustomSongs] Turntable updated with {newCount} songs in real time!");
+
+                    if (targetIndex >= 0)
+                    {
+                        MelonCoroutines.Start(PostReloadFocus(targetIndex));
+                    }
                 }
+            }
+        }
+
+        private static IEnumerator PostReloadFocus(int targetIndex)
+        {
+            yield return new WaitForSeconds(0.65f);
+            try
+            {
+                if (StartSpace.I != null && StartSpace.I.songMenu != null && AlbumsManager.SelectedAlbum != null && AlbumsManager.SelectedAlbum.AlbumID == "CustomSongsAlbum")
+                {
+                    var meta = CustomSongLoader.CustomAlbumInstance?.builtInSongsMetadata;
+                    if (meta != null && targetIndex >= 0 && targetIndex < meta.Count)
+                    {
+                        var selectedMeta = meta[targetIndex];
+                        VinylCoverHelper.UpdateTurntableVinyl(selectedMeta);
+                        Traverse.Create(StartSpace.I).Method("SongMenu_SelectedSongChanged", selectedMeta).GetValue();
+                        MelonLogger.Msg($"[CustomSongs] Successfully confirmed focus on newest song: {selectedMeta.SongName}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[CustomSongs] PostReloadFocus error: {ex.Message}");
             }
         }
 
@@ -362,27 +426,19 @@ namespace UnpluggedCustomSongs
 
         public override void OnLateUpdate()
         {
-            if (!DebugMode) return;
-
-            // Persistent guitar volume override (key [3]) - applied after the game's own Update
-            if (ForcedGuitarVolume >= 0f && GameManager.IsPlaying)
-            {
-                var guitarMgr = UnityEngine.Object.FindObjectOfType<GuitarGameManager>();
-                if (guitarMgr != null)
-                {
-                    guitarMgr.InstrumentVolumeTarget = ForcedGuitarVolume;
-                    guitarMgr.InstrumentVolumeSmooth = ForcedGuitarVolume;
-                }
-                if (GameManager.I != null && GameManager.I.musicPlayer != null)
-                {
-                    GameManager.I.musicPlayer.SetTrackVolume(Mp3Player.SongTrackNames.Guitar, ForcedGuitarVolume);
-                }
-            }
         }
 
         public override void OnApplicationQuit()
         {
             DiscordRpcManager.Shutdown();
+            try
+            {
+                foreach (var p in Process.GetProcessesByName("UnityCrashHandler64"))
+                {
+                    try { p.Kill(); } catch { }
+                }
+            }
+            catch { }
         }
 
         private static int _navHoldDir = 0;
@@ -684,25 +740,27 @@ namespace UnpluggedCustomSongs
             // ---- HUD help ----
             GUI.color = Color.white;
             string vol = ForcedGuitarVolume >= 0f ? $"<color=yellow>FORZADO {ForcedGuitarVolume:P0}</color>" : "normal";
+            SongMappingMetaData sel = GameManager.CurrentSongData != null ? GameManager.CurrentSongData : GetSafeSelectedSong();
             string currentSongText = "";
-            SongMappingMetaData sel = GetSafeSelectedSong();
             if (sel != null)
             {
-                currentSongText = $" | Vinyl: <color=cyan><b>{sel.BandName} - {sel.SongName}</b></color>";
+                string trackType = sel.IsMultiTrack ? "<color=#00FF66>[MultiTrack: YES]</color>" : "<color=#FFAA00>[MultiTrack: NO]</color>";
+                currentSongText = $" | Song: <color=cyan><b>{sel.BandName} - {sel.SongName}</b></color> {trackType}";
             }
 
             GUI.Label(new Rect(15, 12, Screen.width - 30, 22), "<b>[WASD/QE]</b> Move | <b>[Right Click + Mouse]</b> Look | <b>[Left Click]</b> Press Button | <b>[Z/X or ←/→]</b> Change Song" + currentSongText);
-            GUI.Label(new Rect(15, 34, Screen.width - 30, 22), $"<b>[1 or Enter]</b> Start | <b>[2]</b> AutoPlay: {(AutoPlay ? "<color=green>ON</color>" : "<color=yellow>MANUAL</color>")} | <b>[Space]</b> Strum | <b>[S]</b> Skip Intro | <b>[End/N]</b> Finish Song | <b>[3]</b> Vol: {vol} | <b>[Tab]</b> Buttons");
+            string modeLabel = GamePreferences.Load(UnpluggedInfo.IndexHandsMode, defaultValue: false) ? "<color=#FFD700>HANDS</color>" : "<color=#00E5FF>CONTROLLER</color>";
+            GUI.Label(new Rect(15, 34, Screen.width - 30, 22), $"<b>[1 or Enter]</b> Start | <b>[2]</b> AutoPlay: {(AutoPlay ? "<color=green>ON</color>" : "<color=yellow>MANUAL</color>")} | <b>[H]</b> Mode: {modeLabel} | <b>[Space]</b> Strum | <b>[3]</b> Skip Intro | <b>[End/N]</b> Finish | <b>[Tab]</b> Buttons | <b>[F1]</b> Debug");
 
             if (IntroSkipManager.CanSkip && !IntroSkipManager.HasSkipped)
             {
-                float bw = 640f;
-                float bh = 38f;
-                Rect skipRect = new Rect((Screen.width - bw) / 2f, Screen.height - 75f, bw, bh);
+                float bw = 560f;
+                float bh = 34f;
+                Rect skipRect = new Rect((Screen.width - bw) / 2f, Screen.height - 70f, bw, bh);
                 GUI.Box(skipRect, "");
                 var oldC = GUI.color;
                 GUI.color = new Color(1f, 0.88f, 0.2f);
-                GUI.Label(skipRect, "<b>⚡ PRESS BOTH TRIGGERS (L2 + R2) OR [S] TO SKIP INTRO SILENCE ⚡</b>");
+                GUI.Label(skipRect, "<b>PRESS BOTH TRIGGERS (L2 + R2) OR [3] TO SKIP INTRO SILENCE</b>");
                 GUI.color = oldC;
             }
 
@@ -862,6 +920,37 @@ namespace UnpluggedCustomSongs
             }
         }
 
+        // =========================================================================
+        // CENTRALIZED DEBUG & CONTROLLER KEYBINDS REFERENCE (NON-CONFLICTING)
+        // =========================================================================
+        // Camera & Movement:
+        //   - [W] [A] [S] [D]  : Fly camera Forward / Left / Backward / Right
+        //   - [E] / [Q] [Ctrl] : Fly camera Up / Down
+        //   - [Mouse Right]    : Hold and drag to rotate camera view
+        //   - [Mouse Left]     : Click on 3D in-game buttons
+        //
+        // Song Carousel Navigation (Turntable):
+        //   - [Z] / [LeftArrow]  : Previous Song
+        //   - [X] / [RightArrow] : Next Song
+        //   - [C]                : Select Custom Songs Album
+        //
+        // Gameplay & Song Flow:
+        //   - [1] / [Enter]    : Confirm floating pick / Start Song
+        //   - [2]              : Toggle AutoPlay Bot (Green = ON, Yellow = MANUAL)
+        //   - [3]              : Skip Intro Silence (fast-forward to 2.5s before 1st note)
+        //   - [H]              : Toggle Gameplay Mode (Hands Mode vs Controller Mode)
+        //   - [Space] / [Down] : Strum guitar (test hit)
+        //   - [End] / [N]      : Finish / Skip current song to score screen
+        //   - [Esc] / [P]      : Pause / Resume song
+        //
+        // Tools & Diagnostics:
+        //   - [4]              : Reset Audio Settings to Windows Default
+        //   - [5]              : Print Debug Status to MelonLoader console
+        //   - [6]              : Toggle projected 2D button markers
+        //   - [Tab]            : Toggle clickable button list panel
+        //   - [F1]             : Toggle Debug Mode & HUD on/off
+        //   - [F5]             : Refresh and reload custom songs from disk
+        // =========================================================================
         private void HandleActionKeybinds()
         {
             // [1] or [Enter]: Confirm Preparation / Start Song
@@ -881,8 +970,8 @@ namespace UnpluggedCustomSongs
                     {
                         GameManager.CurrentSongData = selected;
                         LoggerInstance.Msg($"[CustomSongs] Key [1]/Enter: Starting selected song '{selected.BandName} - {selected.SongName}'...");
+                        Traverse.Create(StartSpace.I).Method("StartButton_Pressed").GetValue();
                     }
-                    Traverse.Create(StartSpace.I).Method("StartButton_Pressed").GetValue();
                 }
             }
 
@@ -893,17 +982,31 @@ namespace UnpluggedCustomSongs
                 LoggerInstance.Msg($"[CustomSongs] Key [2]: AutoPlay Bot is now {(AutoPlay ? "ENABLED" : "DISABLED (Manual Strumming)")}");
             }
 
-            // [3]: Persistent guitar volume override: normal -> 10% -> normal
+            // [3]: Skip Intro Silence (fast-forwards to 2.5s before first note)
             if (Input.GetKeyDown(KeyCode.Alpha3) || Input.GetKeyDown(KeyCode.Keypad3))
             {
-                ForcedGuitarVolume = ForcedGuitarVolume < 0f ? 0.1f : -1f;
-                if (ForcedGuitarVolume < 0f)
+                if (IntroSkipManager.CanSkip && !IntroSkipManager.HasSkipped)
                 {
-                    var guitarMgr = UnityEngine.Object.FindObjectOfType<GuitarGameManager>();
-                    if (guitarMgr != null) { guitarMgr.InstrumentVolumeTarget = 1f; guitarMgr.InstrumentVolumeSmooth = 1f; }
+                    LoggerInstance.Msg("[CustomSongs] Key [3]: Skip Intro requested!");
+                    IntroSkipManager.PerformSkip();
                 }
-                LoggerInstance.Msg($"[CustomSongs] Key [3]: Guitar volume override = {(ForcedGuitarVolume < 0f ? "OFF (game controls volume)" : ForcedGuitarVolume.ToString("F2"))}");
+                else
+                {
+                    LoggerInstance.Msg("[CustomSongs] Key [3]: Skip Intro not available (not in intro or already skipped).");
+                }
             }
+
+            // [H]: Toggle Hands Mode vs Controller Mode (Index Hands vs Mandos)
+#if !QUEST_IL2CPP
+            if (Input.GetKeyDown(KeyCode.H))
+            {
+                bool currentMode = GamePreferences.Load(UnpluggedInfo.IndexHandsMode, defaultValue: false);
+                bool newMode = !currentMode;
+                GamePreferences.Save(UnpluggedInfo.IndexHandsMode, (object)newMode, true);
+                string modeStr = newMode ? "HANDS / INDEX TRACKING MODE" : "CONTROLLER / MANDOS MODE";
+                LoggerInstance.Msg($"[CustomSongs] Key [H]: Switched gameplay mode to: {modeStr}. (Select a song or restart track to apply)");
+            }
+#endif
 
             // [4]: Reset Audio Settings to Windows Default
             if (Input.GetKeyDown(KeyCode.Alpha4) || Input.GetKeyDown(KeyCode.Keypad4))
@@ -1341,9 +1444,11 @@ namespace UnpluggedCustomSongs
             {
                 if (!Directory.Exists(CustomSongsFolder)) Directory.CreateDirectory(CustomSongsFolder);
                 watcher = new FileSystemWatcher(CustomSongsFolder);
-                watcher.NotifyFilter = NotifyFilters.DirectoryName | NotifyFilters.FileName;
+                watcher.NotifyFilter = NotifyFilters.DirectoryName | NotifyFilters.FileName | NotifyFilters.LastWrite;
                 watcher.IncludeSubdirectories = true;
+                watcher.InternalBufferSize = 65536;
                 watcher.Created += (s, e) => ModMain.ScheduleReload();
+                watcher.Changed += (s, e) => ModMain.ScheduleReload();
                 watcher.Deleted += (s, e) => ModMain.ScheduleReload();
                 watcher.Renamed += (s, e) => ModMain.ScheduleReload();
                 watcher.EnableRaisingEvents = true;
@@ -1511,6 +1616,40 @@ namespace UnpluggedCustomSongs
                 {
                     MelonLogger.Error($"[CustomSongs] Error reading song archive {usmPath}: {ex}");
                 }
+            }
+
+            // Synchronize private songsMetadata field so AlbumData.SongsMetadata getter returns fresh list!
+            try
+            {
+#if QUEST_IL2CPP
+                var freshList = new Il2CppSystem.Collections.Generic.List<SongMappingMetaData>();
+                foreach (var metadata in album.builtInSongsMetadata) freshList.Add(metadata);
+#else
+                var freshList = new List<SongMappingMetaData>(album.builtInSongsMetadata);
+#endif
+                Traverse.Create(album).Field("songsMetadata").SetValue(freshList);
+
+                if (CustomAlbumInstance != null && CustomAlbumInstance != album)
+                {
+                    CustomAlbumInstance.SongFiles = album.SongFiles;
+                    CustomAlbumInstance.builtInSongsMetadata = album.builtInSongsMetadata;
+#if QUEST_IL2CPP
+                    var copy = new Il2CppSystem.Collections.Generic.List<SongMappingMetaData>();
+                    foreach (var metadata in freshList) copy.Add(metadata);
+#else
+                    var copy = new List<SongMappingMetaData>(freshList);
+#endif
+                    Traverse.Create(CustomAlbumInstance).Field("songsMetadata").SetValue(copy);
+                }
+
+                if (AlbumsManager.I != null && AlbumsManager.SelectedAlbum != null && AlbumsManager.SelectedAlbum.AlbumID == "CustomSongsAlbum")
+                {
+                    AlbumsManager.I.CurrentAlbumSongs = freshList;
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"[CustomSongs] Error syncing songsMetadata: {ex}");
             }
 
             UpdateAlbumCover(album as DLCAlbumData ?? CustomAlbumInstance);
@@ -2328,6 +2467,76 @@ namespace UnpluggedCustomSongs
             }
             return www.GetAudioClip(false, false, aType);
         }
+
+        public static DateTime GetSongFolderTimestamp(string dir)
+        {
+            try
+            {
+                DateTime latest = Directory.GetLastWriteTimeUtc(dir);
+                DateTime created = Directory.GetCreationTimeUtc(dir);
+                if (created > latest) latest = created;
+
+                string dataXml = Path.Combine(dir, "data.xml");
+                if (File.Exists(dataXml))
+                {
+                    DateTime xmlTime = File.GetLastWriteTimeUtc(dataXml);
+                    if (xmlTime > latest) latest = xmlTime;
+                }
+
+                string songIni = Path.Combine(dir, "song.ini");
+                if (File.Exists(songIni))
+                {
+                    DateTime iniTime = File.GetLastWriteTimeUtc(songIni);
+                    if (iniTime > latest) latest = iniTime;
+                }
+
+                return latest;
+            }
+            catch
+            {
+                return DateTime.MinValue;
+            }
+        }
+
+        public static int GetLatestSongIndex()
+        {
+            if (CustomAlbumInstance == null || CustomAlbumInstance.builtInSongsMetadata == null || CustomAlbumInstance.builtInSongsMetadata.Count == 0)
+                return -1;
+
+            if (!Directory.Exists(CustomSongsFolder))
+                return -1;
+
+            try
+            {
+                var dirs = Directory.GetDirectories(CustomSongsFolder);
+                if (dirs.Length == 0) return -1;
+
+                string newestDir = dirs
+                    .OrderByDescending(GetSongFolderTimestamp)
+                    .FirstOrDefault();
+
+                if (string.IsNullOrEmpty(newestDir)) return -1;
+
+                string folderName = Path.GetFileName(newestDir);
+                int index = -1;
+                for (int i = 0; i < CustomAlbumInstance.builtInSongsMetadata.Count; i++)
+                {
+                    var metadata = CustomAlbumInstance.builtInSongsMetadata[i];
+                    if (metadata != null && string.Equals(metadata.FileName, folderName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        index = i;
+                        break;
+                    }
+                }
+
+                return index;
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[CustomSongs] Error finding newest song index: {ex.Message}");
+                return -1;
+            }
+        }
     }
 
     [HarmonyPatch(typeof(AlbumsManager), "Awake")]
@@ -2357,6 +2566,32 @@ namespace UnpluggedCustomSongs
                 return false;
             }
             return true;
+        }
+    }
+
+    [HarmonyPatch(typeof(StartSpace), "AlbumSelected")]
+    public static class Patch_StartSpace_AlbumSelected
+    {
+        public static void Prefix(AlbumData album)
+        {
+            try
+            {
+                if (album != null && album.AlbumID == "CustomSongsAlbum")
+                {
+                    MelonLogger.Msg("[CustomSongs] Custom Songs album selected on shelf! Rescanning CustomSongs folder...");
+                    CustomSongLoader.PopulateCustomSongs(album);
+
+                    int targetIndex = CustomSongLoader.GetLatestSongIndex();
+                    if (targetIndex >= 0 && StartSpace.I != null && StartSpace.I.songMenu != null)
+                    {
+                        StartSpace.I.songMenu.InitialOffset = targetIndex;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"[CustomSongs] Error in AlbumSelected prefix: {ex}");
+            }
         }
     }
 
@@ -2408,6 +2643,41 @@ namespace UnpluggedCustomSongs
             return true;
         }
     }
+
+    [HarmonyPatch(typeof(VRPlatformOculus), "IsHandTrackingEnabled", MethodType.Getter)]
+    public static class Patch_VRPlatformOculus_IsHandTrackingEnabled
+    {
+        public static bool Prefix(ref bool __result)
+        {
+            bool indexHands = GamePreferences.Load(UnpluggedInfo.IndexHandsMode, defaultValue: false);
+            if (!indexHands)
+            {
+                __result = false;
+                return false;
+            }
+            try
+            {
+                __result = OVRPlugin.GetHandTrackingEnabled();
+            }
+            catch
+            {
+                __result = false;
+            }
+            return false;
+        }
+    }
+
+#if !QUEST_IL2CPP
+    [HarmonyPatch(typeof(VRPlatformSteam), "IsHandTrackingEnabled", MethodType.Getter)]
+    public static class Patch_VRPlatformSteam_IsHandTrackingEnabled
+    {
+        public static bool Prefix(ref bool __result)
+        {
+            __result = GamePreferences.Load(UnpluggedInfo.IndexHandsMode, defaultValue: false);
+            return false;
+        }
+    }
+#endif
 
     [HarmonyPatch(typeof(SongMapping), "Load", new Type[] { typeof(SongMappingMetaData), typeof(bool) })]
     public static class Patch_SongMapping_Load
@@ -2601,6 +2871,28 @@ namespace UnpluggedCustomSongs
             return true;
         }
     }
+
+#if !QUEST_IL2CPP
+    [HarmonyPatch(typeof(GuitarHandPoseRecognitionManager), "ResetFingerColors")]
+    public static class Patch_GuitarHandPoseRecognitionManager_ResetFingerColors
+    {
+        public static bool Prefix()
+        {
+            try
+            {
+                return InteractionSystem.I != null
+                    && InteractionSystem.I.PrimaryHand != null
+                    && InteractionSystem.I.PrimaryHand.HandRender != null
+                    && InteractionSystem.I.PrimaryHand.HandRender.material != null;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    }
+#endif
+
     // The game's "NoteReachedTime" timeline event does NoteController.Notes[key] without checking.
     // When a note view was already destroyed (e.g. note hit before its sustain starts) it throws
     // KeyNotFoundException inside GameTimeline.SetTime, aborting the remaining timeline events that frame.
@@ -2857,17 +3149,56 @@ namespace UnpluggedCustomSongs
 
             try
             {
-                if (GameManager.CurrentSong == null || GameManager.CurrentSong.Keys == null)
+                if (GameManager.CurrentSong == null)
                     return;
 
                 float minTime = float.MaxValue;
-                foreach (var k in GameManager.CurrentSong.Keys)
+#if QUEST_IL2CPP
+                if (GameManager.CurrentSong.Keys != null)
                 {
-                    if (k != null && !(k is BeatLineKey) && k.Time > 0.5f)
+                    foreach (var key in GameManager.CurrentSong.Keys)
                     {
-                        if (k.Time < minTime) minTime = k.Time;
+                        if (key != null && !(key is BeatLineKey) && key.Time > 0.5f && key.Time < minTime)
+                            minTime = key.Time;
                     }
                 }
+#else
+                var allNotes = new List<KeyTime>();
+                if (GameManager.CurrentSong.Keys != null)
+                {
+                    foreach (var key in GameManager.CurrentSong.Keys)
+                    {
+                        if (key is MiniGame miniGame)
+                        {
+                            var notes = miniGame.GetNotes();
+                            if (notes != null) allNotes.AddRange(notes);
+                        }
+                        else if (key != null && !(key is BeatLineKey))
+                        {
+                            allNotes.Add(key);
+                        }
+                    }
+                }
+
+                if (GameManager.I?.TimelineManager?.Timelines != null)
+                {
+                    try
+                    {
+                        foreach (var timeline in GameManager.I.TimelineManager.Timelines)
+                        {
+                            if (timeline?.AllNotesInTimeLine != null)
+                                allNotes.AddRange(timeline.AllNotesInTimeLine);
+                        }
+                    }
+                    catch { }
+                }
+
+                foreach (var note in allNotes)
+                {
+                    if (note != null && !(note is BeatLineKey) && note.Time > 0.5f && note.Time < minTime)
+                        minTime = note.Time;
+                }
+#endif
 
                 if (minTime < float.MaxValue)
                 {
@@ -2880,6 +3211,14 @@ namespace UnpluggedCustomSongs
                         CanSkip = true;
                         MelonLogger.Msg($"[CustomSongs] Intro skip available: First note at {FirstNoteTime:F2}s -> Skip target: {SkipTargetTime:F2}s");
                     }
+                    else
+                    {
+                        MelonLogger.Msg($"[CustomSongs] Intro skip not needed: First note is at {FirstNoteTime:F2}s (< 5.0s)");
+                    }
+                }
+                else
+                {
+                    MelonLogger.Msg("[CustomSongs] Intro skip: No playable notes found with Time > 0.5s");
                 }
             }
             catch (Exception ex)
@@ -2916,8 +3255,8 @@ namespace UnpluggedCustomSongs
 
         private static bool CheckSkipInput()
         {
-            // Keyboard (PC / Desktop Debug)
-            if (Input.GetKeyDown(KeyCode.S) || Input.GetKeyDown(KeyCode.K) || Input.GetKeyDown(KeyCode.Tab))
+            // Keyboard (PC / Desktop Debug) -> Key [3] / Keypad [3]
+            if (Input.GetKeyDown(KeyCode.Alpha3) || Input.GetKeyDown(KeyCode.Keypad3))
             {
                 return true;
             }
@@ -2975,27 +3314,50 @@ namespace UnpluggedCustomSongs
                 var mp = GameManager.I.musicPlayer;
                 float target = SkipTargetTime;
 
+                // 1. Cancel any pending delayed start coroutine so it cannot overwrite time or reset playback
+                try { mp.StopAllCoroutines(); } catch { }
+
+                // 2. Immediately start master audio source if not playing and seek to target
                 if (mp.MusicAudioSource != null)
                 {
+                    if (!mp.MusicAudioSource.isPlaying)
+                    {
+                        mp.MusicAudioSource.Play();
+                    }
                     mp.MusicAudioSource.time = target;
                 }
-                mp.CurrentTime = target;
-                mp.SongTimeDelayCounter = GameManager.I.StartDelay + target;
 
+                // 3. Immediately start all multitrack stem audio sources and sync sample clocks
                 if (mp.AudioSources != null)
                 {
                     foreach (var src in mp.AudioSources)
                     {
                         if (src != null && src.clip != null)
                         {
-                            src.time = target;
+                            if (!src.isPlaying) src.Play();
+                            if (mp.MusicAudioSource != null && mp.MusicAudioSource.clip != null)
+                            {
+                                src.timeSamples = mp.MusicAudioSource.timeSamples;
+                            }
+                            else
+                            {
+                                src.time = target;
+                            }
                         }
                     }
                 }
 
+                // 4. Update internal player clock and delay counter to target
+                mp.CurrentTime = target;
+                mp.SongTimeDelayCounter = GameManager.I.StartDelay + target;
+
+                // 5. Update timeline and flush upcoming notes onto the highway
                 if (GameManager.I.TimelineManager != null)
                 {
-                    GameManager.I.TimelineManager.SetTime(target);
+                    for (int i = 0; i < 5; i++)
+                    {
+                        GameManager.I.TimelineManager.SetTime(target);
+                    }
                 }
 
                 try
@@ -3032,12 +3394,28 @@ namespace UnpluggedCustomSongs
                     _promptObj = new GameObject("SkipIntroPrompt");
                     UnityEngine.Object.DontDestroyOnLoad(_promptObj);
                     _promptText = _promptObj.AddComponent<TextMeshPro>();
-                    _promptText.fontSize = 2.2f;
+                    _promptText.fontSize = 1.45f;
                     _promptText.alignment = TextAlignmentOptions.Center;
-                    _promptText.color = new Color(1f, 0.88f, 0.2f);
+                    _promptText.color = new Color(1f, 0.86f, 0.2f);
                     _promptText.outlineColor = Color.black;
-                    _promptText.outlineWidth = 0.28f;
-                    _promptText.text = "⚡ PRESS BOTH TRIGGERS (L2 + R2) TO SKIP INTRO ⚡\n<size=65%>Fast-forward intro silence to 2.5s before first note [or press S on PC]</size>";
+                    _promptText.outlineWidth = 0.26f;
+                    try
+                    {
+                        var mat = _promptText.fontMaterial ?? _promptText.fontSharedMaterial;
+                        if (mat != null)
+                        {
+                            mat.EnableKeyword(ShaderUtilities.Keyword_Outline);
+                            mat.SetColor(ShaderUtilities.ID_OutlineColor, Color.black);
+                            mat.SetFloat(ShaderUtilities.ID_OutlineWidth, 0.26f);
+                        }
+                    }
+                    catch { }
+                }
+
+                if (_promptText != null)
+                {
+                    _promptText.fontSize = 1.45f;
+                    _promptText.text = "<b>PRESS BOTH TRIGGERS (L2 + R2) TO SKIP INTRO</b>";
                 }
 
                 Camera cam = CameraManager.Main != null ? CameraManager.Main : Camera.main;
