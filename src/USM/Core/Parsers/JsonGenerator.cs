@@ -112,9 +112,18 @@ namespace USM.Core.Parsers
                     (tier, fingers) = chordMapping;
                 }
 
-                // Easy and SuperEasy are authored with only the two lower tiers.
+                // Easy and SuperEasy use only the two lower frets, in both play
+                // modes. Reducing Tier alone left Ring/Pinky in HandNotes, so the
+                // generated hand chart disagreed with its displayed note tier.
                 if (twoTierDifficulty)
+                {
                     tier %= 2;
+                    fingers = fingers
+                        .Where(finger => finger == "Index" || finger == "Middle")
+                        .ToArray();
+                    if (fingers.Length == 0)
+                        fingers = new[] { tier == 0 ? "Index" : "Middle" };
+                }
 
                 bool isPullOff = noteTime - previousTime < 0.22 && previousTier != tier;
 
