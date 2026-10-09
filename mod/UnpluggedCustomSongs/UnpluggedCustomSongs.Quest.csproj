@@ -36,6 +36,10 @@
       <HintPath>..\..\tools\quest\Il2CppAssemblies\UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.AndroidJNIModule">
+      <HintPath>..\..\tools\quest\Il2CppAssemblies\UnityEngine.AndroidJNIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.AudioModule">
       <HintPath>..\..\tools\quest\Il2CppAssemblies\UnityEngine.AudioModule.dll</HintPath>
       <Private>false</Private>

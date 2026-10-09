@@ -121,7 +121,7 @@ class AdbHelper:
         return success, out or err
 
     def grant_storage_permissions(self, package_name: str, device_id: Optional[str] = None):
-        self.run_adb(["shell", "appops", "set", package_name, "MANAGE_EXTERNAL_STORAGE", "allow"], device_id=device_id)
+        self.run_adb(["shell", "appops", "set", "--uid", package_name, "MANAGE_EXTERNAL_STORAGE", "allow"], device_id=device_id)
         self.run_adb(["shell", "pm", "grant", package_name, "android.permission.READ_EXTERNAL_STORAGE"], device_id=device_id)
         self.run_adb(["shell", "pm", "grant", package_name, "android.permission.WRITE_EXTERNAL_STORAGE"], device_id=device_id)
 

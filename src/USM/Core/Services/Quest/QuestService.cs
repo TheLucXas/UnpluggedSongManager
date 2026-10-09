@@ -183,8 +183,7 @@ namespace USM.Core.Services.Quest
             string appDir = AppDomain.CurrentDomain.BaseDirectory;
             string[] bundledModCandidates =
             {
-                Path.Combine(appDir, "UnpluggedCustomSongs.dll"),
-                Path.Combine(appDir, "Resources", "UnpluggedCustomSongs.Quest.dll")
+                Path.Combine(appDir, "UnpluggedCustomSongs.dll")
             };
             _modDllPath = bundledModCandidates.FirstOrDefault(File.Exists);
             if (_modDllPath == null && File.Exists(modDll)) _modDllPath = modDll;
@@ -194,9 +193,8 @@ namespace USM.Core.Services.Quest
                 string[] modCandidates =
                 {
                     Path.Combine(appDir, "UnpluggedCustomSongs.dll"),
-                    Path.Combine(appDir, @"..\..\..\..\mod\UnpluggedCustomSongs\UnpluggedCustomSongs.dll"),
-                    Path.Combine(appDir, @"..\..\..\..\mod\UnpluggedCustomSongs\bin\Release\netstandard2.0\UnpluggedCustomSongs.dll"),
-                    Path.Combine(Directory.GetCurrentDirectory(), "UnpluggedCustomSongs.dll")
+                    Path.Combine(appDir, @"..\..\..\..\mod\UnpluggedCustomSongs\bin\Release\net8.0\UnpluggedCustomSongs.Quest.dll"),
+                    Path.Combine(Directory.GetCurrentDirectory(), @"mod\UnpluggedCustomSongs\bin\Release\net8.0\UnpluggedCustomSongs.Quest.dll")
                 };
                 foreach (var c in modCandidates)
                 {
@@ -465,7 +463,9 @@ namespace USM.Core.Services.Quest
         public async Task GrantStoragePermissionsAsync(string serial, string packageName, Action<string>? log = null)
         {
             log?.Invoke(LocalizationService.T("Log_GrantingPermissions"));
-            await RunProcessAsync(GetAdbPath(), $"-s {serial} shell appops set {packageName} MANAGE_EXTERNAL_STORAGE allow");
+            var (appOpsCode, _, appOpsError) = await RunProcessAsync(GetAdbPath(), $"-s {serial} shell appops set --uid {packageName} MANAGE_EXTERNAL_STORAGE allow");
+            if (appOpsCode != 0)
+                log?.Invoke($"Warning: Could not grant all-files access for ModData: {appOpsError}");
             await RunProcessAsync(GetAdbPath(), $"-s {serial} shell pm grant {packageName} android.permission.READ_EXTERNAL_STORAGE");
             await RunProcessAsync(GetAdbPath(), $"-s {serial} shell pm grant {packageName} android.permission.WRITE_EXTERNAL_STORAGE");
 
@@ -1291,17 +1291,20 @@ namespace USM.Core.Services.Quest
                     if (!Regex.IsMatch(packageName, @"^[A-Za-z0-9_.]+$"))
                         throw new ArgumentException("Invalid Android package name for the mod folder.", nameof(packageName));
 
-                    // The bundled DLL reads Songs under this exact LemonLoader package
-                    // namespace. Do not copy the mod into the stock game's namespace.
-                    string targetDir = $"/sdcard/ModData/{packageName}/Mods";
+                    // LemonLoader loads mod assemblies from its own package directory.
+                    // Song archives remain under ModData/{packageName}/Songs.
+                    string targetDir = $"/sdcard/MelonLoader/{packageName}/Mods";
                     await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p \"{targetDir}\"");
                     var (pushCode, pushOut, pushErr) = await RunProcessAsync(
-                        GetAdbPath(), $"-s {serial} push \"{modDll}\" \"{targetDir}/UnpluggedCustomSongs.dll\"", 30000);
+                        GetAdbPath(), $"-s {serial} push \"{modDll}\" \"{targetDir}/UnpluggedCustomSongs.Quest.dll\"", 30000);
                     if (pushCode != 0)
                     {
                         log?.Invoke($"Could not deploy the mod DLL to {targetDir}: {(pushOut + " " + pushErr).Trim()}");
                         return false;
                     }
+                    // Remove the older duplicate names previously written by USM. Having
+                    // both assemblies in Mods can make MelonLoader reject one as cyclic.
+                    await RunProcessAsync(GetAdbPath(), $"-s {serial} shell rm -f \"{targetDir}/UnpluggedCustomSongs.dll\" \"/sdcard/ModData/{packageName}/Mods/UnpluggedCustomSongs.dll\"");
                     log?.Invoke(LocalizationService.T("Log_ModDllSuccess"));
                     return true;
                 }

@@ -1112,7 +1112,11 @@ namespace UnpluggedCustomSongs
                         ? "com.Anotherway.UnpluggedVR.modded"
                         : Application.identifier;
                     string modData = $"/sdcard/ModData/{packageName}/Songs";
-                    if (!Directory.Exists(modData)) try { Directory.CreateDirectory(modData); } catch {}
+                    if (!Directory.Exists(modData))
+                    {
+                        try { Directory.CreateDirectory(modData); }
+                        catch (Exception ex) { MelonLogger.Error($"[CustomSongs] Could not create songs folder '{modData}': {ex}"); }
+                    }
                     return modData;
                 }
                 return Path.Combine(Directory.GetParent(Application.dataPath).FullName, "CustomSongs");
@@ -1126,6 +1130,22 @@ namespace UnpluggedCustomSongs
         {
             MelonLogger.Msg($"[UnpluggedQuestMod] CustomSongLoader.Init called! Platform: {Application.platform}");
             MelonLogger.Msg($"[UnpluggedQuestMod] Target CustomSongsFolder: {CustomSongsFolder}");
+#if QUEST_IL2CPP
+            if (Application.platform == RuntimePlatform.Android)
+            {
+                try
+                {
+                    var environment = new AndroidJavaClass("android.os.Environment");
+                    bool hasAllFilesAccess = environment.CallStatic<bool>("isExternalStorageManager");
+                    environment.Dispose();
+                    MelonLogger.Msg($"[CustomSongs] Android all-files access: {hasAllFilesAccess}");
+                }
+                catch (Exception ex)
+                {
+                    MelonLogger.Warning($"[CustomSongs] Could not check Android all-files access: {ex.Message}");
+                }
+            }
+#endif
             if (!Directory.Exists(CustomSongsFolder))
             {
                 try { Directory.CreateDirectory(CustomSongsFolder); } catch { }
@@ -1225,10 +1245,25 @@ namespace UnpluggedCustomSongs
             album.builtInSongsMetadata = new List<SongMappingMetaData>();
 #endif
 
-            if (!Directory.Exists(CustomSongsFolder)) return;
+            string[] usmFiles;
+            try
+            {
+                bool folderExists = Directory.Exists(CustomSongsFolder);
+                MelonLogger.Msg($"[CustomSongs] Songs folder exists/readable: {folderExists} ({CustomSongsFolder})");
+                if (!folderExists) return;
 
-            string[] subdirs = Directory.GetFiles(CustomSongsFolder, "*.usm");
-            foreach (var dir in subdirs)
+                usmFiles = Directory.GetFiles(CustomSongsFolder)
+                    .Where(path => string.Equals(Path.GetExtension(path), ".usm", StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+                MelonLogger.Msg($"[CustomSongs] Enumerated {usmFiles.Length} .usm archive(s).");
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"[CustomSongs] Could not enumerate songs in '{CustomSongsFolder}': {ex}");
+                return;
+            }
+
+            foreach (var dir in usmFiles)
             {
                 try
                 {
