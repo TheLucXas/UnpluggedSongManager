@@ -1099,9 +1099,9 @@ namespace UnpluggedCustomSongs
             {
                 if (Application.platform == RuntimePlatform.Android)
                 {
-                    if (Directory.Exists("/sdcard/Unplugged/Songs")) return "/sdcard/Unplugged/Songs";
+                    if (Directory.Exists("/sdcard/Unplugged/Songs")) return Path.Combine(Application.persistentDataPath, "CustomSongs");
                     if (Directory.Exists("/sdcard/Unplugged/CustomSongs")) return "/sdcard/Unplugged/CustomSongs";
-                    return "/sdcard/Unplugged/Songs";
+                    return Path.Combine(Application.persistentDataPath, "CustomSongs");
                 }
                 return Path.Combine(Directory.GetParent(Application.dataPath).FullName, "CustomSongs");
             }
@@ -2733,4 +2733,6 @@ namespace UnpluggedCustomSongs
     }
 
 }
+
+
 
