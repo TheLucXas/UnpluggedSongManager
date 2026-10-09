@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Win32;
@@ -238,26 +239,25 @@ namespace USM.Core.Services
             string appDir = AppDomain.CurrentDomain.BaseDirectory;
             var candidates = new[]
             {
+                Path.Combine(appDir, "UnpluggedCustomSongs.PC.dll"),
                 Path.Combine(appDir, "UnpluggedCustomSongs.dll"),
-                Path.Combine(appDir, @"..\..\..\..\mod\UnpluggedCustomSongs\UnpluggedCustomSongs.dll"),
                 Path.Combine(appDir, @"..\..\..\..\mod\UnpluggedCustomSongs\bin\Release\netstandard2.0\UnpluggedCustomSongs.dll"),
-                Path.Combine(appDir, @"..\..\..\UnpluggedCustomSongs.dll"),
-                Path.Combine(Directory.GetCurrentDirectory(), "UnpluggedCustomSongs.dll"),
+                Path.Combine(appDir, @"..\..\..\..\mod\UnpluggedCustomSongs\UnpluggedCustomSongs.dll"),
+                Path.Combine(Directory.GetCurrentDirectory(), "UnpluggedCustomSongs.PC.dll"),
+                Path.Combine(Directory.GetCurrentDirectory(), @"mod\UnpluggedCustomSongs\bin\Release\netstandard2.0\UnpluggedCustomSongs.dll"),
                 Path.Combine(Directory.GetCurrentDirectory(), @"mod\UnpluggedCustomSongs\UnpluggedCustomSongs.dll"),
-                Path.Combine(Directory.GetCurrentDirectory(), @"mod\UnpluggedCustomSongs\bin\Release\netstandard2.0\UnpluggedCustomSongs.dll")
+                Path.Combine(Directory.GetCurrentDirectory(), "UnpluggedCustomSongs.dll")
             };
 
-            foreach (var c in candidates)
+            string? pcMod = FindPcModAssembly(candidates);
+            if (pcMod != null)
             {
-                if (File.Exists(c))
+                try
                 {
-                    try
-                    {
-                        var vi = System.Diagnostics.FileVersionInfo.GetVersionInfo(c);
-                        return vi.FileVersion ?? vi.ProductVersion;
-                    }
-                    catch { }
+                    var vi = System.Diagnostics.FileVersionInfo.GetVersionInfo(pcMod);
+                    return vi.FileVersion ?? vi.ProductVersion;
                 }
+                catch { }
             }
             return null;
         }
@@ -277,20 +277,17 @@ namespace USM.Core.Services
             string appDir = AppDomain.CurrentDomain.BaseDirectory;
             var candidates = new[]
             {
+                Path.Combine(appDir, "UnpluggedCustomSongs.PC.dll"),
                 Path.Combine(appDir, "UnpluggedCustomSongs.dll"),
-                Path.Combine(appDir, @"..\..\..\..\mod\UnpluggedCustomSongs\UnpluggedCustomSongs.dll"),
                 Path.Combine(appDir, @"..\..\..\..\mod\UnpluggedCustomSongs\bin\Release\netstandard2.0\UnpluggedCustomSongs.dll"),
-                Path.Combine(appDir, @"..\..\..\UnpluggedCustomSongs.dll"),
-                Path.Combine(Directory.GetCurrentDirectory(), "UnpluggedCustomSongs.dll"),
+                Path.Combine(appDir, @"..\..\..\..\mod\UnpluggedCustomSongs\UnpluggedCustomSongs.dll"),
+                Path.Combine(Directory.GetCurrentDirectory(), "UnpluggedCustomSongs.PC.dll"),
+                Path.Combine(Directory.GetCurrentDirectory(), @"mod\UnpluggedCustomSongs\bin\Release\netstandard2.0\UnpluggedCustomSongs.dll"),
                 Path.Combine(Directory.GetCurrentDirectory(), @"mod\UnpluggedCustomSongs\UnpluggedCustomSongs.dll"),
-                Path.Combine(Directory.GetCurrentDirectory(), @"mod\UnpluggedCustomSongs\bin\Release\netstandard2.0\UnpluggedCustomSongs.dll")
+                Path.Combine(Directory.GetCurrentDirectory(), "UnpluggedCustomSongs.dll")
             };
 
-            string? srcDll = null;
-            foreach (var c in candidates)
-            {
-                if (File.Exists(c)) { srcDll = Path.GetFullPath(c); break; }
-            }
+            string? srcDll = FindPcModAssembly(candidates);
 
             if (srcDll != null)
             {
@@ -301,6 +298,25 @@ namespace USM.Core.Services
 
             message = "UnpluggedCustomSongs.dll source file not found in application package.";
             return false;
+        }
+
+        internal static string? FindPcModAssembly(IEnumerable<string> candidates)
+        {
+            foreach (string candidate in candidates)
+            {
+                if (!File.Exists(candidate))
+                    continue;
+
+                try
+                {
+                    string? assemblyName = AssemblyName.GetAssemblyName(candidate).Name;
+                    if (string.Equals(assemblyName, "UnpluggedCustomSongs", StringComparison.OrdinalIgnoreCase))
+                        return Path.GetFullPath(candidate);
+                }
+                catch { }
+            }
+
+            return null;
         }
 
         public (bool DiscordRpc, bool VerboseDebug) ReadPreferences()

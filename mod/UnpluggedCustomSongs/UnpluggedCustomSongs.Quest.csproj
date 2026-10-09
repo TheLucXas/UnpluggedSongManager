@@ -8,6 +8,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="obj/**/*.cs" />
+    <Compile Remove="bin/**/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Reference Include="MelonLoader">
       <HintPath>..\..\tools\quest\MelonNet\net8\MelonLoader.dll</HintPath>
       <Private>false</Private>

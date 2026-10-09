@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -171,36 +172,34 @@ namespace USM.Core.Services.Quest
             string signer = Path.Combine(dir, "uber-apk-signer.jar");
             string lemonPatcher = Path.Combine(dir, "lemon_patcher", "lemon_patcher.exe");
             string melonData = Path.Combine(dir, "melon_data.zip");
-            string modDll = Path.Combine(dir, "UnpluggedCustomSongs.dll");
+            string cachedModDll = Path.Combine(dir, "UnpluggedCustomSongs.dll");
 
             if (File.Exists(apktool)) _apktoolJar = apktool;
             if (File.Exists(signer)) _signerJar = signer;
             if (File.Exists(lemonPatcher)) _lemonPatcherExe = lemonPatcher;
             if (File.Exists(melonData)) _melonDataZip = melonData;
 
-            // Prefer the DLL shipped beside this USM build. The AppData tools cache
-            // can contain an older mod and must not silently override a fresh release.
+            // Keep the PC and Quest builds separate. The generic DLL is the PC build;
+            // never send it to LemonLoader just because it is beside the USM app.
             string appDir = AppDomain.CurrentDomain.BaseDirectory;
-            string[] bundledModCandidates =
+            string[] modCandidates =
             {
-                Path.Combine(appDir, "UnpluggedCustomSongs.dll")
+                Path.Combine(appDir, "UnpluggedCustomSongs.Quest.dll"),
+                Path.Combine(appDir, @"..\..\..\..\mod\UnpluggedCustomSongs\bin\Release\net8.0\UnpluggedCustomSongs.Quest.dll"),
+                Path.Combine(Directory.GetCurrentDirectory(), @"mod\UnpluggedCustomSongs\bin\Release\net8.0\UnpluggedCustomSongs.Quest.dll"),
+                Path.Combine(appDir, "UnpluggedCustomSongs.dll"),
+                cachedModDll
             };
-            _modDllPath = bundledModCandidates.FirstOrDefault(File.Exists);
-            if (_modDllPath == null && File.Exists(modDll)) _modDllPath = modDll;
+            _modDllPath = modCandidates.FirstOrDefault(candidate => File.Exists(candidate) && IsQuestModAssembly(candidate));
+        }
 
-            if (_modDllPath == null)
+        private static bool IsQuestModAssembly(string path)
+        {
+            try
             {
-                string[] modCandidates =
-                {
-                    Path.Combine(appDir, "UnpluggedCustomSongs.dll"),
-                    Path.Combine(appDir, @"..\..\..\..\mod\UnpluggedCustomSongs\bin\Release\net8.0\UnpluggedCustomSongs.Quest.dll"),
-                    Path.Combine(Directory.GetCurrentDirectory(), @"mod\UnpluggedCustomSongs\bin\Release\net8.0\UnpluggedCustomSongs.Quest.dll")
-                };
-                foreach (var c in modCandidates)
-                {
-                    if (File.Exists(c)) { _modDllPath = c; break; }
-                }
+                return string.Equals(AssemblyName.GetAssemblyName(path).Name, "UnpluggedCustomSongs.Quest", StringComparison.OrdinalIgnoreCase);
             }
+            catch { return false; }
         }
 
         public bool AreToolsReady()
@@ -1281,8 +1280,13 @@ namespace USM.Core.Services.Quest
                 string? modDll = _modDllPath;
                 if (string.IsNullOrEmpty(modDll) || !File.Exists(modDll))
                 {
-                    string candidate = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "UnpluggedCustomSongs.dll");
-                    if (File.Exists(candidate)) modDll = candidate;
+                    string appDir = AppDomain.CurrentDomain.BaseDirectory;
+                    string[] candidates =
+                    {
+                        Path.Combine(appDir, "UnpluggedCustomSongs.Quest.dll"),
+                        Path.Combine(appDir, "UnpluggedCustomSongs.dll")
+                    };
+                    modDll = candidates.FirstOrDefault(candidate => File.Exists(candidate) && IsQuestModAssembly(candidate));
                 }
 
                 if (!string.IsNullOrEmpty(modDll) && File.Exists(modDll))

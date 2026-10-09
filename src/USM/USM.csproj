@@ -12,6 +12,9 @@
     <ApplicationIcon>assets\icon.ico</ApplicationIcon>
     <Version>2.0.0</Version>
     <Authors>TheLucXas</Authors>
+    <PcModProject>$(MSBuildProjectDirectory)\..\..\mod\UnpluggedCustomSongs\UnpluggedCustomSongs.csproj</PcModProject>
+    <PcModAssembly>$(MSBuildProjectDirectory)\..\..\mod\UnpluggedCustomSongs\bin\$(Configuration)\netstandard2.0\UnpluggedCustomSongs.dll</PcModAssembly>
+    <PcGameAssembly>C:\SteamLibrary\steamapps\common\Unplugged\Unplugged_Data\Managed\Assembly-CSharp.dll</PcGameAssembly>
     <QuestModProject>$(MSBuildProjectDirectory)\..\..\mod\UnpluggedCustomSongs\UnpluggedCustomSongs.Quest.csproj</QuestModProject>
     <QuestModAssembly>$(MSBuildProjectDirectory)\..\..\mod\UnpluggedCustomSongs\bin\$(Configuration)\net8.0\UnpluggedCustomSongs.Quest.dll</QuestModAssembly>
   </PropertyGroup>
@@ -23,6 +26,7 @@
 
   <ItemGroup>
     <ProjectReference Include="$(QuestModProject)" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained" />
+    <ProjectReference Include="$(PcModProject)" Condition="Exists('$(PcGameAssembly)')" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained" />
   </ItemGroup>
 
   <ItemGroup>
@@ -34,10 +38,14 @@
   <ItemGroup><None Include="Resources\**\*"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></None></ItemGroup>
 
   <Target Name="CopyQuestModToBuildOutput" AfterTargets="Build">
-    <Copy SourceFiles="$(QuestModAssembly)" DestinationFiles="$(OutputPath)UnpluggedCustomSongs.dll" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(QuestModAssembly)" DestinationFiles="$(OutputPath)UnpluggedCustomSongs.Quest.dll" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(PcModAssembly)" DestinationFiles="$(OutputPath)UnpluggedCustomSongs.dll" SkipUnchangedFiles="true" Condition="Exists('$(PcModAssembly)')" />
+    <Copy SourceFiles="$(PcModAssembly)" DestinationFiles="$(OutputPath)UnpluggedCustomSongs.PC.dll" SkipUnchangedFiles="true" Condition="Exists('$(PcModAssembly)')" />
   </Target>
 
   <Target Name="CopyQuestModToPublishOutput" AfterTargets="Publish">
-    <Copy SourceFiles="$(QuestModAssembly)" DestinationFiles="$(PublishDir)UnpluggedCustomSongs.dll" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(QuestModAssembly)" DestinationFiles="$(PublishDir)UnpluggedCustomSongs.Quest.dll" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(PcModAssembly)" DestinationFiles="$(PublishDir)UnpluggedCustomSongs.dll" SkipUnchangedFiles="true" Condition="Exists('$(PcModAssembly)')" />
+    <Copy SourceFiles="$(PcModAssembly)" DestinationFiles="$(PublishDir)UnpluggedCustomSongs.PC.dll" SkipUnchangedFiles="true" Condition="Exists('$(PcModAssembly)')" />
   </Target>
 </Project>

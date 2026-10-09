@@ -121,9 +121,10 @@ namespace USM.Core.Services
                 result.Success = true;
                 result.Release = release;
                 result.LatestVersion = CleanVersionString(release.TagName);
-                result.ModAsset = release.Assets.FirstOrDefault(a => 
-                    a.Name.Equals("UnpluggedCustomSongs.dll", StringComparison.OrdinalIgnoreCase) ||
-                    a.Name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase));
+                result.ModAsset = release.Assets.FirstOrDefault(a =>
+                    a.Name.Equals("UnpluggedCustomSongs.PC.dll", StringComparison.OrdinalIgnoreCase))
+                    ?? release.Assets.FirstOrDefault(a =>
+                        a.Name.Equals("UnpluggedCustomSongs.dll", StringComparison.OrdinalIgnoreCase));
 
                 result.UsmAsset = release.Assets.FirstOrDefault(a =>
                     (a.Name.Contains("USM", StringComparison.OrdinalIgnoreCase) || a.Name.Contains("Unplugged", StringComparison.OrdinalIgnoreCase)) &&
@@ -192,6 +193,13 @@ namespace USM.Core.Services
                             progress.Report((double)totalRead / totalBytes * 100);
                         }
                     }
+                }
+
+                string? assemblyName = AssemblyName.GetAssemblyName(tempFile).Name;
+                if (!string.Equals(assemblyName, "UnpluggedCustomSongs", StringComparison.OrdinalIgnoreCase))
+                {
+                    try { File.Delete(tempFile); } catch { }
+                    return (false, "The downloaded DLL is not the PC mod build, so it was not installed.");
                 }
 
                 string? dir = Path.GetDirectoryName(targetPath);
@@ -480,23 +488,23 @@ namespace USM.Core.Services
                 string appDir = AppDomain.CurrentDomain.BaseDirectory;
                 string[] modCandidates =
                 {
+                    Path.Combine(appDir, "UnpluggedCustomSongs.PC.dll"),
                     Path.Combine(appDir, "UnpluggedCustomSongs.dll"),
-                    Path.Combine(appDir, @"..\..\..\..\mod\UnpluggedCustomSongs\UnpluggedCustomSongs.dll"),
                     Path.Combine(appDir, @"..\..\..\..\mod\UnpluggedCustomSongs\bin\Release\netstandard2.0\UnpluggedCustomSongs.dll"),
+                    Path.Combine(appDir, @"..\..\..\..\mod\UnpluggedCustomSongs\UnpluggedCustomSongs.dll"),
+                    Path.Combine(Directory.GetCurrentDirectory(), "UnpluggedCustomSongs.PC.dll"),
+                    Path.Combine(Directory.GetCurrentDirectory(), @"mod\UnpluggedCustomSongs\bin\Release\netstandard2.0\UnpluggedCustomSongs.dll"),
                     Path.Combine(Directory.GetCurrentDirectory(), "UnpluggedCustomSongs.dll")
                 };
 
-                foreach (var c in modCandidates)
+                string? pcMod = GameDetector.FindPcModAssembly(modCandidates);
+                if (pcMod != null)
                 {
-                    if (File.Exists(c))
+                    try
                     {
-                        try
-                        {
-                            File.Copy(c, Path.Combine(modsDir, "UnpluggedCustomSongs.dll"), overwrite: true);
-                            break;
-                        }
-                        catch { }
+                        File.Copy(pcMod, Path.Combine(modsDir, "UnpluggedCustomSongs.dll"), overwrite: true);
                     }
+                    catch { }
                 }
 
                 progress?.Report((100, LocalizationService.T("Settings_MelonSuccess")));
