@@ -209,6 +209,13 @@
                                                Foreground="{StaticResource BrushTextMuted}"
                                                Margin="0,4,0,0"
                                                TextTrimming="CharacterEllipsis" />
+
+                                    <TextBlock Text="{Binding ChartContentDisplay}"
+                                               FontSize="10"
+                                               Foreground="{StaticResource BrushTextMuted}"
+                                               Margin="0,2,0,0"
+                                               TextTrimming="CharacterEllipsis"
+                                               ToolTip="Chorus chart tracks and video metadata. This does not indicate whether the audio contains separated stems." />
                                 </StackPanel>
 
                                 <!-- Actions & Progress -->

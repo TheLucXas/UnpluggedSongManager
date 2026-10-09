@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using USM.Core.Models;
+using USM.Core.Parsers;
 using USM.Core.Services;
 
 namespace USM.ViewModels
@@ -343,7 +344,7 @@ namespace USM.ViewModels
                 return;
             }
 
-            string tempSng = Path.Combine(Path.GetTempPath(), $"{chart.Md5}_{Guid.NewGuid():N}.sng");
+            string tempDir = Path.Combine(Path.GetTempPath(), $"usm_download_{Guid.NewGuid():N}");
 
             try
             {
@@ -353,7 +354,7 @@ namespace USM.ViewModels
                     chart.StatusText = $"Downloading: {p:P0}";
                 });
 
-                await ChorusClient.DownloadFileAsync(chart.DownloadUrl, tempSng, progress);
+                await SngDecoder.DecodeRemoteAsync(chart.DownloadUrl, tempDir, progress);
 
                 chart.StatusText = "Converting to VR...";
                 var convProgress = new Progress<ConversionProgress>(cp =>
@@ -363,7 +364,7 @@ namespace USM.ViewModels
                 });
 
                 bool success = await SongConverter.ConvertSongAsync(
-                    tempSng,
+                    tempDir,
                     customSongsDir,
                     convProgress,
                     sourceChartId: chart.Id,
@@ -396,10 +397,7 @@ namespace USM.ViewModels
                     chart.IsDownloading = false;
                 });
 
-                if (File.Exists(tempSng))
-                {
-                    try { File.Delete(tempSng); } catch { }
-                }
+                try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, recursive: true); } catch { }
             }
         }
     }

@@ -22,6 +22,7 @@ namespace USM.Core.Models
         public string? DownloadUrl { get; set; }
         public string? ArtUrl { get; set; }
         public DateTime? ModifiedTime { get; set; }
+        public string ChartContentDisplay { get; set; } = string.Empty;
         public string ResyncChoiceLabel => $"{Artist} — {Title}  |  {Charter}  |  {Id}";
 
         public string SubtitleDisplay => string.IsNullOrEmpty(Album)

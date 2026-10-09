@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -62,7 +63,11 @@ namespace USM.Core.Services
                 using var doc = JsonDocument.Parse(responseText);
                 var root = doc.RootElement;
 
-                int total = root.TryGetProperty("total", out var totalProp) ? totalProp.GetInt32() : 0;
+                int total = root.TryGetProperty("total", out var totalProp) && totalProp.TryGetInt32(out int totalValue)
+                    ? totalValue
+                    : root.TryGetProperty("found", out var foundProp) && foundProp.TryGetInt32(out int foundValue)
+                        ? foundValue
+                        : 0;
                 var charts = new List<ChorusChart>();
 
                 if (root.TryGetProperty("data", out var dataArr) && dataArr.ValueKind == JsonValueKind.Array)
@@ -108,6 +113,7 @@ namespace USM.Core.Services
                         string genre = item.TryGetProperty("genre", out var genreP) ? genreP.GetString() ?? "" : "";
                         string year = item.TryGetProperty("year", out var yrP) ? yrP.ToString() : "";
                         string charter = item.TryGetProperty("charter", out var chP) ? chP.GetString() ?? "Unknown" : "Unknown";
+                        string chartContentDisplay = BuildChartContentDisplay(item);
 
                         DateTime? modifiedTime = null;
                         if (item.TryGetProperty("modifiedTime", out var mtP) && mtP.ValueKind == JsonValueKind.String)
@@ -131,6 +137,7 @@ namespace USM.Core.Services
                             DiffBass = diffBass,
                             PreviewStart = previewSec,
                             ModifiedTime = modifiedTime,
+                            ChartContentDisplay = chartContentDisplay,
                             DownloadUrl = !string.IsNullOrEmpty(md5) ? $"{FilesUrl}/{md5}.sng" : null,
                             ArtUrl = !string.IsNullOrEmpty(artMd5) ? $"{FilesUrl}/{artMd5}.jpg" : null
                         };
@@ -149,6 +156,109 @@ namespace USM.Core.Services
             {
                 throw new Exception($"Network error connecting to Chorus: {ex.Message}", ex);
             }
+        }
+
+        private static string BuildChartContentDisplay(JsonElement item)
+        {
+            if (!item.TryGetProperty("notesData", out var notesData) || notesData.ValueKind != JsonValueKind.Object)
+                return string.Empty;
+
+            var difficultyByInstrument = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+            if (notesData.TryGetProperty("noteCounts", out var noteCounts) && noteCounts.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var noteCount in noteCounts.EnumerateArray())
+                {
+                    string instrument = ReadString(noteCount, "instrument");
+                    string difficulty = ReadString(noteCount, "difficulty");
+                    int count = noteCount.TryGetProperty("count", out var countProp) && countProp.TryGetInt32(out int parsedCount)
+                        ? parsedCount
+                        : 0;
+                    if (count <= 0 || string.IsNullOrWhiteSpace(instrument) || string.IsNullOrWhiteSpace(difficulty))
+                        continue;
+
+                    if (!difficultyByInstrument.TryGetValue(instrument, out var difficulties))
+                        difficultyByInstrument[instrument] = difficulties = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    difficulties.Add(difficulty);
+                }
+            }
+
+            if (notesData.TryGetProperty("instruments", out var instruments) && instruments.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var instrument in instruments.EnumerateArray())
+                {
+                    if (instrument.ValueKind != JsonValueKind.String) continue;
+                    string name = instrument.GetString() ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(name) && !difficultyByInstrument.ContainsKey(name))
+                        difficultyByInstrument[name] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                }
+            }
+
+            var instrumentNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["guitar"] = "Guitar",
+                ["guitar_coop"] = "Co-op Guitar",
+                ["rhythm"] = "Rhythm Guitar",
+                ["bass"] = "Bass",
+                ["drums"] = "Drums",
+                ["keys"] = "Keys",
+                ["guitarghl"] = "GHL Guitar",
+                ["guitar_coop_ghl"] = "GHL Co-op Guitar",
+                ["rhythm_ghl"] = "GHL Rhythm Guitar",
+                ["bassghl"] = "GHL Bass"
+            };
+            string[] instrumentOrder =
+            {
+                "guitar", "bass", "drums", "keys", "rhythm", "guitar_coop",
+                "guitarghl", "guitar_coop_ghl", "rhythm_ghl", "bassghl"
+            };
+            string[] difficultyOrder = { "easy", "medium", "hard", "expert" };
+            var parts = new List<string>();
+            foreach (string instrument in instrumentOrder)
+            {
+                if (!difficultyByInstrument.TryGetValue(instrument, out var difficulties)) continue;
+                string displayName = instrumentNames.TryGetValue(instrument, out var mappedName) ? mappedName : instrument;
+                string available = string.Join("/", difficultyOrder
+                    .Where(difficulties.Contains)
+                    .Select(difficulty => difficulty switch
+                    {
+                        "easy" => "E",
+                        "medium" => "M",
+                        "hard" => "H",
+                        "expert" => "X",
+                        _ => difficulty
+                    }));
+                parts.Add(available.Length > 0 ? $"{displayName} {available}" : displayName);
+            }
+
+            bool hasVocals = ReadBoolean(notesData, "hasVocals") == true;
+            bool hasLyrics = ReadBoolean(notesData, "hasLyrics") == true;
+            if (hasVocals && hasLyrics) parts.Add("Vocals + lyrics");
+            else if (hasVocals) parts.Add("Vocal chart");
+            else if (hasLyrics) parts.Add("Lyrics");
+
+            bool? hasVideo = ReadBoolean(item, "hasVideoBackground");
+            if (hasVideo == true) parts.Add("Video background");
+            else if (hasVideo == false) parts.Add("No video");
+
+            return parts.Count == 0 ? "Chart details unavailable" : "Chart: " + string.Join(" · ", parts);
+        }
+
+        private static string ReadString(JsonElement element, string propertyName)
+        {
+            return element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String
+                ? property.GetString() ?? string.Empty
+                : string.Empty;
+        }
+
+        private static bool? ReadBoolean(JsonElement element, string propertyName)
+        {
+            if (!element.TryGetProperty(propertyName, out var property)) return null;
+            return property.ValueKind switch
+            {
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                _ => null
+            };
         }
 
         public static async Task DownloadFileAsync(

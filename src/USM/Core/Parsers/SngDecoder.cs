@@ -1,12 +1,29 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace USM.Core.Parsers
 {
     public class SngDecoder
     {
+        private const int InitialRangeSize = 64 * 1024;
+        private const int MaximumIndexSize = 8 * 1024 * 1024;
+        private static readonly HttpClient HttpClient = new()
+        {
+            Timeout = TimeSpan.FromMinutes(15)
+        };
+
+        static SngDecoder()
+        {
+            HttpClient.DefaultRequestHeaders.UserAgent.ParseAdd("USM/1.0 (VR Rhythm Game Mod Tool)");
+        }
+
         public class SngFileEntry
         {
             public string FileName { get; set; } = string.Empty;
@@ -14,114 +31,326 @@ namespace USM.Core.Parsers
             public ulong ContentIndex { get; set; }
         }
 
-        public static Dictionary<string, string> Decode(string sngFilePath, string outputDir)
+        private sealed class SngPackageIndex
+        {
+            public byte[] XorMask { get; init; } = Array.Empty<byte>();
+            public Dictionary<string, string> Metadata { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+            public List<SngFileEntry> Files { get; init; } = new();
+        }
+
+        /// <summary>
+        /// Downloads just the SNG package index and non-video file payloads using
+        /// HTTP range requests. This prevents large video backgrounds from being
+        /// transferred when importing charts from Chorus.
+        /// </summary>
+        public static async Task DecodeRemoteAsync(
+            string sngUrl,
+            string outputDir,
+            IProgress<double>? progress = null,
+            Func<string, bool>? includeFile = null,
+            CancellationToken ct = default)
+        {
+            if (!Uri.TryCreate(sngUrl, UriKind.Absolute, out var uri) ||
+                uri.Scheme != Uri.UriSchemeHttps ||
+                !uri.Host.Equals("files.enchor.us", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException("Only HTTPS SNG downloads from files.enchor.us are supported.");
+            }
+
+            Directory.CreateDirectory(outputDir);
+            using var firstResponse = await GetRangeAsync(uri, 0, InitialRangeSize - 1, ct);
+            if (firstResponse.StatusCode == HttpStatusCode.OK)
+            {
+                await SaveFullResponseAndDecodeAsync(firstResponse, outputDir, progress, includeFile, ct);
+                return;
+            }
+
+            if (firstResponse.StatusCode != HttpStatusCode.PartialContent)
+                firstResponse.EnsureSuccessStatusCode();
+
+            long packageLength = firstResponse.Content.Headers.ContentRange?.Length
+                ?? throw new InvalidDataException("The SNG server did not report the package length for its byte range.");
+            if (firstResponse.Content.Headers.ContentRange?.From != 0)
+                throw new InvalidDataException("The SNG server returned an unexpected initial byte range.");
+            byte[] prefix = await firstResponse.Content.ReadAsByteArrayAsync(ct);
+            progress?.Report(0.01);
+
+            SngPackageIndex index;
+            int requestedPrefixSize = InitialRangeSize;
+            while (true)
+            {
+                try
+                {
+                    index = ReadPackageIndex(prefix);
+                    break;
+                }
+                catch (EndOfStreamException) when (requestedPrefixSize < MaximumIndexSize && prefix.Length < packageLength)
+                {
+                    requestedPrefixSize = Math.Min(requestedPrefixSize * 2, MaximumIndexSize);
+                    long requestedEnd = Math.Min(requestedPrefixSize - 1L, packageLength - 1);
+                    using var prefixResponse = await GetRangeAsync(uri, 0, requestedEnd, ct);
+                    if (prefixResponse.StatusCode == HttpStatusCode.OK)
+                    {
+                        await SaveFullResponseAndDecodeAsync(prefixResponse, outputDir, progress, includeFile, ct);
+                        return;
+                    }
+                    if (prefixResponse.StatusCode != HttpStatusCode.PartialContent)
+                        prefixResponse.EnsureSuccessStatusCode();
+
+                    long responseLength = prefixResponse.Content.Headers.ContentRange?.Length ?? packageLength;
+                    if (responseLength != packageLength)
+                        throw new InvalidDataException("The SNG package length changed during the ranged download.");
+                    prefix = await prefixResponse.Content.ReadAsByteArrayAsync(ct);
+                }
+            }
+
+            var selectedFiles = new List<SngFileEntry>();
+            foreach (SngFileEntry entry in index.Files)
+            {
+                string safeName = Path.GetFileName(entry.FileName);
+                if (string.IsNullOrWhiteSpace(safeName) || IsVideoFile(safeName))
+                    continue;
+                if (includeFile != null && !includeFile(safeName))
+                    continue;
+                if (entry.ContentLength == 0)
+                    continue;
+                if (entry.ContentIndex > (ulong)packageLength || entry.ContentLength > (ulong)packageLength - entry.ContentIndex)
+                    throw new InvalidDataException($"SNG entry '{safeName}' points outside the package.");
+                selectedFiles.Add(entry);
+            }
+
+            long bytesToFetch = prefix.Length;
+            foreach (SngFileEntry entry in selectedFiles)
+            {
+                if (entry.ContentLength > (ulong)(long.MaxValue - bytesToFetch))
+                    throw new InvalidDataException("The selected SNG files are too large to process.");
+                bytesToFetch += (long)entry.ContentLength;
+            }
+
+            long bytesFetched = prefix.Length;
+            foreach (SngFileEntry entry in selectedFiles)
+            {
+                ct.ThrowIfCancellationRequested();
+                string safeName = Path.GetFileName(entry.FileName);
+                long start = checked((long)entry.ContentIndex);
+                long end = checked(start + (long)entry.ContentLength - 1);
+                using var response = await GetRangeAsync(uri, start, end, ct);
+                if (response.StatusCode == HttpStatusCode.OK)
+                {
+                    await SaveFullResponseAndDecodeAsync(response, outputDir, progress, includeFile, ct);
+                    return;
+                }
+                if (response.StatusCode != HttpStatusCode.PartialContent)
+                    response.EnsureSuccessStatusCode();
+
+                var contentRange = response.Content.Headers.ContentRange;
+                if (contentRange?.From != start || contentRange.To != end || contentRange.Length != packageLength)
+                    throw new InvalidDataException($"The SNG server returned an unexpected range for '{safeName}'.");
+
+                string destination = Path.Combine(outputDir, safeName);
+                await using var input = await response.Content.ReadAsStreamAsync(ct);
+                await using var output = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None, 64 * 1024, useAsync: true);
+                byte[] buffer = new byte[64 * 1024];
+                ulong entryBytesRead = 0;
+                while (entryBytesRead < entry.ContentLength)
+                {
+                    int wanted = (int)Math.Min((ulong)buffer.Length, entry.ContentLength - entryBytesRead);
+                    int read = await input.ReadAsync(buffer.AsMemory(0, wanted), ct);
+                    if (read <= 0)
+                        throw new EndOfStreamException($"The SNG entry '{safeName}' ended unexpectedly.");
+
+                    for (int i = 0; i < read; i++)
+                    {
+                        ulong fileBytePos = entryBytesRead + (ulong)i;
+                        buffer[i] ^= (byte)(index.XorMask[(int)(fileBytePos % 16)] ^ (byte)(fileBytePos & 0xFF));
+                    }
+
+                    await output.WriteAsync(buffer.AsMemory(0, read), ct);
+                    entryBytesRead += (ulong)read;
+                    bytesFetched += read;
+                    if (bytesToFetch > 0)
+                        progress?.Report(Math.Min(1.0, (double)bytesFetched / bytesToFetch));
+                }
+            }
+
+            WriteSongIniIfMissing(outputDir, index.Metadata);
+            progress?.Report(1.0);
+        }
+
+        public static Dictionary<string, string> Decode(
+            string sngFilePath,
+            string outputDir,
+            Func<string, bool>? includeFile = null)
         {
             if (!File.Exists(sngFilePath))
                 throw new FileNotFoundException($"SNG file not found: {sngFilePath}");
 
             Directory.CreateDirectory(outputDir);
-            var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
             using var fs = new FileStream(sngFilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
             using var reader = new BinaryReader(fs, Encoding.UTF8, leaveOpen: true);
-
-            // 1. Header (6 bytes identifier + 4 bytes version + 16 bytes xor_mask)
-            byte[] identBytes = reader.ReadBytes(6);
-            string ident = Encoding.ASCII.GetString(identBytes);
-            if (ident != "SNGPKG" && ident != "SNGAPP")
-            {
-                throw new InvalidDataException($"Invalid SNG file identifier: '{ident}'. Expected 'SNGPKG'.");
-            }
-
-            uint version = reader.ReadUInt32();
-            byte[] xorMask = reader.ReadBytes(16);
-
-            // 2. Metadata Section
-            ulong metadataLen = reader.ReadUInt64();
-            ulong metadataCount = reader.ReadUInt64();
-            for (ulong i = 0; i < metadataCount; i++)
-            {
-                uint keyLen = reader.ReadUInt32();
-                string key = Encoding.UTF8.GetString(reader.ReadBytes((int)keyLen));
-
-                uint valLen = reader.ReadUInt32();
-                string val = Encoding.UTF8.GetString(reader.ReadBytes((int)valLen));
-
-                metadata[key] = val;
-            }
-
-            // 3. File Metadata Section
-            ulong fileMetaLen = reader.ReadUInt64();
-            ulong fileCount = reader.ReadUInt64();
-            var fileEntries = new List<SngFileEntry>();
-
-            for (ulong i = 0; i < fileCount; i++)
-            {
-                byte fnLen = reader.ReadByte();
-                string fn = Encoding.UTF8.GetString(reader.ReadBytes(fnLen));
-                ulong cLen = reader.ReadUInt64();
-                ulong cIdx = reader.ReadUInt64();
-
-                fileEntries.Add(new SngFileEntry
-                {
-                    FileName = fn,
-                    ContentLength = cLen,
-                    ContentIndex = cIdx
-                });
-            }
-
-            // 4. File Data Section
-            ulong fileDataLen = reader.ReadUInt64();
+            SngPackageIndex index = ReadPackageIndex(reader);
 
             const int chunkSize = 64 * 1024;
             byte[] buffer = new byte[chunkSize];
-
-            foreach (var entry in fileEntries)
+            foreach (SngFileEntry entry in index.Files)
             {
-                if (string.IsNullOrWhiteSpace(entry.FileName)) continue;
-
-                // Sanitize file name to prevent directory traversal
                 string safeName = Path.GetFileName(entry.FileName);
+                if (string.IsNullOrWhiteSpace(safeName) || IsVideoFile(safeName))
+                    continue;
+                if (includeFile != null && !includeFile(safeName))
+                    continue;
+                if (entry.ContentIndex > (ulong)fs.Length || entry.ContentLength > (ulong)fs.Length - entry.ContentIndex)
+                    throw new InvalidDataException($"SNG entry '{safeName}' points outside the package.");
+
                 string destFile = Path.Combine(outputDir, safeName);
-
                 fs.Seek((long)entry.ContentIndex, SeekOrigin.Begin);
-
-                using (var outFs = new FileStream(destFile, FileMode.Create, FileAccess.Write, FileShare.None))
+                using var outFs = new FileStream(destFile, FileMode.Create, FileAccess.Write, FileShare.None);
+                ulong bytesReadTotal = 0;
+                while (bytesReadTotal < entry.ContentLength)
                 {
-                    ulong bytesReadTotal = 0;
-                    while (bytesReadTotal < entry.ContentLength)
+                    int toRead = (int)Math.Min((ulong)buffer.Length, entry.ContentLength - bytesReadTotal);
+                    int read = fs.Read(buffer, 0, toRead);
+                    if (read <= 0) throw new EndOfStreamException($"The SNG entry '{safeName}' ended unexpectedly.");
+
+                    for (int i = 0; i < read; i++)
                     {
-                        int toRead = (int)Math.Min((ulong)buffer.Length, entry.ContentLength - bytesReadTotal);
-                        int read = fs.Read(buffer, 0, toRead);
-                        if (read <= 0) break;
-
-                        for (int i = 0; i < read; i++)
-                        {
-                            long fileBytePos = (long)bytesReadTotal + i;
-                            byte xorKey = (byte)(xorMask[fileBytePos % 16] ^ (fileBytePos & 0xFF));
-                            buffer[i] ^= xorKey;
-                        }
-
-                        outFs.Write(buffer, 0, read);
-                        bytesReadTotal += (ulong)read;
+                        ulong fileBytePos = bytesReadTotal + (ulong)i;
+                        buffer[i] ^= (byte)(index.XorMask[(int)(fileBytePos % 16)] ^ (byte)(fileBytePos & 0xFF));
                     }
+
+                    outFs.Write(buffer, 0, read);
+                    bytesReadTotal += (ulong)read;
                 }
             }
 
-            // If song.ini wasn't embedded, generate it from SNG metadata
-            string songIniPath = Path.Combine(outputDir, "song.ini");
-            if (!File.Exists(songIniPath) && metadata.Count > 0)
+            WriteSongIniIfMissing(outputDir, index.Metadata);
+            return index.Metadata;
+        }
+
+        private static async Task<HttpResponseMessage> GetRangeAsync(Uri uri, long start, long end, CancellationToken ct)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            request.Headers.Range = new RangeHeaderValue(start, end);
+            return await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        }
+
+        private static async Task SaveFullResponseAndDecodeAsync(
+            HttpResponseMessage response,
+            string outputDir,
+            IProgress<double>? progress,
+            Func<string, bool>? includeFile,
+            CancellationToken ct)
+        {
+            response.EnsureSuccessStatusCode();
+            string tempSng = outputDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + ".download.sng";
+            try
             {
-                var sb = new StringBuilder();
-                sb.AppendLine("[song]");
-                foreach (var kvp in metadata)
+                long totalBytes = response.Content.Headers.ContentLength ?? -1;
+                await using var input = await response.Content.ReadAsStreamAsync(ct);
+                await using var output = new FileStream(tempSng, FileMode.Create, FileAccess.Write, FileShare.None, 128 * 1024, useAsync: true);
+                byte[] buffer = new byte[128 * 1024];
+                long copied = 0;
+                int read;
+                while ((read = await input.ReadAsync(buffer.AsMemory(0, buffer.Length), ct)) > 0)
                 {
-                    sb.AppendLine($"{kvp.Key} = {kvp.Value}");
+                    await output.WriteAsync(buffer.AsMemory(0, read), ct);
+                    copied += read;
+                    if (totalBytes > 0) progress?.Report(Math.Min(1.0, (double)copied / totalBytes));
                 }
-                File.WriteAllText(songIniPath, sb.ToString(), Encoding.UTF8);
+                await output.FlushAsync(ct);
+                Decode(tempSng, outputDir, includeFile);
+            }
+            finally
+            {
+                try { if (File.Exists(tempSng)) File.Delete(tempSng); } catch { }
+            }
+            progress?.Report(1.0);
+        }
+
+        private static SngPackageIndex ReadPackageIndex(byte[] data)
+        {
+            using var stream = new MemoryStream(data, writable: false);
+            using var reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
+            return ReadPackageIndex(reader);
+        }
+
+        private static SngPackageIndex ReadPackageIndex(BinaryReader reader)
+        {
+            byte[] identBytes = ReadRequiredBytes(reader, 6);
+            string ident = Encoding.ASCII.GetString(identBytes);
+            if (ident != "SNGPKG" && ident != "SNGAPP")
+                throw new InvalidDataException($"Invalid SNG file identifier: '{ident}'. Expected 'SNGPKG'.");
+
+            _ = reader.ReadUInt32(); // version
+            byte[] xorMask = ReadRequiredBytes(reader, 16);
+            _ = reader.ReadUInt64(); // metadata length
+            ulong metadataCount = reader.ReadUInt64();
+            if (metadataCount > 10000) throw new InvalidDataException("The SNG metadata table is unexpectedly large.");
+
+            var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            for (ulong i = 0; i < metadataCount; i++)
+            {
+                uint keyLength = reader.ReadUInt32();
+                if (keyLength > 1024 * 1024) throw new InvalidDataException("An SNG metadata key is too large.");
+                string key = Encoding.UTF8.GetString(ReadRequiredBytes(reader, (int)keyLength));
+                uint valueLength = reader.ReadUInt32();
+                if (valueLength > 1024 * 1024) throw new InvalidDataException("An SNG metadata value is too large.");
+                string value = Encoding.UTF8.GetString(ReadRequiredBytes(reader, (int)valueLength));
+                metadata[key] = value;
             }
 
-            return metadata;
+            _ = reader.ReadUInt64(); // file metadata length
+            ulong fileCount = reader.ReadUInt64();
+            if (fileCount > 10000) throw new InvalidDataException("The SNG file table is unexpectedly large.");
+
+            var files = new List<SngFileEntry>((int)fileCount);
+            for (ulong i = 0; i < fileCount; i++)
+            {
+                int nameLength = reader.ReadByte();
+                string name = Encoding.UTF8.GetString(ReadRequiredBytes(reader, nameLength));
+                files.Add(new SngFileEntry
+                {
+                    FileName = name,
+                    ContentLength = reader.ReadUInt64(),
+                    ContentIndex = reader.ReadUInt64()
+                });
+            }
+
+            _ = reader.ReadUInt64(); // file data length
+            return new SngPackageIndex { XorMask = xorMask, Metadata = metadata, Files = files };
+        }
+
+        private static byte[] ReadRequiredBytes(BinaryReader reader, int count)
+        {
+            byte[] bytes = reader.ReadBytes(count);
+            if (bytes.Length != count) throw new EndOfStreamException();
+            return bytes;
+        }
+
+        private static bool IsVideoFile(string fileName)
+        {
+            string extension = Path.GetExtension(fileName);
+            return extension.Equals(".mp4", StringComparison.OrdinalIgnoreCase)
+                || extension.Equals(".webm", StringComparison.OrdinalIgnoreCase)
+                || extension.Equals(".avi", StringComparison.OrdinalIgnoreCase)
+                || extension.Equals(".mkv", StringComparison.OrdinalIgnoreCase)
+                || extension.Equals(".mov", StringComparison.OrdinalIgnoreCase)
+                || extension.Equals(".mpeg", StringComparison.OrdinalIgnoreCase)
+                || extension.Equals(".mpg", StringComparison.OrdinalIgnoreCase)
+                || extension.Equals(".m4v", StringComparison.OrdinalIgnoreCase)
+                || extension.Equals(".ogv", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void WriteSongIniIfMissing(string outputDir, Dictionary<string, string> metadata)
+        {
+            string songIniPath = Path.Combine(outputDir, "song.ini");
+            if (File.Exists(songIniPath) || metadata.Count == 0) return;
+
+            var sb = new StringBuilder();
+            sb.AppendLine("[song]");
+            foreach (var kvp in metadata)
+                sb.AppendLine($"{kvp.Key} = {kvp.Value}");
+            File.WriteAllText(songIniPath, sb.ToString(), Encoding.UTF8);
         }
     }
 }

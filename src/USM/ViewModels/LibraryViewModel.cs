@@ -448,7 +448,6 @@ namespace USM.ViewModels
                 foreach (InstalledSong song in targets)
                 {
                     string tempRoot = Path.Combine(Path.GetTempPath(), $"usm_resync_{Guid.NewGuid():N}");
-                    string tempSng = tempRoot + ".sng";
                     try
                     {
                         _notifyCallback($"Resyncing chart: {song.Artist} - {song.Title}");
@@ -466,10 +465,13 @@ namespace USM.ViewModels
 
                         string downloadUrl = sourceChart.DownloadUrl ??
                             $"https://files.enchor.us/{Uri.EscapeDataString(sourceChart.Md5)}.sng";
-                        await ChorusClient.DownloadFileAsync(downloadUrl, tempSng);
-
                         string chartSourceDir = Path.Combine(tempRoot, "chart");
-                        SngDecoder.Decode(tempSng, chartSourceDir);
+                        await SngDecoder.DecodeRemoteAsync(
+                            downloadUrl,
+                            chartSourceDir,
+                            includeFile: fileName => fileName.Equals("notes.mid", StringComparison.OrdinalIgnoreCase)
+                                || fileName.Equals("notes.chart", StringComparison.OrdinalIgnoreCase)
+                                || fileName.Equals("song.chart", StringComparison.OrdinalIgnoreCase));
                         var jsonCharts = SongConverter.GenerateJsonCharts(chartSourceDir);
                         UsmPacker.ReplaceChartData(
                             song.FolderPath,
@@ -485,7 +487,6 @@ namespace USM.ViewModels
                     }
                     finally
                     {
-                        try { if (File.Exists(tempSng)) File.Delete(tempSng); } catch { }
                         try { if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, recursive: true); } catch { }
                     }
                 }
