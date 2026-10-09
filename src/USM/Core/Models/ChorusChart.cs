@@ -106,7 +106,7 @@ namespace USM.Core.Models
         public string? CoverPath { get; set; }
         public System.Windows.Media.ImageSource? CoverImage { get; set; }
         public string? AudioPath { get; set; }
-        public bool HasCover => !string.IsNullOrEmpty(CoverPath) && System.IO.File.Exists(CoverPath);
+        public bool HasCover => CoverImage != null || (!string.IsNullOrEmpty(CoverPath) && System.IO.File.Exists(CoverPath));
         public bool IsMultiTrack { get; set; } = false;
 
         private bool _isSelected;

@@ -130,17 +130,24 @@ class AdbHelper:
             if progress_cb: progress_cb(f"Local songs directory not found: {local_songs_dir}")
             return False
         
-        target_dir = "/sdcard/Unplugged/Songs"
+        target_dir = f"/sdcard/ModData/{MODDED_PACKAGE}/Songs"
         self.run_adb(["shell", "mkdir", "-p", target_dir], device_id=device_id)
         if progress_cb: progress_cb(f"Pushing songs from {local_songs_dir} to {target_dir}...")
-        
-        code, out, err = self.run_adb(["push", local_songs_dir, "/sdcard/Unplugged/"], device_id=device_id, timeout=600)
-        if code == 0:
-            if progress_cb: progress_cb("Custom songs synced successfully to Quest!")
-            return True
-        else:
-            if progress_cb: progress_cb(f"Failed to sync songs: {out or err}")
+
+        song_files = list(Path(local_songs_dir).glob("*.usm"))
+        if not song_files:
+            if progress_cb: progress_cb("No .usm songs found to sync.")
             return False
+
+        all_ok = True
+        for song_file in song_files:
+            code, out, err = self.run_adb(["push", str(song_file), f"{target_dir}/"], device_id=device_id, timeout=600)
+            if code != 0:
+                all_ok = False
+                if progress_cb: progress_cb(f"Failed to sync {song_file.name}: {out or err}")
+
+        if all_ok and progress_cb: progress_cb("Custom songs synced successfully to Quest!")
+        return all_ok
 
 
 class QuestPatcher:
@@ -337,7 +344,6 @@ class QuestPatcher:
         self.adb.grant_storage_permissions(MODDED_PACKAGE, device_id)
         
         # Create directories for custom songs
-        self.adb.run_adb(["shell", "mkdir", "-p", "/sdcard/Unplugged/Songs"], device_id)
         self.adb.run_adb(["shell", "mkdir", "-p", f"/sdcard/ModData/{MODDED_PACKAGE}/Songs"], device_id)
 
         # Inject unlocked save data (Tutorial Skipped + Campaign Albums 1-5 Unlocked)

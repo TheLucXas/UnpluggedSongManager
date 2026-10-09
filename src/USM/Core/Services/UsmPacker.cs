@@ -12,7 +12,7 @@ namespace USM.Core.Services
             if (File.Exists(outputFile)) File.Delete(outputFile);
 
             using var archive = ZipFile.Open(outputFile, ZipArchiveMode.Create);
-            
+
             // 1. Write meta.json first so it can be streamed quickly by the Quest Mod
             var metaEntry = archive.CreateEntry("meta.json", CompressionLevel.Fastest);
             using (var writer = new StreamWriter(metaEntry.Open()))
@@ -29,6 +29,17 @@ namespace USM.Core.Services
                     string name = Path.GetFileName(file);
                     archive.CreateEntryFromFile(file, name, ext == ".ogg" || ext == ".jpg" ? CompressionLevel.NoCompression : CompressionLevel.Optimal);
                 }
+            }
+        }
+
+        public static void Unpack(string inputFile, string outputDir)
+        {
+            if (!Directory.Exists(outputDir)) Directory.CreateDirectory(outputDir);
+            using var archive = ZipFile.OpenRead(inputFile);
+            foreach (var entry in archive.Entries)
+            {
+                string destFile = Path.Combine(outputDir, entry.FullName);
+                entry.ExtractToFile(destFile, true);
             }
         }
     }

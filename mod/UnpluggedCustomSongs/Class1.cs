@@ -212,9 +212,11 @@ namespace UnpluggedCustomSongs
         public static float yaw = 0f;
         public static float pitch = 0f;
         private static bool initializedAngles = false;
+        private static float menuLoadedTime;
 
         public override void OnInitializeMelon()
         {
+            menuLoadedTime = Time.unscaledTime;
             LoggerInstance.Msg("=== Unplugged Custom Songs Mod Loaded! ===");
             PrefsCategory = MelonPreferences.CreateCategory("UnpluggedCustomSongs", "Unplugged Custom Songs");
             PrefDiscordRPC = PrefsCategory.CreateEntry("EnableDiscordRPC", true, "Enable Discord Rich Presence");
@@ -230,7 +232,7 @@ namespace UnpluggedCustomSongs
                 Application.runInBackground = true;
             }
             catch { }
-            
+
             try
             {
                 Application.SetStackTraceLogType(LogType.Exception, StackTraceLogType.Full);
@@ -615,8 +617,15 @@ namespace UnpluggedCustomSongs
             }
         }
 
-        public override void OnGUI()
+                public override void OnGUI()
         {
+            if (menuLoadedTime > 0f && Time.unscaledTime - menuLoadedTime < 8f)
+            {
+                GUI.color = new Color(0.2f, 1f, 0.2f, 1f);
+                GUI.Label(new Rect(20, Screen.height - 80, 800, 60), "<size=40><b>Custom Song Loader loaded!</b></size>");
+                GUI.color = Color.white;
+            }
+
             if (!DebugMode) return;
 
             Event e = Event.current;
@@ -1099,9 +1108,12 @@ namespace UnpluggedCustomSongs
             {
                 if (Application.platform == RuntimePlatform.Android)
                 {
-                    if (Directory.Exists("/sdcard/Unplugged/Songs")) return "/sdcard/Unplugged/Songs";
-                    if (Directory.Exists("/sdcard/Unplugged/CustomSongs")) return "/sdcard/Unplugged/CustomSongs";
-                    return "/sdcard/Unplugged/Songs";
+                    string packageName = string.IsNullOrWhiteSpace(Application.identifier)
+                        ? "com.Anotherway.UnpluggedVR.modded"
+                        : Application.identifier;
+                    string modData = $"/sdcard/ModData/{packageName}/Songs";
+                    if (!Directory.Exists(modData)) try { Directory.CreateDirectory(modData); } catch {}
+                    return modData;
                 }
                 return Path.Combine(Directory.GetParent(Application.dataPath).FullName, "CustomSongs");
             }
@@ -1215,7 +1227,7 @@ namespace UnpluggedCustomSongs
 
             if (!Directory.Exists(CustomSongsFolder)) return;
 
-            string[] subdirs = Directory.GetDirectories(CustomSongsFolder);
+            string[] subdirs = Directory.GetFiles(CustomSongsFolder, "*.usm");
             foreach (var dir in subdirs)
             {
                 try
@@ -1379,17 +1391,29 @@ namespace UnpluggedCustomSongs
 
         public static SongMapping LoadSongMapping(SongMappingMetaData song, bool isHandTracking)
         {
-            string folder = Path.Combine(CustomSongsFolder, song.FileName);
+            string usmPath = song.FileName;
             string diff = SongMapping.GetSongDataPathByDificulty(GameStateManager.I.CurrentDifficulty);
-            string xmlPath = Path.Combine(folder, diff);
-            if (!File.Exists(xmlPath)) xmlPath = Path.Combine(folder, "songdata-Normal.xml");
-            if (!File.Exists(xmlPath)) xmlPath = Path.Combine(folder, "songdata-Hard.xml");
-            if (!File.Exists(xmlPath)) xmlPath = Path.Combine(folder, "songdata-Easy.xml");
+            string xmlContent = "";
+            string loadedDiff = diff;
 
-            MelonLogger.Msg($"[CustomSongs] Loading chart XML: {xmlPath}");
+            using (var archive = System.IO.Compression.ZipFile.OpenRead(usmPath))
+            {
+                var entry = archive.GetEntry(diff) ?? archive.GetEntry("songdata-Normal.xml") ?? archive.GetEntry("songdata-Hard.xml") ?? archive.GetEntry("songdata-Easy.xml");
+                if (entry != null)
+                {
+                    loadedDiff = entry.Name;
+                    using (var sr = new StreamReader(entry.Open()))
+                    {
+                        xmlContent = sr.ReadToEnd();
+                    }
+                }
+            }
+
+            MelonLogger.Msg($"[CustomSongs] Loading chart XML from .usm: {loadedDiff}");
 #if QUEST_IL2CPP
             var serializer = new Il2CppSystem.Runtime.Serialization.DataContractSerializer(Il2CppInterop.Runtime.Il2CppType.Of<SongMapping>());
-            var stream = Il2CppSystem.IO.File.OpenRead(xmlPath);
+            var ms = new System.IO.MemoryStream(System.Text.Encoding.UTF8.GetBytes(xmlContent));
+            var stream = new Il2CppSystem.IO.MemoryStream(ms.ToArray());
             var settings = new Il2CppSystem.Xml.XmlReaderSettings();
             settings.ConformanceLevel = Il2CppSystem.Xml.ConformanceLevel.Fragment;
             var reader = Il2CppSystem.Xml.XmlReader.Create(stream.Cast<Il2CppSystem.IO.Stream>(), settings);
@@ -1397,9 +1421,9 @@ namespace UnpluggedCustomSongs
             var obj = serializer.ReadObject(reader, false);
             var mapping = obj.Cast<SongMapping>();
 #else
-            using var stream = File.OpenRead(xmlPath);
+            var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(xmlContent));
             var serializer = new DataContractSerializer(typeof(SongMapping));
-            using var reader = XmlReader.Create(stream, new XmlReaderSettings { ConformanceLevel = ConformanceLevel.Fragment });
+            using var reader = XmlReader.Create(ms, new XmlReaderSettings { ConformanceLevel = ConformanceLevel.Fragment });
             reader.Read();
             var mapping = (SongMapping)serializer.ReadObject(reader, false);
 #endif
@@ -1462,7 +1486,7 @@ namespace UnpluggedCustomSongs
                     }
                 }
             }
-            
+
             // DUAL-TRACK GUARANTEE: Ensure GuitarControllerGame exists so controllers work!
             if (mapping.Keys != null)
             {
@@ -1545,7 +1569,36 @@ namespace UnpluggedCustomSongs
 
         public static void LoadCustomAudio(Mp3Player player, SongMappingMetaData data, bool loadSample)
         {
-            string folder = Path.Combine(CustomSongsFolder, data.FileName);
+            string usmPath = data.FileName;
+            string folder = Path.Combine(Application.temporaryCachePath, "USM_RUNTIME");
+
+            try
+            {
+                if (Directory.Exists(folder)) Directory.Delete(folder, true);
+                Directory.CreateDirectory(folder);
+
+                using (var archive = System.IO.Compression.ZipFile.OpenRead(usmPath))
+                {
+                    foreach (var entry in archive.Entries)
+                    {
+                        if (entry.Name.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase) ||
+                            entry.Name.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase))
+                        {
+                            string dest = Path.Combine(folder, entry.Name);
+                            using (var fs = new FileStream(dest, FileMode.Create, FileAccess.Write))
+                            {
+                                entry.Open().CopyTo(fs);
+                            }
+                        }
+                    }
+                }
+                MelonLogger.Msg($"[CustomSongs] Extracted audio from .usm to {folder}");
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"[CustomSongs] Failed to extract .usm for playback: {ex}");
+            }
+
             bool isMulti = data.IsMultiTrack && player.AllowMultitrack;
 
             // CRITICAL: Set IsMultiTrack property via Traverse
@@ -1637,39 +1690,54 @@ namespace UnpluggedCustomSongs
             }
         }
 
-        public static void PlayCustomAudioSample(Mp3Player player, string path)
+                public static void PlayCustomAudioSample(Mp3Player player, string path)
         {
             try
             {
                 string folderName = Path.GetFileName(path);
-                string folder = Path.Combine(CustomSongsFolder, folderName);
-                if (!Directory.Exists(folder))
+                string usmPath = Path.Combine(CustomSongsFolder, folderName + ".usm");
+                if (!File.Exists(usmPath)) usmPath = Path.Combine(CustomSongsFolder, folderName);
+                if (!File.Exists(usmPath))
                 {
                     if (Directory.Exists(CustomSongsFolder))
                     {
-                        foreach (var d in Directory.GetDirectories(CustomSongsFolder))
+                        foreach (var d in Directory.GetFiles(CustomSongsFolder, "*.usm"))
                         {
-                            string dName = Path.GetFileName(d);
-                            if (path.Contains(dName) || dName.Contains(folderName))
+                            if (path.Contains(Path.GetFileName(d)) || Path.GetFileName(d).Contains(folderName))
                             {
-                                folder = d;
-                                folderName = dName;
+                                usmPath = d;
                                 break;
                             }
                         }
                     }
                 }
-                if (!Directory.Exists(folder))
+
+                if (!File.Exists(usmPath))
                 {
-                    MelonLogger.Warning($"[CustomSongs] Custom song folder not found for sample: {path}");
+                    MelonLogger.Warning($"[CustomSongs] Custom song .usm not found for sample: {path}");
                     return;
                 }
 
-                string sample = Path.Combine(folder, "sample.mp3");
-                if (!File.Exists(sample)) sample = Path.Combine(folder, "song.mp3");
-                if (File.Exists(sample))
+                string tempDir = Path.Combine(Application.temporaryCachePath, "USM_RUNTIME");
+                if (!Directory.Exists(tempDir)) Directory.CreateDirectory(tempDir);
+                string samplePath = null;
+
+                using (var archive = System.IO.Compression.ZipFile.OpenRead(usmPath))
                 {
-                    AudioClip clip = LoadClip(sample);
+                    var entry = archive.GetEntry("sample.ogg") ?? archive.GetEntry("sample.mp3") ?? archive.GetEntry("song.ogg") ?? archive.GetEntry("song.mp3");
+                    if (entry != null)
+                    {
+                        samplePath = Path.Combine(tempDir, entry.Name);
+                        using (var fs = new FileStream(samplePath, FileMode.Create, FileAccess.Write))
+                        {
+                            entry.Open().CopyTo(fs);
+                        }
+                    }
+                }
+
+                if (samplePath != null && File.Exists(samplePath))
+                {
+                    AudioClip clip = LoadClip(samplePath);
                     if (clip != null && player.MusicAudioSource != null)
                     {
                         clip.name = "sample_" + folderName;
@@ -1677,7 +1745,7 @@ namespace UnpluggedCustomSongs
                         player.MusicAudioSource.loop = true;
                         player.MusicAudioSource.volume = 1f;
                         player.MusicAudioSource.Play();
-                        MelonLogger.Msg($"[CustomSongs] Turntable audio preview started for '{folderName}' ({sample})");
+                        MelonLogger.Msg($"[CustomSongs] Turntable audio preview started for '{folderName}'");
 
                         // Live update Turntable Vinyl Texture to this song's cover!
                         try
@@ -1699,21 +1767,26 @@ namespace UnpluggedCustomSongs
                                     songCover = foundMeta.Thumbnail;
                                 }
                             }
-                            if (songCover == null)
+                                                        if (songCover == null)
                             {
-                                string[] coverNames = new string[] { "cover.png", "album.jpg", "album.png", "cover.jpg" };
-                                foreach (var cn in coverNames)
+                                using (var archive2 = System.IO.Compression.ZipFile.OpenRead(usmPath))
                                 {
-                                    string cp = Path.Combine(folder, cn);
-                                    if (File.Exists(cp))
+                                    var coverEntry = archive2.GetEntry("album.jpg") ?? archive2.GetEntry("cover.jpg") ?? archive2.GetEntry("album.png") ?? archive2.GetEntry("cover.png");
+                                    if (coverEntry != null)
                                     {
-                                        songCover = new Texture2D(2, 2);
-                                        if (ImageConversion.LoadImage(songCover, File.ReadAllBytes(cp)))
+                                        using (var ms = new MemoryStream())
                                         {
-                                            songCover.name = folderName;
-                                            break;
+                                            coverEntry.Open().CopyTo(ms);
+                                            songCover = new Texture2D(2, 2);
+                                            if (ImageConversion.LoadImage(songCover, ms.ToArray()))
+                                            {
+                                                songCover.name = folderName;
+                                            }
+                                            else
+                                            {
+                                                songCover = null;
+                                            }
                                         }
-                                        songCover = null;
                                     }
                                 }
                             }
@@ -2733,7 +2806,3 @@ namespace UnpluggedCustomSongs
     }
 
 }
-
-
-
-

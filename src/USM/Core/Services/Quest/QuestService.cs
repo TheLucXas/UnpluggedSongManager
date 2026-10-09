@@ -4,6 +4,8 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using USM.Core.Services.Localization;
@@ -14,7 +16,15 @@ namespace USM.Core.Services.Quest
     {
         public const string OriginalPackage = "com.Anotherway.UnpluggedVR";
         public const string ModdedPackage = "com.Anotherway.UnpluggedVR.modded";
+        public const string ModdedSongsFolderName = "Songs";
+        public static string ModdedSongsPath => $"/sdcard/ModData/{ModdedPackage}/{ModdedSongsFolderName}";
         public const string ModdedAppName = "Unplugged Modded";
+
+        private sealed class QuestSaveBackup
+        {
+            public string? SavePath { get; init; }
+            public bool SafeForCleanReinstall { get; init; }
+        }
 
         private string? _adbPath;
         private string? _apktoolJar;
@@ -33,6 +43,62 @@ namespace USM.Core.Services.Quest
         public static string GetQuestToolsCacheDirectory()
         {
             return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "USM", "tools", "quest");
+        }
+
+        private static async Task<string> EnsureStableQuestSigningKeystoreAsync(Action<string>? log)
+        {
+            string signingDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "USM", "QuestSigning");
+            string stableKeystore = Path.Combine(signingDir, "debug.keystore");
+            Directory.CreateDirectory(signingDir);
+
+            if (File.Exists(stableKeystore)) return stableKeystore;
+
+            // Reuse Android's existing per-user debug key when present. On this PC it is
+            // the same certificate used by the current modded Quest installation.
+            string userDebugKeystore = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".android", "debug.keystore");
+            if (File.Exists(userDebugKeystore))
+            {
+                File.Copy(userDebugKeystore, stableKeystore, overwrite: false);
+                log?.Invoke("Saved the existing Android signing key in USM's persistent Quest signing folder.");
+                return stableKeystore;
+            }
+
+            string keytool = "keytool";
+            string? javaHome = Environment.GetEnvironmentVariable("JAVA_HOME");
+            if (!string.IsNullOrWhiteSpace(javaHome))
+            {
+                string candidate = Path.Combine(javaHome, "bin", OperatingSystem.IsWindows() ? "keytool.exe" : "keytool");
+                if (File.Exists(candidate)) keytool = candidate;
+            }
+
+            if (keytool == "keytool")
+            {
+                string executable = OperatingSystem.IsWindows() ? "keytool.exe" : "keytool";
+                foreach (string pathEntry in (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+                    .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    string candidate = Path.Combine(pathEntry.Trim('"'), executable);
+                    if (File.Exists(candidate))
+                    {
+                        keytool = candidate;
+                        break;
+                    }
+                }
+            }
+
+            string arguments = $"-genkeypair -v -keystore \"{stableKeystore}\" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname \"CN=USM Quest Signing,O=USM,C=US\" -noprompt";
+            var (code, stdout, stderr) = await RunProcessAsync(keytool, arguments, 60000);
+            if (code != 0 || !File.Exists(stableKeystore))
+            {
+                throw new InvalidOperationException($"Could not create a persistent Quest signing key. {stdout} {stderr}".Trim());
+            }
+
+            log?.Invoke("Created a persistent Android signing key for future USM Quest updates.");
+            return stableKeystore;
         }
 
         private void FindToolPaths()
@@ -111,11 +177,20 @@ namespace USM.Core.Services.Quest
             if (File.Exists(signer)) _signerJar = signer;
             if (File.Exists(lemonPatcher)) _lemonPatcherExe = lemonPatcher;
             if (File.Exists(melonData)) _melonDataZip = melonData;
-            if (File.Exists(modDll)) _modDllPath = modDll;
+
+            // Prefer the DLL shipped beside this USM build. The AppData tools cache
+            // can contain an older mod and must not silently override a fresh release.
+            string appDir = AppDomain.CurrentDomain.BaseDirectory;
+            string[] bundledModCandidates =
+            {
+                Path.Combine(appDir, "UnpluggedCustomSongs.dll"),
+                Path.Combine(appDir, "Resources", "UnpluggedCustomSongs.Quest.dll")
+            };
+            _modDllPath = bundledModCandidates.FirstOrDefault(File.Exists);
+            if (_modDllPath == null && File.Exists(modDll)) _modDllPath = modDll;
 
             if (_modDllPath == null)
             {
-                string appDir = AppDomain.CurrentDomain.BaseDirectory;
                 string[] modCandidates =
                 {
                     Path.Combine(appDir, "UnpluggedCustomSongs.dll"),
@@ -326,7 +401,11 @@ namespace USM.Core.Services.Quest
             return false;
         }
 
-        public async Task<(bool Success, string Message)> InstallApkAsync(string serial, string localApkPath, Action<string>? log = null)
+        public async Task<(bool Success, string Message)> InstallApkAsync(
+            string serial,
+            string localApkPath,
+            Action<string>? log = null,
+            bool safeToUninstallExisting = false)
         {
             log?.Invoke(LocalizationService.T("Log_InstallingApk", ModdedPackage));
 
@@ -338,21 +417,32 @@ namespace USM.Core.Services.Quest
             string full = (outStr + " " + errStr).Trim();
             bool success = full.Contains("Success", StringComparison.OrdinalIgnoreCase);
 
-            // Handle signature mismatch automatically by cleanly reinstalling
+            // A normal update must keep the app data. Only use the clean reinstall
+            // fallback if the signatures truly differ and a verified save backup exists.
             if (!success && full.Contains("INSTALL_FAILED_UPDATE_INCOMPATIBLE", StringComparison.OrdinalIgnoreCase))
             {
+                if (!safeToUninstallExisting)
+                {
+                    const string reason = "The installed app has a different signature, and its save could not be backed up. It was left installed to protect your data.";
+                    log?.Invoke(reason);
+                    return (false, reason);
+                }
+
                 log?.Invoke(LocalizationService.T("Log_SignatureMismatchUninstall"));
-                await RunProcessAsync(GetAdbPath(), $"-s {serial} uninstall {ModdedPackage}");
+                // `uninstall -k` is not supported by the Quest package manager. The
+                // save was already pulled and validated, so fully uninstall and restore it.
+                var (uninstallCode, uninstallOut, uninstallErr) = await RunProcessAsync(
+                    GetAdbPath(), $"-s {serial} uninstall {ModdedPackage}");
+                if (uninstallCode != 0 || !(uninstallOut + uninstallErr).Contains("Success", StringComparison.OrdinalIgnoreCase))
+                {
+                    string uninstallMessage = (uninstallOut + " " + uninstallErr).Trim();
+                    log?.Invoke($"Could not safely remove the old app: {uninstallMessage}");
+                    return (false, uninstallMessage);
+                }
+
                 var (cRetry, oRetry, eRetry) = await RunProcessAsync(GetAdbPath(), $"-s {serial} install --no-incremental -d \"{localApkPath}\"", 300000);
                 full = (oRetry + " " + eRetry).Trim();
                 success = full.Contains("Success", StringComparison.OrdinalIgnoreCase);
-
-                if (!success)
-                {
-                    var (cRetry2, oRetry2, eRetry2) = await RunProcessAsync(GetAdbPath(), $"-s {serial} install -d \"{localApkPath}\"", 300000);
-                    full = (oRetry2 + " " + eRetry2).Trim();
-                    success = full.Contains("Success", StringComparison.OrdinalIgnoreCase);
-                }
             }
 
             if (!success && !full.Contains("INSTALL_FAILED_ALREADY_EXISTS", StringComparison.OrdinalIgnoreCase))
@@ -380,7 +470,6 @@ namespace USM.Core.Services.Quest
             await RunProcessAsync(GetAdbPath(), $"-s {serial} shell pm grant {packageName} android.permission.WRITE_EXTERNAL_STORAGE");
 
             // Setup songs directories
-            await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p /sdcard/Unplugged/Songs");
             await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p /sdcard/ModData/{packageName}/Songs");
             log?.Invoke(LocalizationService.T("Log_PermissionsReady"));
         }
@@ -401,6 +490,14 @@ namespace USM.Core.Services.Quest
 
         public async Task<(bool Success, string Message)> UninstallModdedPackageAsync(string serial, Action<string>? log = null)
         {
+            var saveBackup = await BackupQuestSaveDataAsync(serial, log);
+            if (!saveBackup.SafeForCleanReinstall)
+            {
+                const string backupError = "The Quest save could not be backed up, so the modded app was left installed.";
+                log?.Invoke(backupError);
+                return (false, backupError);
+            }
+
             log?.Invoke(LocalizationService.T("Log_Uninstalling", ModdedPackage));
             var (exitCode, stdout, stderr) = await RunProcessAsync(GetAdbPath(), $"-s {serial} uninstall {ModdedPackage}");
             string output = (stdout + " " + stderr).Trim();
@@ -411,6 +508,10 @@ namespace USM.Core.Services.Quest
                 // Clean up OBB and app data
                 await RunProcessAsync(GetAdbPath(), $"-s {serial} shell rm -rf /sdcard/Android/obb/{ModdedPackage}");
                 await RunProcessAsync(GetAdbPath(), $"-s {serial} shell rm -rf /sdcard/Android/data/{ModdedPackage}");
+                if (!string.IsNullOrEmpty(saveBackup.SavePath))
+                {
+                    log?.Invoke($"Quest save backup retained on this PC: {saveBackup.SavePath}");
+                }
                 return (true, "Uninstalled successfully.");
             }
             log?.Invoke($"Failed to uninstall: {output}");
@@ -419,20 +520,9 @@ namespace USM.Core.Services.Quest
 
         public static string GenerateUnlockedSavePayload()
         {
-            // Encrypted save data that marks tutorial completed, intro skipped, and unlocks base campaign albums 1-5
-            string plainJson = "{\"SavedData\":{" +
-                "\"HasDoneTutorial\":{\"Type\":\"System.Boolean, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\",\"JsonValue\":\"true\"}," +
-                "\"ShowIntro\":{\"Type\":\"System.Boolean, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\",\"JsonValue\":\"false\"}," +
-                "\"isReleaseVersion\":{\"Type\":\"System.Boolean, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\",\"JsonValue\":\"true\"}," +
-                "\"AlbumCompleted\":{\"Type\":\"System.Collections.Generic.List`1[[System.String, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089]], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\",\"JsonValue\":\"[\\\"CampaignAlbum1\\\",\\\"CampaignAlbum2\\\",\\\"CampaignAlbum3\\\",\\\"CampaignAlbum4\\\",\\\"CampaignAlbum5\\\"]\"}," +
-                "\"Fans\":{\"Type\":\"System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\",\"JsonValue\":\"5000000\"}," +
-                "\"PlayedSongs\":{\"Type\":\"System.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\",\"JsonValue\":\"10\"}," +
-                "\"PurchasedGuitars\":{\"Type\":\"System.Collections.Generic.List`1[[System.String, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089]], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\",\"JsonValue\":\"[\\\"SchecterGuitar1\\\",\\\"SchecterGuitar2\\\",\\\"SchecterGuitar3\\\"]\"}," +
-                "\"PurchasedPicks\":{\"Type\":\"System.Collections.Generic.List`1[[System.String, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089]], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\",\"JsonValue\":\"[\\\"DefaultPick1\\\",\\\"DefaultPick2\\\"]\"}," +
-                "\"SelectedAlbumID\":{\"Type\":\"System.String, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\",\"JsonValue\":\"\\\"CampaignAlbum1\\\"\"}" +
-                "}}";
-
-            return EncryptSaveData("b14ca5898a4e4133bbce2ea2315a1916", plainJson);
+            return TryCreateUnlockedSaveData(null, out var payload)
+                ? payload
+                : throw new InvalidOperationException("Could not create the unlocked save payload.");
         }
 
         private static string EncryptSaveData(string key, string plainText)
@@ -451,27 +541,262 @@ namespace USM.Core.Services.Quest
             return Convert.ToBase64String(ms.ToArray());
         }
 
-        public async Task SetupUnlockedSaveDataAsync(string serial, string packageName, Action<string>? log = null)
+        private const string SaveEncryptionKey = "b14ca5898a4e4133bbce2ea2315a1916";
+
+        private static string DecryptSaveData(string encryptedText)
+        {
+            byte[] encrypted = Convert.FromBase64String(encryptedText.Trim());
+            using var aes = System.Security.Cryptography.Aes.Create();
+            aes.Key = System.Text.Encoding.UTF8.GetBytes(SaveEncryptionKey);
+            aes.IV = new byte[16];
+            using var transform = aes.CreateDecryptor(aes.Key, aes.IV);
+            using var input = new MemoryStream(encrypted);
+            using var crypto = new System.Security.Cryptography.CryptoStream(input, transform, System.Security.Cryptography.CryptoStreamMode.Read);
+            using var reader = new StreamReader(crypto);
+            return reader.ReadToEnd();
+        }
+
+        private static bool IsValidEncryptedSaveData(string? encryptedText)
+        {
+            if (string.IsNullOrWhiteSpace(encryptedText)) return false;
+            try
+            {
+                return JsonNode.Parse(DecryptSaveData(encryptedText)) is JsonObject root
+                    && root["SavedData"] is JsonObject savedData
+                    && savedData.Count > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TryCreateUnlockedSaveData(string? encryptedSave, out string updatedSave)
+        {
+            updatedSave = string.Empty;
+            try
+            {
+                JsonObject root;
+                if (string.IsNullOrWhiteSpace(encryptedSave))
+                {
+                    root = new JsonObject();
+                }
+                else
+                {
+                    root = JsonNode.Parse(DecryptSaveData(encryptedSave)) as JsonObject
+                        ?? throw new FormatException("The save data is not a JSON object.");
+                }
+
+                if (root["SavedData"] is not JsonObject savedData)
+                {
+                    savedData = new JsonObject();
+                    root["SavedData"] = savedData;
+                }
+
+                // This option is explicitly enabled by the user. Set the tutorial flag
+                // even when an existing save is present; previously it only applied to
+                // a brand-new save, which made the checked option appear ineffective.
+                SetWrappedValue(savedData, "HasDoneTutorial", "System.Boolean, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089", "true");
+                SetWrappedValue(savedData, "ShowIntro", "System.Boolean, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089", "false");
+
+                var completed = ReadStringList(savedData["AlbumCompleted"]);
+                for (int i = 1; i <= 5; i++)
+                {
+                    string album = $"CampaignAlbum{i}";
+                    if (!completed.Contains(album, StringComparer.Ordinal)) completed.Add(album);
+                }
+                SetWrappedValue(savedData, "AlbumCompleted", "System.Collections.Generic.List`1[[System.String, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089]], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089", JsonSerializer.Serialize(completed));
+
+                updatedSave = EncryptSaveData(SaveEncryptionKey, root.ToJsonString());
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static List<string> ReadStringList(JsonNode? value)
+        {
+            if (value is JsonObject wrapper) value = wrapper["JsonValue"];
+            if (value is JsonArray array)
+            {
+                return array.Select(item => item?.GetValue<string>())
+                    .Where(item => !string.IsNullOrWhiteSpace(item))
+                    .Select(item => item!)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList();
+            }
+
+            if (value is JsonValue jsonValue && jsonValue.TryGetValue<string>(out var serialized) && !string.IsNullOrWhiteSpace(serialized))
+            {
+                try
+                {
+                    using var document = JsonDocument.Parse(serialized);
+                    if (document.RootElement.ValueKind == JsonValueKind.Array)
+                    {
+                        return document.RootElement.EnumerateArray()
+                            .Where(item => item.ValueKind == JsonValueKind.String)
+                            .Select(item => item.GetString()!)
+                            .Where(item => !string.IsNullOrWhiteSpace(item))
+                            .Distinct(StringComparer.Ordinal)
+                            .ToList();
+                    }
+                }
+                catch { }
+            }
+            return new List<string>();
+        }
+
+        private static void SetWrappedValue(JsonObject savedData, string key, string type, string value)
+        {
+            if (savedData[key] is not JsonObject wrapper)
+            {
+                wrapper = new JsonObject();
+                savedData[key] = wrapper;
+            }
+
+            wrapper["Type"] = type;
+            wrapper["JsonValue"] = value;
+        }
+
+        private async Task<QuestSaveBackup> BackupQuestSaveDataAsync(string serial, Action<string>? log)
+        {
+            string serialName = string.Concat(serial.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
+            string backupDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "USM", "QuestSaveBackups", serialName,
+                DateTime.Now.ToString("yyyyMMdd-HHmmss-fff"));
+
+            var candidates = new[]
+            {
+                (ModdedPackage, $"/sdcard/Android/data/{ModdedPackage}/files/SavedData.json"),
+                (ModdedPackage, $"/sdcard/ModData/{ModdedPackage}/files/SavedData.json"),
+                (OriginalPackage, $"/sdcard/Android/data/{OriginalPackage}/files/SavedData.json"),
+                (OriginalPackage, $"/sdcard/ModData/{OriginalPackage}/files/SavedData.json")
+            };
+
+            foreach (var (package, remotePath) in candidates)
+            {
+                var (listCode, listOut, listErr) = await RunProcessAsync(GetAdbPath(), $"-s {serial} shell ls -l \"{remotePath}\"", 15000);
+                string listing = (listOut + " " + listErr).Trim();
+                if (listing.Contains("No such file or directory", StringComparison.OrdinalIgnoreCase)) continue;
+                if (listCode != 0)
+                {
+                    log?.Invoke($"Could not check Quest save at {remotePath}: {listing}");
+                    return new QuestSaveBackup { SafeForCleanReinstall = false };
+                }
+
+                try
+                {
+                    Directory.CreateDirectory(backupDir);
+                    string backupPath = Path.Combine(backupDir, $"{package}-SavedData.json");
+                    var (pullCode, pullOut, pullErr) = await RunProcessAsync(GetAdbPath(), $"-s {serial} pull \"{remotePath}\" \"{backupPath}\"", 30000);
+                    if (pullCode != 0 || !File.Exists(backupPath))
+                    {
+                        string pullMessage = (pullOut + " " + pullErr).Trim();
+                        log?.Invoke($"Could not back up the Quest save at {remotePath}: {pullMessage}");
+                        return new QuestSaveBackup { SafeForCleanReinstall = false };
+                    }
+
+                    string backedUpSave = await File.ReadAllTextAsync(backupPath);
+                    if (!IsValidEncryptedSaveData(backedUpSave))
+                    {
+                        log?.Invoke($"A save file exists at {remotePath}, but its encrypted data could not be validated. It was retained at {backupPath}; USM will not uninstall the app or overwrite this save.");
+                        continue;
+                    }
+
+                    log?.Invoke($"Quest save backed up from {package} to {backupPath}.");
+                    return new QuestSaveBackup { SavePath = backupPath, SafeForCleanReinstall = true };
+                }
+                catch (Exception ex)
+                {
+                    log?.Invoke($"Could not save a local Quest backup: {ex.Message}");
+                    return new QuestSaveBackup { SafeForCleanReinstall = false };
+                }
+            }
+
+            log?.Invoke("No valid Quest SavedData.json could be backed up. The app will be left installed if a signature conflict would require removing its data.");
+            return new QuestSaveBackup { SafeForCleanReinstall = false };
+        }
+
+        private async Task<bool> RestoreQuestSaveDataAsync(string serial, QuestSaveBackup backup, Action<string>? log)
+        {
+            if (string.IsNullOrEmpty(backup.SavePath)) return true;
+            if (!File.Exists(backup.SavePath))
+            {
+                log?.Invoke($"The local Quest save backup is missing: {backup.SavePath}");
+                return false;
+            }
+            if (!IsValidEncryptedSaveData(await File.ReadAllTextAsync(backup.SavePath)))
+            {
+                log?.Invoke("The local Quest save backup failed validation, so USM did not push it back to the headset.");
+                return false;
+            }
+
+            var targets = new[]
+            {
+                $"/sdcard/Android/data/{ModdedPackage}/files",
+                $"/sdcard/ModData/{ModdedPackage}/files"
+            };
+            bool restored = false;
+            foreach (var target in targets)
+            {
+                await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p \"{target}\"");
+                var (pushCode, pushOut, pushErr) = await RunProcessAsync(GetAdbPath(), $"-s {serial} push \"{backup.SavePath}\" \"{target}/SavedData.json\"", 30000);
+                if (pushCode == 0) restored = true;
+                else log?.Invoke($"Could not restore the backed up save to {target}: {(pushOut + " " + pushErr).Trim()}");
+            }
+
+            if (restored) log?.Invoke("The existing Quest save was restored to the modded app.");
+            else log?.Invoke("The APK is installed, but USM could not restore the save. The validated backup remains on this PC.");
+            return restored;
+        }
+
+        private async Task SetupUnlockedSaveDataAsync(string serial, QuestSaveBackup backup, Action<string>? log = null)
         {
             try
             {
                 log?.Invoke(LocalizationService.T("Log_InjectingSave"));
-                string encryptedData = GenerateUnlockedSavePayload();
-                string tempFile = Path.Combine(Path.GetTempPath(), "SavedData.json");
+                if (!backup.SafeForCleanReinstall && string.IsNullOrEmpty(backup.SavePath))
+                {
+                    log?.Invoke("The Quest save could not be read safely, so the intro and campaign flags were left unchanged.");
+                    return;
+                }
+
+                string? existingSave = !string.IsNullOrEmpty(backup.SavePath) && File.Exists(backup.SavePath)
+                    ? await File.ReadAllTextAsync(backup.SavePath)
+                    : null;
+                if (!TryCreateUnlockedSaveData(existingSave, out string encryptedData))
+                {
+                    log?.Invoke("Could not decode the existing Quest save. It was left unchanged to protect progress.");
+                    return;
+                }
+
+                string tempFile = Path.Combine(Path.GetTempPath(), $"USM-SavedData-{Guid.NewGuid():N}.json");
                 await File.WriteAllTextAsync(tempFile, encryptedData);
 
-                // Push to Android/data persistentDataPath
-                string targetPath1 = $"/sdcard/Android/data/{packageName}/files";
-                await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p {targetPath1}");
-                await RunProcessAsync(GetAdbPath(), $"-s {serial} push \"{tempFile}\" \"{targetPath1}/SavedData.json\"");
+                try
+                {
+                    bool saved = false;
+                    foreach (var target in new[]
+                    {
+                        $"/sdcard/Android/data/{ModdedPackage}/files",
+                        $"/sdcard/ModData/{ModdedPackage}/files"
+                    })
+                    {
+                        await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p \"{target}\"");
+                        var (pushCode, pushOut, pushErr) = await RunProcessAsync(GetAdbPath(), $"-s {serial} push \"{tempFile}\" \"{target}/SavedData.json\"", 30000);
+                        if (pushCode == 0) saved = true;
+                        else log?.Invoke($"Could not write the updated save to {target}: {(pushOut + " " + pushErr).Trim()}");
+                    }
 
-                // Also push to ModData as fallback
-                string targetPath2 = $"/sdcard/ModData/{packageName}/files";
-                await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p {targetPath2}");
-                await RunProcessAsync(GetAdbPath(), $"-s {serial} push \"{tempFile}\" \"{targetPath2}/SavedData.json\"");
-
-                try { File.Delete(tempFile); } catch { }
-                log?.Invoke(LocalizationService.T("Log_SaveSuccess"));
+                    if (saved) log?.Invoke(LocalizationService.T("Log_SaveSuccess"));
+                }
+                finally
+                {
+                    try { File.Delete(tempFile); } catch { }
+                }
             }
             catch (Exception ex)
             {
@@ -479,10 +804,179 @@ namespace USM.Core.Services.Quest
             }
         }
 
+        private static bool TryMergePcSaveIntoQuestSave(string encryptedPcSave, string encryptedQuestSave, out string mergedEncryptedSave, out string description)
+        {
+            mergedEncryptedSave = string.Empty;
+            description = string.Empty;
+            try
+            {
+                JsonObject pcRoot = JsonNode.Parse(DecryptSaveData(encryptedPcSave)) as JsonObject
+                    ?? throw new FormatException("The PC save root is not a JSON object.");
+                JsonObject questRoot = JsonNode.Parse(DecryptSaveData(encryptedQuestSave)) as JsonObject
+                    ?? throw new FormatException("The Quest save root is not a JSON object.");
+                JsonObject pcData = pcRoot["SavedData"] as JsonObject
+                    ?? throw new FormatException("The PC save does not contain SavedData.");
+                JsonObject questData = questRoot["SavedData"] as JsonObject
+                    ?? throw new FormatException("The Quest save does not contain SavedData.");
+
+                var copied = new List<string>();
+                foreach (string key in new[] { "HasDoneTutorial", "ShowIntro", "SelectedAlbumID", "AlbumCompleted" })
+                {
+                    if (!TryMergeCompatibleWrappedField(pcData, questData, key)) continue;
+                    copied.Add(key);
+                }
+
+                if (copied.Count == 0)
+                {
+                    description = "No compatible PC progress fields were found in the current Quest save. No Quest data was changed.";
+                    return false;
+                }
+
+                mergedEncryptedSave = EncryptSaveData(SaveEncryptionKey, questRoot.ToJsonString());
+                if (!IsValidEncryptedSaveData(mergedEncryptedSave))
+                {
+                    mergedEncryptedSave = string.Empty;
+                    description = "The merged Quest save failed validation. No Quest data was changed.";
+                    return false;
+                }
+
+                description = LocalizationService.T("Quest_ImportPcSaveResult", copied.Count);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                description = $"Could not parse and convert both save files: {ex.Message}";
+                return false;
+            }
+        }
+
+        private static bool TryMergeCompatibleWrappedField(JsonObject source, JsonObject target, string key)
+        {
+            if (source[key] is not JsonObject sourceWrapper || target[key] is not JsonObject targetWrapper)
+                return false;
+
+            string? sourceType = sourceWrapper["Type"]?.GetValue<string>();
+            string? targetType = targetWrapper["Type"]?.GetValue<string>();
+            if (string.IsNullOrWhiteSpace(sourceType) || !string.Equals(sourceType, targetType, StringComparison.Ordinal))
+                return false;
+
+            if (sourceWrapper["JsonValue"] is not JsonValue sourceJsonValue ||
+                !sourceJsonValue.TryGetValue<string>(out string? sourceValue) || string.IsNullOrWhiteSpace(sourceValue))
+                return false;
+
+            if (key is "HasDoneTutorial" or "ShowIntro")
+            {
+                bool sourceBool;
+                try
+                {
+                    using var sourceDocument = JsonDocument.Parse(sourceValue);
+                    if (sourceDocument.RootElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) return false;
+                    sourceBool = sourceDocument.RootElement.GetBoolean();
+                }
+                catch { return false; }
+
+                bool targetBool = false;
+                if (targetWrapper["JsonValue"] is JsonValue targetJsonValue &&
+                    targetJsonValue.TryGetValue<string>(out string? targetValue) && !string.IsNullOrWhiteSpace(targetValue))
+                {
+                    try
+                    {
+                        using var targetDocument = JsonDocument.Parse(targetValue);
+                        if (targetDocument.RootElement.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                            targetBool = targetDocument.RootElement.GetBoolean();
+                    }
+                    catch { }
+                }
+
+                // Keep a completed tutorial completed and a previously dismissed intro dismissed.
+                bool merged = key == "HasDoneTutorial" ? sourceBool || targetBool : sourceBool && targetBool;
+                targetWrapper["JsonValue"] = merged ? "true" : "false";
+                return true;
+            }
+
+            if (key == "AlbumCompleted" && targetWrapper["JsonValue"] is JsonValue existingListValue &&
+                existingListValue.TryGetValue<string>(out string? existingListJson))
+            {
+                try
+                {
+                    var sourceItems = JsonSerializer.Deserialize<List<string>>(sourceValue) ?? new List<string>();
+                    var targetItems = JsonSerializer.Deserialize<List<string>>(existingListJson ?? "[]") ?? new List<string>();
+                    foreach (string item in sourceItems)
+                    {
+                        if (!targetItems.Contains(item, StringComparer.Ordinal)) targetItems.Add(item);
+                    }
+                    targetWrapper["JsonValue"] = JsonSerializer.Serialize(targetItems);
+                    return true;
+                }
+                catch { return false; }
+            }
+
+            // SelectedAlbumID is a shared string field. Keep the Quest wrapper/type intact.
+            try
+            {
+                using var document = JsonDocument.Parse(sourceValue);
+                if (document.RootElement.ValueKind != JsonValueKind.String) return false;
+                targetWrapper["JsonValue"] = sourceValue;
+                return true;
+            }
+            catch { return false; }
+        }
+
+        public async Task<(bool Success, string Message)> ImportPcSaveToQuestAsync(string serial, string pcSavePath, Action<string>? log = null)
+        {
+            if (!File.Exists(pcSavePath)) return (false, "The selected PC save file does not exist.");
+
+            string pcEncryptedSave = await File.ReadAllTextAsync(pcSavePath);
+            if (!IsValidEncryptedSaveData(pcEncryptedSave))
+                return (false, "The selected file is not a valid encrypted Unplugged PC save. The Quest save was not changed.");
+
+            // Keep a validated local copy of the current Quest save before converting.
+            QuestSaveBackup backup = await BackupQuestSaveDataAsync(serial, log);
+            if (string.IsNullOrWhiteSpace(backup.SavePath) || !backup.SafeForCleanReinstall || !File.Exists(backup.SavePath))
+                return (false, "USM could not validate and back up a current Quest save. The Quest was not changed.");
+
+            string questEncryptedSave = await File.ReadAllTextAsync(backup.SavePath);
+            if (!TryMergePcSaveIntoQuestSave(pcEncryptedSave, questEncryptedSave, out string mergedSave, out string description))
+                return (false, description);
+
+            string tempPath = Path.Combine(Path.GetTempPath(), $"USM-PC-to-Quest-{Guid.NewGuid():N}.json");
+            await File.WriteAllTextAsync(tempPath, mergedSave);
+            try
+            {
+                bool pushed = false;
+                foreach (string target in new[]
+                {
+                    $"/sdcard/ModData/{ModdedPackage}/files",
+                    $"/sdcard/Android/data/{ModdedPackage}/files"
+                })
+                {
+                    await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p \"{target}\"");
+                    var (pushCode, pushOut, pushErr) = await RunProcessAsync(GetAdbPath(), $"-s {serial} push \"{tempPath}\" \"{target}/SavedData.json\"", 30000);
+                    if (pushCode == 0)
+                    {
+                        pushed = true;
+                    }
+                    else
+                    {
+                        log?.Invoke($"Could not write converted save to {target}: {(pushOut + " " + pushErr).Trim()}");
+                    }
+                }
+
+                if (!pushed) return (false, "The converted save was prepared and backed up, but could not be copied to the modded Quest app.");
+                log?.Invoke(description);
+                log?.Invoke($"PC save merged into the modded Quest save. Original Quest backup: {backup.SavePath}");
+                return (true, description);
+            }
+            finally
+            {
+                try { File.Delete(tempPath); } catch { }
+            }
+        }
+
         public async Task<bool> PatchAndDeployAsync(
             string? serial,
             string? customSourceApk,
-            bool skipTutorialAndUnlock,
+            bool skipIntroAndUnlockCampaign,
             IProgress<(int Percent, string Status)> progress,
             Action<string> log,
             CancellationToken cancellationToken)
@@ -578,7 +1072,7 @@ namespace USM.Core.Services.Quest
 
             // Step 3: Patch AndroidManifest and clone package
             progress.Report((60, "Patching Manifest and package identity..."));
-            log(LocalizationService.T("Log_PatchingManifest"));
+            log(LocalizationService.T("Log_PatchingManifest", ModdedPackage));
             string manifestPath = Path.Combine(decompiledDir, "AndroidManifest.xml");
             if (!File.Exists(manifestPath))
             {
@@ -690,6 +1184,42 @@ namespace USM.Core.Services.Quest
                 log("ERROR: Signed APK not found in output directory.");
                 return false;
             }
+
+            // LemonLoader's embedded signer can generate a different certificate on
+            // each run. Re-sign every final APK with USM's persistent key so Android
+            // accepts updates with `adb install -r` and retains app data.
+            progress.Report((89, LocalizationService.T("Log_SigningApk")));
+            string signingKeystore;
+            try
+            {
+                signingKeystore = await EnsureStableQuestSigningKeystoreAsync(log);
+            }
+            catch (Exception ex)
+            {
+                log($"Could not prepare the persistent Quest signing key: {ex.Message}");
+                return false;
+            }
+
+            string persistentSignedDir = Path.Combine(workDir, "persistent_signed");
+            Directory.CreateDirectory(persistentSignedDir);
+            var (stableSignCode, stableSignOut, stableSignErr) = await RunProcessAsync(
+                "java",
+                $"-jar \"{_signerJar}\" -a \"{signedApk}\" -o \"{persistentSignedDir}\" --allowResign --ksDebug \"{signingKeystore}\"",
+                300000);
+            if (stableSignCode != 0)
+            {
+                log($"Persistent APK signing failed: {stableSignOut} {stableSignErr}".Trim());
+                return false;
+            }
+
+            string? persistentlySignedApk = Directory.GetFiles(persistentSignedDir, "*.apk").FirstOrDefault();
+            if (string.IsNullOrEmpty(persistentlySignedApk))
+            {
+                log("Persistent APK signing finished without producing an APK.");
+                return false;
+            }
+            signedApk = persistentlySignedApk;
+            log("Final APK signed with USM's persistent Quest key.");
             log(LocalizationService.T("Log_SigningSuccess", signedApk));
 
             if (cancellationToken.IsCancellationRequested) return false;
@@ -697,11 +1227,20 @@ namespace USM.Core.Services.Quest
             // Step 6: Deploy to Quest if device connected
             if (!string.IsNullOrEmpty(serial))
             {
+                var saveBackup = await BackupQuestSaveDataAsync(serial, log);
+
                 progress.Report((92, LocalizationService.T("Log_InstallingApk", ModdedPackage)));
-                var (instSuccess, instMsg) = await InstallApkAsync(serial, signedApk, log);
+                var (instSuccess, instMsg) = await InstallApkAsync(serial, signedApk, log, saveBackup.SafeForCleanReinstall);
                 if (!instSuccess)
                 {
                     log($"Installation failed: {instMsg}");
+                    return false;
+                }
+
+                bool saveRestored = await RestoreQuestSaveDataAsync(serial, saveBackup, log);
+                if (!saveRestored && !string.IsNullOrEmpty(saveBackup.SavePath))
+                {
+                    log("The APK is installed but save restoration failed. The local backup was kept so it can be restored manually.");
                     return false;
                 }
 
@@ -719,10 +1258,10 @@ namespace USM.Core.Services.Quest
                 progress.Report((98, LocalizationService.T("Log_DeployingModDll")));
                 await DeployModDllAsync(serial, ModdedPackage, log);
 
-                if (skipTutorialAndUnlock)
+                if (skipIntroAndUnlockCampaign)
                 {
                     progress.Report((99, LocalizationService.T("Log_InjectingSave")));
-                    // await SetupUnlockedSaveDataAsync(serial, ModdedPackage, log);
+                    await SetupUnlockedSaveDataAsync(serial, saveBackup, log);
                 }
             }
             else
@@ -742,25 +1281,26 @@ namespace USM.Core.Services.Quest
                 string? modDll = _modDllPath;
                 if (string.IsNullOrEmpty(modDll) || !File.Exists(modDll))
                 {
-                    string candidate = @"C:/REDACTED\.gemini\antigravity\scratch\UnpluggedSongStudio\tools\quest\UnpluggedCustomSongs.dll";
+                    string candidate = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "UnpluggedCustomSongs.dll");
                     if (File.Exists(candidate)) modDll = candidate;
                 }
 
                 if (!string.IsNullOrEmpty(modDll) && File.Exists(modDll))
                 {
                     log?.Invoke(LocalizationService.T("Log_DeployingModDll"));
-                    string[] targetModDirs =
+                    if (!Regex.IsMatch(packageName, @"^[A-Za-z0-9_.]+$"))
+                        throw new ArgumentException("Invalid Android package name for the mod folder.", nameof(packageName));
+
+                    // The bundled DLL reads Songs under this exact LemonLoader package
+                    // namespace. Do not copy the mod into the stock game's namespace.
+                    string targetDir = $"/sdcard/ModData/{packageName}/Mods";
+                    await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p \"{targetDir}\"");
+                    var (pushCode, pushOut, pushErr) = await RunProcessAsync(
+                        GetAdbPath(), $"-s {serial} push \"{modDll}\" \"{targetDir}/UnpluggedCustomSongs.dll\"", 30000);
+                    if (pushCode != 0)
                     {
-                        $"/sdcard/MelonLoader/{packageName}/Mods",
-                        $"/sdcard/MelonLoader/{OriginalPackage}/Mods",
-                        $"/sdcard/Unplugged/Mods",
-                        $"/sdcard/ModData/{packageName}/Mods",
-                        $"/sdcard/ModData/{OriginalPackage}/Mods"
-                    };
-                    foreach (var targetDir in targetModDirs)
-                    {
-                        await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p {targetDir}");
-                        await RunProcessAsync(GetAdbPath(), $"-s {serial} push \"{modDll}\" \"{targetDir}/UnpluggedCustomSongs.dll\"");
+                        log?.Invoke($"Could not deploy the mod DLL to {targetDir}: {(pushOut + " " + pushErr).Trim()}");
+                        return false;
                     }
                     log?.Invoke(LocalizationService.T("Log_ModDllSuccess"));
                     return true;
@@ -783,8 +1323,8 @@ namespace USM.Core.Services.Quest
             var installed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             try
             {
-                await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p /sdcard/Unplugged/Songs");
-                var (code, stdout, _) = await RunProcessAsync(GetAdbPath(), $"-s {serial} shell ls -1 /sdcard/Unplugged/Songs/", 15000);
+                await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p {ModdedSongsPath}");
+                var (code, stdout, _) = await RunProcessAsync(GetAdbPath(), $"-s {serial} shell ls -1 {ModdedSongsPath}/", 15000);
                 if (code == 0 && !string.IsNullOrWhiteSpace(stdout))
                 {
                     var lines = stdout.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
@@ -808,7 +1348,7 @@ namespace USM.Core.Services.Quest
             Action<string> log,
             IProgress<(int Current, int Total)> progress,
             CancellationToken cancellationToken,
-            IReadOnlyList<string>? specificSongDirs = null)
+            IReadOnlyList<string>? specificSongPaths = null)
         {
             if (!Directory.Exists(localSongsDir))
             {
@@ -816,9 +1356,7 @@ namespace USM.Core.Services.Quest
                 return 0;
             }
 
-            var songDirs = specificSongDirs != null && specificSongDirs.Count > 0
-                ? specificSongDirs.ToArray()
-                : Directory.GetDirectories(localSongsDir);
+            var songDirs = specificSongPaths != null && specificSongPaths.Count > 0 ? specificSongPaths.ToArray() : Directory.GetFiles(localSongsDir, "*.usm");
 
             if (songDirs.Length == 0)
             {
@@ -826,8 +1364,8 @@ namespace USM.Core.Services.Quest
                 return 0;
             }
 
-            log(LocalizationService.T("Log_SyncStarting", songDirs.Length));
-            await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p /sdcard/Unplugged/Songs");
+            log(LocalizationService.T("Log_SyncStarting", songDirs.Length, ModdedSongsPath));
+            await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p {ModdedSongsPath}");
 
             int transferred = 0;
             for (int i = 0; i < songDirs.Length; i++)
@@ -839,7 +1377,7 @@ namespace USM.Core.Services.Quest
                 progress.Report((i + 1, songDirs.Length));
                 log(LocalizationService.T("Log_SyncingSong", i + 1, songDirs.Length, songName));
 
-                var (code, _, err) = await RunProcessAsync(GetAdbPath(), $"-s {serial} push \"{dir}\" /sdcard/Unplugged/Songs/", 120000);
+                var (code, _, err) = await RunProcessAsync(GetAdbPath(), $"-s {serial} push \"{dir}\" {ModdedSongsPath}/", 120000);
                 if (code == 0)
                 {
                     transferred++;
@@ -854,7 +1392,7 @@ namespace USM.Core.Services.Quest
             return transferred;
         }
 
-        private static async Task<(int ExitCode, string StdOut, string StdErr)> RunProcessAsync(string fileName, string arguments, int timeoutMs = 60000)
+        public static async Task<(int ExitCode, string StdOut, string StdErr)> RunProcessAsync(string fileName, string arguments, int timeoutMs = 60000)
         {
             var psi = new ProcessStartInfo
             {

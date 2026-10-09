@@ -119,15 +119,16 @@ namespace USM.ViewModels
                 if (SetProperty(ref _isModdedInstalled, value))
                 {
                     OnPropertyChanged(nameof(CanUninstallModded));
+                    CommandManager.InvalidateRequerySuggested();
                 }
             }
         }
 
-        private bool _skipTutorialAndUnlock = true;
-        public bool SkipTutorialAndUnlock
+        private bool _skipIntroAndUnlockCampaign = true;
+        public bool SkipIntroAndUnlockCampaign
         {
-            get => _skipTutorialAndUnlock;
-            set => SetProperty(ref _skipTutorialAndUnlock, value);
+            get => _skipIntroAndUnlockCampaign;
+            set => SetProperty(ref _skipIntroAndUnlockCampaign, value);
         }
 
         private string _patchButtonText = LocalizationService.T("Quest_PatchButton_Install");
@@ -185,7 +186,7 @@ namespace USM.ViewModels
                 string? songsDir = _gameDetector.GetCustomSongsDir();
                 if (!string.IsNullOrEmpty(songsDir) && Directory.Exists(songsDir))
                 {
-                    return Directory.GetDirectories(songsDir).Length;
+                    return Directory.GetFiles(songsDir, "*.usm").Length;
                 }
                 return 0;
             }
@@ -198,11 +199,13 @@ namespace USM.ViewModels
             : LocalizationService.T("Quest_ToolsStatusMissing");
 
         public ICommand RefreshDevicesCommand { get; }
+
         public ICommand ConnectWirelessCommand { get; }
         public ICommand BrowseApkCommand { get; }
         public ICommand StartPatchCommand { get; }
         public ICommand UninstallModdedCommand { get; }
         public ICommand SyncSongsCommand { get; }
+        public ICommand ImportPcSaveCommand { get; }
         public ICommand ClearLogsCommand { get; }
         public ICommand DownloadQuestToolsCommand { get; }
 
@@ -218,6 +221,7 @@ namespace USM.ViewModels
             StartPatchCommand = new AsyncRelayCommand(_ => StartPatchPipelineAsync(), _ => !IsBusy && (IsDeviceConnected || (!string.IsNullOrEmpty(CustomApkPath) && File.Exists(CustomApkPath))));
             UninstallModdedCommand = new AsyncRelayCommand(_ => UninstallModdedAsync(), _ => !IsBusy && IsDeviceConnected && IsModdedInstalled);
             SyncSongsCommand = new AsyncRelayCommand(_ => SyncSongsAsync(), _ => !IsBusy && IsDeviceConnected && LocalSongCount > 0);
+            ImportPcSaveCommand = new AsyncRelayCommand(_ => ImportPcSaveAsync(), _ => !IsBusy && IsDeviceConnected && IsModdedInstalled);
             ClearLogsCommand = new RelayCommand(ClearLogs);
             DownloadQuestToolsCommand = new AsyncRelayCommand(_ => DownloadQuestToolsAsync(), _ => !IsBusy);
 
@@ -462,9 +466,9 @@ namespace USM.ViewModels
             }
 
             string actionMsg = IsModdedInstalled ? LocalizationService.T("Quest_PatchButton_Reinstall") : LocalizationService.T("Quest_PatchButton_Install");
-            string tutMsg = SkipTutorialAndUnlock ? (" (" + LocalizationService.T("Quest_SkipTutorialTitle") + ")") : "";
+            string introMsg = SkipIntroAndUnlockCampaign ? (" (" + LocalizationService.T("Quest_SkipIntroTitle") + ")") : "";
             var confirm = MessageBox.Show(
-                LocalizationService.T("Quest_Dialog_ConfirmPatchMsg", actionMsg, tutMsg),
+                LocalizationService.T("Quest_Dialog_ConfirmPatchMsg", actionMsg, introMsg),
                 LocalizationService.T("Quest_Dialog_ConfirmPatchTitle"),
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Question
@@ -489,7 +493,7 @@ namespace USM.ViewModels
                 bool success = await _questService.PatchAndDeployAsync(
                     serial,
                     customApk,
-                    SkipTutorialAndUnlock,
+                    SkipIntroAndUnlockCampaign,
                     progress,
                     msg => AppendLog(msg),
                     cts.Token
@@ -500,9 +504,9 @@ namespace USM.ViewModels
                     ProgressPercent = 100;
                     ProgressStatus = "Done!";
                     _notifyCallback("Unplugged Modded successfully deployed to Quest!");
-                    string tutNote = SkipTutorialAndUnlock ? LocalizationService.T("Quest_Dialog_PatchCompleteTutorialNote") : "";
+                    string introNote = SkipIntroAndUnlockCampaign ? LocalizationService.T("Quest_Dialog_PatchCompleteIntroNote") : "";
                     MessageBox.Show(
-                        LocalizationService.T("Quest_Dialog_PatchCompleteMsg", tutNote),
+                        LocalizationService.T("Quest_Dialog_PatchCompleteMsg", introNote),
                         LocalizationService.T("Quest_Dialog_PatchCompleteTitle"),
                         MessageBoxButton.OK,
                         MessageBoxImage.Information
@@ -574,6 +578,98 @@ namespace USM.ViewModels
             }
         }
 
+        private async Task ImportPcSaveAsync()
+        {
+            if (SelectedDevice == null || IsBusy) return;
+
+            string? defaultDirectory = FindPcSaveDirectory();
+            var dialog = new OpenFileDialog
+            {
+                Title = LocalizationService.T("Quest_ImportPcSaveTitle"),
+                Filter = "Unplugged PC save (SavedData.json)|SavedData.json|JSON files (*.json)|*.json|All files (*.*)|*.*",
+                CheckFileExists = true,
+                Multiselect = false,
+                FileName = "SavedData.json"
+            };
+            if (!string.IsNullOrEmpty(defaultDirectory)) dialog.InitialDirectory = defaultDirectory;
+            if (dialog.ShowDialog() != true) return;
+
+            var confirm = MessageBox.Show(
+                LocalizationService.T("Quest_Dialog_ImportPcSaveConfirmMsg", dialog.FileName),
+                LocalizationService.T("Quest_Dialog_ImportPcSaveTitle"),
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+            if (confirm != MessageBoxResult.Yes) return;
+
+            string serial = SelectedDevice.Serial;
+            IsBusy = true;
+            ProgressPercent = 0;
+            ProgressStatus = LocalizationService.T("Quest_ImportPcSaveTitle");
+            _notifyCallback(LocalizationService.T("Quest_ImportPcSaveTitle"));
+
+            try
+            {
+                AppendLog($"Importing PC save from {dialog.FileName}...");
+                var (success, message) = await _questService.ImportPcSaveToQuestAsync(
+                    serial,
+                    dialog.FileName,
+                    AppendLog);
+                if (success)
+                {
+                    ProgressPercent = 100;
+                    MessageBox.Show(
+                        LocalizationService.T("Quest_Dialog_ImportPcSaveSuccessMsg", message),
+                        LocalizationService.T("Quest_Dialog_ImportPcSaveSuccessTitle"),
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                    _notifyCallback(LocalizationService.T("Quest_Dialog_ImportPcSaveSuccessTitle"));
+                }
+                else
+                {
+                    AppendLog(message);
+                    MessageBox.Show(
+                        LocalizationService.T("Quest_Dialog_ImportPcSaveErrorMsg", message),
+                        LocalizationService.T("Quest_Dialog_ImportPcSaveErrorTitle"),
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"PC save import failed: {ex.Message}");
+                MessageBox.Show(
+                    LocalizationService.T("Quest_Dialog_ImportPcSaveErrorMsg", ex.Message),
+                    LocalizationService.T("Quest_Dialog_ImportPcSaveErrorTitle"),
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+            finally
+            {
+                IsBusy = false;
+                await CheckInstalledPackagesAsync();
+            }
+        }
+
+        private static string? FindPcSaveDirectory()
+        {
+            string localLow = Path.GetFullPath(Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "..", "LocalLow", "Anotherway", "Unplugged", "CloudSave"));
+            if (!Directory.Exists(localLow)) return null;
+
+            try
+            {
+                return Directory.GetFiles(localLow, "SavedData.json", SearchOption.AllDirectories)
+                    .OrderByDescending(File.GetLastWriteTimeUtc)
+                    .Select(Path.GetDirectoryName)
+                    .FirstOrDefault(path => !string.IsNullOrEmpty(path));
+            }
+            catch
+            {
+                return localLow;
+            }
+        }
+
         private async Task SyncSongsAsync()
         {
             if (SelectedDevice == null)
@@ -589,7 +685,7 @@ namespace USM.ViewModels
                 return;
             }
 
-            var allSongDirs = Directory.GetDirectories(songsDir);
+            var allSongDirs = Directory.GetFiles(songsDir, "*.usm");
             if (allSongDirs.Length == 0)
             {
                 MessageBox.Show("No custom songs found to transfer.", LocalizationService.T("Quest_CustomSongsSyncTitle"), MessageBoxButton.OK, MessageBoxImage.Information);
@@ -623,7 +719,7 @@ namespace USM.ViewModels
                     }
                     else
                     {
-                        AppendLog(LocalizationService.T("Log_SyncAllUpToDate", allSongDirs.Length));
+                        AppendLog(LocalizationService.T("Log_SyncAllUpToDate", allSongDirs.Length, QuestService.ModdedSongsPath));
                         IsBusy = false;
                         ProgressStatus = "Ready";
                         return;
@@ -648,7 +744,7 @@ namespace USM.ViewModels
                 else
                 {
                     var confirm = MessageBox.Show(
-                        LocalizationService.T("Quest_Dialog_ConfirmSyncMsg", songsToSync.Count),
+                        LocalizationService.T("Quest_Dialog_ConfirmSyncMsg", songsToSync.Count, QuestService.ModdedSongsPath),
                         LocalizationService.T("Quest_Dialog_ConfirmSyncTitle"),
                         MessageBoxButton.YesNo,
                         MessageBoxImage.Question

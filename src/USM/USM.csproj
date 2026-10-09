@@ -12,6 +12,8 @@
     <ApplicationIcon>assets\icon.ico</ApplicationIcon>
     <Version>2.0.0</Version>
     <Authors>TheLucXas</Authors>
+    <QuestModProject>$(MSBuildProjectDirectory)\..\..\mod\UnpluggedCustomSongs\UnpluggedCustomSongs.csproj</QuestModProject>
+    <QuestModAssembly>$(MSBuildProjectDirectory)\..\..\mod\UnpluggedCustomSongs\bin\$(Configuration)\netstandard2.0\UnpluggedCustomSongs.dll</QuestModAssembly>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,12 +22,22 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\..\UnpluggedCustomSongs.dll" Condition="Exists('..\..\UnpluggedCustomSongs.dll')">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+    <ProjectReference Include="$(QuestModProject)" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="..\..\ffmpeg.exe" Condition="Exists('..\..\ffmpeg.exe')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
 
+  <ItemGroup><None Include="Resources\**\*"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></None></ItemGroup>
+
+  <Target Name="CopyQuestModToBuildOutput" AfterTargets="Build">
+    <Copy SourceFiles="$(QuestModAssembly)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="CopyQuestModToPublishOutput" AfterTargets="Publish">
+    <Copy SourceFiles="$(QuestModAssembly)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

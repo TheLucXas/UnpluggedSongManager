@@ -3,11 +3,14 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
-using System.Text.RegularExpressions;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Input;
-using System.Xml.Linq;
+using System.Windows.Media.Imaging;
 using USM.Core.Models;
 using USM.Core.Services;
 
@@ -21,6 +24,7 @@ namespace USM.ViewModels
         private string _filterQuery = string.Empty;
         private string _songCountText = "0 songs";
         private bool _allSelected;
+        private InstalledSong? _currentlyPreviewingSong;
 
         private readonly List<InstalledSong> _allSongs = new();
 
@@ -92,6 +96,7 @@ namespace USM.ViewModels
             DeleteSongCommand = new RelayCommand(DeleteSingleSong);
             OpenSongFolderCommand = new RelayCommand(OpenSongFolder);
             PreviewSongCommand = new RelayCommand(PreviewSong);
+            AudioPlayerService.Instance.PlaybackStopped += OnPreviewStopped;
 
             RefreshLibrary();
         }
@@ -114,9 +119,13 @@ namespace USM.ViewModels
             _allSongs.Clear();
             string? customSongsDir = _gameDetector.GetCustomSongsDir();
 
+
             if (!string.IsNullOrEmpty(customSongsDir) && Directory.Exists(customSongsDir))
             {
-                foreach (var dir in Directory.GetDirectories(customSongsDir))
+
+
+                foreach (var dir in Directory.GetFiles(customSongsDir, "*.usm"))
+
                 {
                     var song = LoadInstalledSong(dir);
                     if (song != null)
@@ -132,50 +141,61 @@ namespace USM.ViewModels
 
         private static InstalledSong? LoadInstalledSong(string dir)
         {
-            string folderName = Path.GetFileName(dir);
-            string dataXml = Path.Combine(dir, "data.xml");
-            string songIni = Path.Combine(dir, "song.ini");
-
+            string folderName = Path.GetFileNameWithoutExtension(dir);
             string title = folderName;
             string artist = "Unknown Artist";
             string charter = "Unknown";
             bool isMulti = false;
+            BitmapImage? coverImage = null;
 
-            if (File.Exists(dataXml))
+            try
             {
-                try
+                using var archive = ZipFile.OpenRead(dir);
+                var metaEntry = FindEntry(archive, "meta.json");
+                if (metaEntry != null)
                 {
-                    var doc = XDocument.Load(dataXml);
-                    var root = doc.Root;
-                    if (root != null)
+                    using var metaStream = metaEntry.Open();
+                    using var document = JsonDocument.Parse(metaStream);
+                    var meta = document.RootElement;
+                    title = CleanUsmDisplayName(ReadMetaValue(meta, "SongName", "Name") ?? title);
+                    artist = ReadMetaValue(meta, "BandName", "Artist") ?? artist;
+                    charter = ReadMetaValue(meta, "LevelAuthorName", "Charter") ?? charter;
+                    if (meta.TryGetProperty("IsMultiTrack", out var multiTrack))
                     {
-                        title = root.Element("SongName")?.Value ?? title;
-                        artist = root.Element("BandName")?.Value ?? artist;
-                        charter = root.Element("LevelAuthorName")?.Value ?? charter;
-                        string multiStr = root.Element("IsMultiTrack")?.Value ?? "false";
-                        isMulti = multiStr.Equals("true", StringComparison.OrdinalIgnoreCase);
+                        isMulti = multiTrack.ValueKind == JsonValueKind.True ||
+                            (multiTrack.ValueKind == JsonValueKind.String && bool.TryParse(multiTrack.GetString(), out var parsed) && parsed);
                     }
                 }
-                catch { }
+
+                var coverEntry = FindEntry(archive, "cover.jpg", "album.jpg", "cover.jpeg", "album.jpeg", "cover.png", "album.png")
+                    ?? archive.Entries.FirstOrDefault(entry => entry.Length > 0 &&
+                        (entry.Name.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
+                         entry.Name.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+                         entry.Name.EndsWith(".png", StringComparison.OrdinalIgnoreCase)));
+                if (coverEntry != null)
+                {
+                    using var coverStream = coverEntry.Open();
+                    using var memory = new MemoryStream();
+                    coverStream.CopyTo(memory);
+                    memory.Position = 0;
+
+                    var bitmap = new BitmapImage();
+                    bitmap.BeginInit();
+                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                    bitmap.DecodePixelWidth = 180;
+                    bitmap.StreamSource = memory;
+                    bitmap.EndInit();
+                    bitmap.Freeze();
+                    coverImage = bitmap;
+                }
+
+                isMulti |= archive.Entries.Any(entry => entry.Name.StartsWith("song-", StringComparison.OrdinalIgnoreCase)
+                    && entry.Name.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase));
             }
-            else if (File.Exists(songIni))
+            catch
             {
-                var ini = SongConverter.ParseSongIni(songIni);
-                title = ini.Name;
-                artist = ini.Artist;
-                charter = ini.Charter;
-                isMulti = File.Exists(Path.Combine(dir, "song-guitar.mp3"));
+                // Keep a readable fallback card when an archive is damaged or has unexpected metadata.
             }
-
-            string coverPath = Path.Combine(dir, "album.jpg");
-            if (!File.Exists(coverPath)) coverPath = Path.Combine(dir, "album.png");
-            if (!File.Exists(coverPath)) coverPath = Path.Combine(dir, "cover.jpg");
-
-            string samplePath = Path.Combine(dir, "sample.mp3");
-            if (!File.Exists(samplePath)) samplePath = Path.Combine(dir, "song.mp3");
-
-            string? finalCoverPath = File.Exists(coverPath) ? coverPath : null;
-            var coverImage = finalCoverPath != null ? LoadBitmapWithoutLock(finalCoverPath) : null;
 
             return new InstalledSong
             {
@@ -184,37 +204,54 @@ namespace USM.ViewModels
                 Title = title,
                 Artist = artist,
                 Charter = charter,
-                CoverPath = finalCoverPath,
+                CoverPath = null,
                 CoverImage = coverImage,
-                AudioPath = File.Exists(samplePath) ? samplePath : null,
+                AudioPath = null,
                 IsMultiTrack = isMulti
             };
         }
 
-        private static System.Windows.Media.Imaging.BitmapImage? LoadBitmapWithoutLock(string filePath)
+        private static ZipArchiveEntry? FindEntry(ZipArchive archive, params string[] names)
         {
-            if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath)) return null;
-            try
+            return archive.Entries.FirstOrDefault(entry => names.Any(name =>
+                string.Equals(entry.Name, name, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        private static string? ReadMetaValue(JsonElement meta, params string[] names)
+        {
+            foreach (var property in meta.EnumerateObject())
             {
-                var bitmap = new System.Windows.Media.Imaging.BitmapImage();
-                using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                if (names.Any(name => string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase)) &&
+                    property.Value.ValueKind == JsonValueKind.String)
                 {
-                    bitmap.BeginInit();
-                    bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
-                    bitmap.StreamSource = stream;
-                    bitmap.EndInit();
+                    var text = property.Value.GetString();
+                    if (!string.IsNullOrWhiteSpace(text)) return text;
                 }
-                bitmap.Freeze();
-                return bitmap;
             }
-            catch
-            {
-                return null;
-            }
+            return null;
+        }
+
+        private static string CleanUsmDisplayName(string value)
+        {
+            string cleaned = value.Trim();
+            return cleaned.EndsWith(".usm", StringComparison.OrdinalIgnoreCase)
+                ? cleaned[..^4].TrimEnd()
+                : cleaned;
         }
 
         private static bool DeleteDirectorySafe(string path)
         {
+            if (File.Exists(path))
+            {
+                try
+                {
+                    File.SetAttributes(path, FileAttributes.Normal);
+                    File.Delete(path);
+                    return !File.Exists(path);
+                }
+                catch { return false; }
+            }
+
             if (!Directory.Exists(path)) return true;
             try
             {
@@ -386,33 +423,117 @@ namespace USM.ViewModels
         private void OpenSongFolder(object? param)
         {
             if (param is not InstalledSong song) return;
-            if (Directory.Exists(song.FolderPath))
+            string? folder = Directory.Exists(song.FolderPath)
+                ? song.FolderPath
+                : Path.GetDirectoryName(song.FolderPath);
+            if (!string.IsNullOrEmpty(folder) && Directory.Exists(folder))
             {
                 Process.Start(new ProcessStartInfo
                 {
-                    FileName = song.FolderPath,
+                    FileName = folder,
                     UseShellExecute = true
                 });
             }
         }
 
-        private void PreviewSong(object? param)
+        private async void PreviewSong(object? param)
         {
-            if (param is not InstalledSong song || string.IsNullOrEmpty(song.AudioPath)) return;
+            if (param is not InstalledSong song || !File.Exists(song.FolderPath)) return;
+
+            string? previewPath = await ExtractPreviewAudioAsync(song.FolderPath);
+            if (string.IsNullOrEmpty(previewPath))
+            {
+                _notifyCallback?.Invoke($"Could not prepare preview for '{song.Title}'. Check that the .usm contains sample.ogg or song.ogg.");
+                return;
+            }
 
             var player = AudioPlayerService.Instance;
-            if (player.IsPlaying && player.CurrentSource == song.AudioPath)
+            if (player.IsPlaying && string.Equals(player.CurrentSource, previewPath, StringComparison.OrdinalIgnoreCase))
             {
                 player.Stop();
                 song.IsPlaying = false;
+                _currentlyPreviewingSong = null;
             }
             else
             {
-                foreach (var s in DisplayedSongs) s.IsPlaying = false;
-                player.Play(song.AudioPath);
-                song.IsPlaying = true;
+                foreach (var s in _allSongs) s.IsPlaying = false;
+                player.Play(previewPath);
+                _currentlyPreviewingSong = player.IsPlaying ? song : null;
+                song.IsPlaying = player.IsPlaying;
             }
             OnPropertyChanged(nameof(DisplayedSongs));
+        }
+
+        private static async Task<string?> ExtractPreviewAudioAsync(string archivePath)
+        {
+            try
+            {
+                using var archive = ZipFile.OpenRead(archivePath);
+                var audioEntry = FindEntry(archive,
+                    "sample.ogg", "preview.ogg", "sample.wav", "preview.wav", "sample.mp3", "preview.mp3",
+                    "song.ogg", "song.mp3", "song.wav", "song.opus", "song.flac", "song.m4a")
+                    ?? archive.Entries.FirstOrDefault(entry =>
+                        !entry.Name.StartsWith("song-", StringComparison.OrdinalIgnoreCase) &&
+                        new[] { ".ogg", ".opus", ".mp3", ".wav", ".flac", ".m4a" }
+                            .Contains(Path.GetExtension(entry.Name), StringComparer.OrdinalIgnoreCase));
+                if (audioEntry == null || audioEntry.Length == 0) return null;
+
+                var info = new FileInfo(archivePath);
+                string cacheRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "USM", "PreviewCache");
+                Directory.CreateDirectory(cacheRoot);
+                string keySource = $"{Path.GetFullPath(archivePath)}|{info.Length}|{info.LastWriteTimeUtc.Ticks}";
+                string key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(keySource))).Substring(0, 20);
+                string extension = Path.GetExtension(audioEntry.Name).ToLowerInvariant();
+                string extractedPath = Path.Combine(cacheRoot, key + extension);
+                string playablePath = extension == ".wav" ? extractedPath : Path.Combine(cacheRoot, key + ".wav");
+
+                if (!File.Exists(extractedPath))
+                {
+                    using var entryStream = audioEntry.Open();
+                    using var output = new FileStream(extractedPath, FileMode.Create, FileAccess.Write, FileShare.None);
+                    await entryStream.CopyToAsync(output);
+                }
+
+                // WPF's MediaPlayer cannot decode OGG on all Windows builds. Convert
+                // every non-WAV preview to a short PCM WAV for reliable playback.
+                if (extension != ".wav" && !File.Exists(playablePath))
+                {
+                    try
+                    {
+                        await AudioPipeline.RunFfmpegAsync($"-y -i \"{extractedPath}\" -vn -ac 2 -ar 44100 -t 30 -c:a pcm_s16le \"{playablePath}\"");
+                    }
+                    catch
+                    {
+                        try { File.Delete(playablePath); } catch { }
+                        return null;
+                    }
+                }
+
+                return File.Exists(playablePath) && new FileInfo(playablePath).Length > 44 ? playablePath : null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private void OnPreviewStopped()
+        {
+            var songs = _allSongs.Where(song => song.IsPlaying).ToList();
+            if (_currentlyPreviewingSong != null && !songs.Contains(_currentlyPreviewingSong))
+                songs.Add(_currentlyPreviewingSong);
+            _currentlyPreviewingSong = null;
+            if (songs.Count == 0) return;
+
+            void UpdateState()
+            {
+                foreach (var song in songs) song.IsPlaying = false;
+                OnPropertyChanged(nameof(DisplayedSongs));
+            }
+
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher == null || dispatcher.CheckAccess()) UpdateState();
+            else dispatcher.BeginInvoke((Action)UpdateState);
         }
     }
 }
