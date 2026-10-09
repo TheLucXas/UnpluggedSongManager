@@ -86,8 +86,9 @@
                                                Foreground="{StaticResource BrushTextMuted}"
                                                Margin="0,0,0,4" />
                                     <TextBox Text="{Binding WirelessIp, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource WirelessInputTextBox}"
                                              ToolTip="{DynamicResource Loc_Quest_IpTooltip}"
-                                             Height="36" />
+                                             MinWidth="120" />
                                 </StackPanel>
 
                                 <!-- Short bar: Port -->
@@ -97,8 +98,9 @@
                                                Foreground="{StaticResource BrushTextMuted}"
                                                Margin="0,0,0,4" />
                                     <TextBox Text="{Binding WirelessPort, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource WirelessInputTextBox}"
                                              ToolTip="{DynamicResource Loc_Quest_PortTooltip}"
-                                             Height="36" />
+                                             MinWidth="72" />
                                 </StackPanel>
 
                                 <!-- Button -->
@@ -197,7 +199,7 @@
                                FontSize="11"
                                Foreground="{StaticResource BrushTextMuted}"
                                TextWrapping="Wrap"
-                               Margin="22,0,0,0" />
+                               Margin="50,0,0,0" />
                 </StackPanel>
             </Border>
 

@@ -253,15 +253,13 @@ class LibraryTab(ctk.CTkFrame):
                 card.configure(border_color=THEME["border_color"])
             self._update_selection_ui()
 
-        chk = ctk.CTkCheckBox(
+        chk = ctk.CTkSwitch(
             card,
             text="",
             variable=chk_val,
-            width=24,
+            width=40,
             height=24,
-            corner_radius=4,
-            fg_color=THEME["accent_pink"],
-            hover_color="#e0245e",
+            progress_color=THEME["accent_pink"],
             command=on_check
         )
         chk.pack(side="left", padx=(12, 4), pady=10)

@@ -193,7 +193,9 @@
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
                                 CornerRadius="8">
-                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" />
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsFocused" Value="True">
@@ -203,6 +205,81 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+        </Style>
+
+        <!-- Compact themed switch style used by every boolean option. -->
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Grid x:Name="Root" Background="Transparent" SnapsToDevicePixels="True">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="42" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <Border x:Name="SwitchTrack"
+                                    Grid.Column="0"
+                                    Width="36"
+                                    Height="20"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Center"
+                                    Background="{StaticResource BrushBgInput}"
+                                    BorderBrush="{StaticResource BrushBorder}"
+                                    BorderThickness="1"
+                                    CornerRadius="10">
+                                <Ellipse x:Name="SwitchThumb"
+                                         Width="14"
+                                         Height="14"
+                                         HorizontalAlignment="Left"
+                                         VerticalAlignment="Center"
+                                         Margin="2"
+                                         Fill="{StaticResource BrushTextSecondary}" />
+                            </Border>
+
+                            <ContentPresenter Grid.Column="1"
+                                              Margin="8,0,0,0"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              RecognizesAccessKey="True"
+                                              ContentSource="Content"
+                                              TextElement.Foreground="{TemplateBinding Foreground}"
+                                              TextElement.FontSize="{TemplateBinding FontSize}"
+                                              TextElement.FontWeight="{TemplateBinding FontWeight}"
+                                              TextElement.FontFamily="{TemplateBinding FontFamily}" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="SwitchTrack" Property="BorderBrush" Value="{StaticResource BrushAccentPurple}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="SwitchTrack" Property="Background" Value="{StaticResource BrushAccentPink}" />
+                                <Setter TargetName="SwitchTrack" Property="BorderBrush" Value="{StaticResource BrushAccentPink}" />
+                                <Setter TargetName="SwitchThumb" Property="HorizontalAlignment" Value="Right" />
+                                <Setter TargetName="SwitchThumb" Property="Fill" Value="{StaticResource BrushTextPrimary}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="SwitchTrack" Property="BorderBrush" Value="{StaticResource BrushAccentBlue}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Root" Property="Opacity" Value="0.45" />
+                                <Setter Property="Cursor" Value="Arrow" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Roomier inputs keep the wireless address and port legible while typing. -->
+        <Style x:Key="WirelessInputTextBox" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="Height" Value="40" />
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
 
         <!-- Modern ProgressBar Style -->
