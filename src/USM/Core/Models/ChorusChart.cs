@@ -22,6 +22,7 @@ namespace USM.Core.Models
         public string? DownloadUrl { get; set; }
         public string? ArtUrl { get; set; }
         public DateTime? ModifiedTime { get; set; }
+        public string ResyncChoiceLabel => $"{Artist} — {Title}  |  {Charter}  |  {Id}";
 
         public string SubtitleDisplay => string.IsNullOrEmpty(Album)
             ? (string.IsNullOrEmpty(Year) ? Artist : $"{Artist} ({Year})")
@@ -108,6 +109,10 @@ namespace USM.Core.Models
         public bool HasCover => CoverImage != null || (!string.IsNullOrEmpty(CoverPath) && System.IO.File.Exists(CoverPath));
         public bool IsMultiTrack { get; set; } = false;
         public bool IsHalfTrack { get; set; } = false;
+        public string? ChorusChartId { get; set; }
+        public string? ChorusChartMd5 { get; set; }
+        public int ChartParserVersion { get; set; }
+        public bool NeedsChartResync => ChartParserVersion < USM.Core.Parsers.JsonGenerator.ParserVersion;
         public string TrackTypeDisplay => IsHalfTrack ? "🎚 2-Track (Instrumental + Vocals)" : IsMultiTrack ? "🎸 MultiTrack" : "🎵 Stereo";
 
         private bool _isSelected;

@@ -13,6 +13,10 @@ namespace USM.Core.Parsers
     /// </summary>
     public static class JsonGenerator
     {
+        // Bump when chart parsing or generated note semantics change. Stored in
+        // meta.json so the PC library can selectively regenerate outdated charts.
+        public const int ParserVersion = 1;
+
         private static readonly Dictionary<int, (int Tier, string[] Fingers)> FingerMap = new()
         {
             [0] = (0, new[] { "Index" }),

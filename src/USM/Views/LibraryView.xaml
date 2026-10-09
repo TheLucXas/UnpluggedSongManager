@@ -147,6 +147,14 @@
                                 Padding="12,6"
                                 FontSize="12" />
 
+                        <Button Content="{Binding ResyncChartsText}"
+                                Command="{Binding ResyncChartsCommand}"
+                                Style="{StaticResource SecondaryButton}"
+                                Margin="0,0,8,0"
+                                Padding="12,6"
+                                FontSize="12"
+                                ToolTip="Regenerate only outdated note charts. Audio and covers stay unchanged." />
+
                         <Button Content="🔄 Refresh"
                                 Command="{Binding RefreshCommand}"
                                 Padding="14,6"

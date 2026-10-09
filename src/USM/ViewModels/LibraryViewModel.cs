@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -12,9 +13,12 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using USM.Core.Models;
+using USM.Core.Parsers;
 using USM.Core.Services;
 using USM.Core.Services.Quest;
 
@@ -53,6 +57,7 @@ namespace USM.ViewModels
         private InstalledSong? _currentlyPreviewingSong;
         private bool _isQuestSongsAvailable;
         private bool _isRefreshingQuestSongs;
+        private bool _isResyncingCharts;
         private string _questSongsStatusText = "Connect a Quest to manage its songs.";
 
         private readonly List<InstalledSong> _allSongs = new();
@@ -85,6 +90,25 @@ namespace USM.ViewModels
         {
             get => _songCountText;
             set => SetProperty(ref _songCountText, value);
+        }
+
+        public int OutdatedChartCount => _allSongs.Count(song => song.NeedsChartResync);
+        public bool HasOutdatedCharts => OutdatedChartCount > 0;
+        public string ResyncChartsText => IsResyncingCharts
+            ? "⏳ Resyncing charts..."
+            : $"↻ Resync Charts ({OutdatedChartCount})";
+
+        public bool IsResyncingCharts
+        {
+            get => _isResyncingCharts;
+            private set
+            {
+                if (SetProperty(ref _isResyncingCharts, value))
+                {
+                    OnPropertyChanged(nameof(ResyncChartsText));
+                    CommandManager.InvalidateRequerySuggested();
+                }
+            }
         }
 
         public bool AllSelected
@@ -161,6 +185,7 @@ namespace USM.ViewModels
         public ICommand DeleteSongCommand { get; }
         public ICommand OpenSongFolderCommand { get; }
         public ICommand PreviewSongCommand { get; }
+        public ICommand ResyncChartsCommand { get; }
         public ICommand RefreshQuestSongsCommand { get; }
         public ICommand DeleteQuestSongCommand { get; }
         public ICommand ToggleSelectAllQuestSongsCommand { get; }
@@ -180,6 +205,8 @@ namespace USM.ViewModels
             DeleteSongCommand = new RelayCommand(DeleteSingleSong);
             OpenSongFolderCommand = new RelayCommand(OpenSongFolder);
             PreviewSongCommand = new RelayCommand(PreviewSong);
+            ResyncChartsCommand = new AsyncRelayCommand(_ => ResyncOutdatedChartsAsync(),
+                _ => !IsResyncingCharts && HasOutdatedCharts);
             RefreshQuestSongsCommand = new AsyncRelayCommand(_ => RefreshQuestSongsAsync(), _ => !IsRefreshingQuestSongs);
             DeleteQuestSongCommand = new AsyncRelayCommand(DeleteQuestSongAsync, _ => IsQuestSongsAvailable && !IsRefreshingQuestSongs);
             ToggleSelectAllQuestSongsCommand = new RelayCommand(_ => ToggleSelectAllQuestSongs(), _ => QuestSongs.Count > 0 && !IsRefreshingQuestSongs);
@@ -396,6 +423,223 @@ namespace USM.ViewModels
 
             _allSongs.Sort((a, b) => string.Compare(a.Title, b.Title, StringComparison.OrdinalIgnoreCase));
             ApplyFilter();
+            OnPropertyChanged(nameof(OutdatedChartCount));
+            OnPropertyChanged(nameof(HasOutdatedCharts));
+            OnPropertyChanged(nameof(ResyncChartsText));
+            CommandManager.InvalidateRequerySuggested();
+        }
+
+        private async Task ResyncOutdatedChartsAsync()
+        {
+            List<InstalledSong> selectedSongs = _allSongs.Where(song => song.IsSelected).ToList();
+            IEnumerable<InstalledSong> scope = selectedSongs.Count > 0 ? selectedSongs : _allSongs;
+            List<InstalledSong> targets = scope.Where(song => song.NeedsChartResync).ToList();
+            if (targets.Count == 0)
+            {
+                _notifyCallback("The selected songs already use the current chart parser.");
+                return;
+            }
+
+            IsResyncingCharts = true;
+            int updated = 0;
+            var issues = new List<string>();
+            try
+            {
+                foreach (InstalledSong song in targets)
+                {
+                    string tempRoot = Path.Combine(Path.GetTempPath(), $"usm_resync_{Guid.NewGuid():N}");
+                    string tempSng = tempRoot + ".sng";
+                    try
+                    {
+                        _notifyCallback($"Resyncing chart: {song.Artist} - {song.Title}");
+                        var (sourceChart, resolutionMessage) = await ResolveChorusChartAsync(song);
+                        if (sourceChart == null)
+                        {
+                            issues.Add($"{song.Artist} - {song.Title}: {resolutionMessage}");
+                            continue;
+                        }
+                        if (string.IsNullOrWhiteSpace(sourceChart.Md5))
+                        {
+                            issues.Add($"{song.Artist} - {song.Title}: Chorus did not provide a chart file hash; no files were changed.");
+                            continue;
+                        }
+
+                        string downloadUrl = sourceChart.DownloadUrl ??
+                            $"https://files.enchor.us/{Uri.EscapeDataString(sourceChart.Md5)}.sng";
+                        await ChorusClient.DownloadFileAsync(downloadUrl, tempSng);
+
+                        string chartSourceDir = Path.Combine(tempRoot, "chart");
+                        SngDecoder.Decode(tempSng, chartSourceDir);
+                        var jsonCharts = SongConverter.GenerateJsonCharts(chartSourceDir);
+                        UsmPacker.ReplaceChartData(
+                            song.FolderPath,
+                            jsonCharts,
+                            sourceChart.Id,
+                            sourceChart.Md5,
+                            JsonGenerator.ParserVersion);
+                        updated++;
+                    }
+                    catch (Exception ex)
+                    {
+                        issues.Add($"{song.Artist} - {song.Title}: {ex.Message}");
+                    }
+                    finally
+                    {
+                        try { if (File.Exists(tempSng)) File.Delete(tempSng); } catch { }
+                        try { if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, recursive: true); } catch { }
+                    }
+                }
+            }
+            finally
+            {
+                IsResyncingCharts = false;
+                RefreshLibrary();
+            }
+
+            string summary = $"Chart resync complete: {updated} updated, {issues.Count} skipped or failed.";
+            if (issues.Count == 0)
+            {
+                _notifyCallback(summary);
+            }
+            else
+            {
+                string details = string.Join(Environment.NewLine, issues.Take(8));
+                if (issues.Count > 8) details += Environment.NewLine + $"...and {issues.Count - 8} more.";
+                MessageBox.Show($"{summary}{Environment.NewLine}{Environment.NewLine}{details}",
+                    "USM Chart Resync", MessageBoxButton.OK,
+                    updated > 0 ? MessageBoxImage.Information : MessageBoxImage.Warning);
+            }
+        }
+
+        private static async Task<(ChorusChart? Chart, string Message)> ResolveChorusChartAsync(InstalledSong song)
+        {
+            if (!string.IsNullOrWhiteSpace(song.ChorusChartMd5))
+            {
+                string md5 = song.ChorusChartMd5.Trim();
+                return (new ChorusChart
+                {
+                    Id = song.ChorusChartId ?? md5,
+                    Md5 = md5,
+                    Title = song.Title,
+                    Artist = song.Artist,
+                    DownloadUrl = $"https://files.enchor.us/{Uri.EscapeDataString(md5)}.sng"
+                }, "Using saved Chorus chart ID.");
+            }
+
+            string query = string.Join(" ", new[] { song.Title, song.Artist }
+                .Where(value => !string.IsNullOrWhiteSpace(value) &&
+                    !value.Equals("Unknown Artist", StringComparison.OrdinalIgnoreCase)));
+            if (string.IsNullOrWhiteSpace(query))
+                return (null, "No title or artist metadata is available to identify its original chart.");
+
+            var search = await ChorusClient.SearchAsync(query, 1, 60, "guitar");
+            List<ChorusChart> exactMatches = search.Charts.Where(chart => !string.IsNullOrWhiteSpace(chart.Md5) &&
+                MatchKey(chart.Title) == MatchKey(song.Title) &&
+                MatchKey(chart.Artist) == MatchKey(song.Artist)).ToList();
+
+            if (exactMatches.Count == 1)
+                return (exactMatches[0], "Matched by exact title and artist.");
+
+            if (exactMatches.Count > 1)
+            {
+                var selected = ChooseChorusMatch(song, exactMatches);
+                return selected != null
+                    ? (selected, "Selected Chorus chart match.")
+                    : (null, "Multiple exact Chorus matches were found; no chart was changed.");
+            }
+
+            List<ChorusChart> titleMatches = search.Charts
+                .Where(chart => !string.IsNullOrWhiteSpace(chart.Md5) && MatchKey(chart.Title) == MatchKey(song.Title))
+                .Take(12)
+                .ToList();
+            if (titleMatches.Count == 0)
+                return (null, "No exact title match was found on Chorus; this song was left unchanged.");
+
+            var manuallySelected = ChooseChorusMatch(song, titleMatches);
+            return manuallySelected != null
+                ? (manuallySelected, "Selected Chorus chart match.")
+                : (null, "A title match exists but the artist differs; no chart was changed.");
+        }
+
+        private static ChorusChart? ChooseChorusMatch(InstalledSong song, IReadOnlyList<ChorusChart> candidates)
+        {
+            var dialog = new Window
+            {
+                Title = $"Choose Chorus chart for {song.Title}",
+                Width = 680,
+                Height = 390,
+                MinWidth = 520,
+                MinHeight = 300,
+                WindowStartupLocation = Application.Current?.MainWindow != null
+                    ? WindowStartupLocation.CenterOwner
+                    : WindowStartupLocation.CenterScreen,
+                Background = new SolidColorBrush(Color.FromRgb(25, 27, 39)),
+                Foreground = Brushes.White,
+                ResizeMode = ResizeMode.CanResize
+            };
+            if (Application.Current?.MainWindow != null && Application.Current.MainWindow != dialog)
+                dialog.Owner = Application.Current.MainWindow;
+
+            var layout = new Grid { Margin = new Thickness(18) };
+            layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var heading = new TextBlock
+            {
+                Text = $"Several possible official charts were found for {song.Artist} — {song.Title}. Choose the matching one:",
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 12),
+                Foreground = Brushes.White
+            };
+            Grid.SetRow(heading, 0);
+            layout.Children.Add(heading);
+
+            var choices = new ListBox
+            {
+                ItemsSource = candidates,
+                DisplayMemberPath = nameof(ChorusChart.ResyncChoiceLabel),
+                Background = new SolidColorBrush(Color.FromRgb(31, 34, 48)),
+                Foreground = Brushes.White,
+                BorderBrush = new SolidColorBrush(Color.FromRgb(62, 66, 86)),
+                Margin = new Thickness(0, 0, 0, 14)
+            };
+            if (candidates.Count == 1) choices.SelectedIndex = 0;
+            Grid.SetRow(choices, 1);
+            layout.Children.Add(choices);
+
+            var buttons = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right
+            };
+            var cancel = new Button { Content = "Cancel", MinWidth = 96, Margin = new Thickness(0, 0, 8, 0), Padding = new Thickness(12, 7, 12, 7) };
+            cancel.Click += (_, _) => dialog.DialogResult = false;
+            var choose = new Button { Content = "Use Selected Chart", MinWidth = 140, Padding = new Thickness(12, 7, 12, 7), IsDefault = true };
+            choose.Click += (_, _) =>
+            {
+                if (choices.SelectedItem != null) dialog.DialogResult = true;
+            };
+            buttons.Children.Add(cancel);
+            buttons.Children.Add(choose);
+            Grid.SetRow(buttons, 2);
+            layout.Children.Add(buttons);
+
+            dialog.Content = layout;
+            return dialog.ShowDialog() == true ? choices.SelectedItem as ChorusChart : null;
+        }
+
+        private static string MatchKey(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+            string normalized = value.Normalize(NormalizationForm.FormD);
+            var builder = new StringBuilder(normalized.Length);
+            foreach (char character in normalized)
+            {
+                if (CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.NonSpacingMark) continue;
+                if (char.IsLetterOrDigit(character)) builder.Append(char.ToLowerInvariant(character));
+            }
+            return builder.ToString();
         }
 
         private static InstalledSong? LoadInstalledSong(string dir)
@@ -407,6 +651,9 @@ namespace USM.ViewModels
             bool isMulti = false;
             bool isHalfTrack = false;
             bool hasKnownAudioLayout = false;
+            string? chorusChartId = null;
+            string? chorusChartMd5 = null;
+            int chartParserVersion = 0;
             BitmapImage? coverImage = null;
 
             try
@@ -421,6 +668,9 @@ namespace USM.ViewModels
                     title = CleanUsmDisplayName(ReadMetaValue(meta, "SongName", "Name") ?? title);
                     artist = ReadMetaValue(meta, "BandName", "Artist") ?? artist;
                     charter = ReadMetaValue(meta, "LevelAuthorName", "Charter") ?? charter;
+                    chorusChartId = ReadMetaValue(meta, "ChorusChartId", "SourceChartId");
+                    chorusChartMd5 = ReadMetaValue(meta, "ChorusChartMd5", "SourceChartMd5");
+                    chartParserVersion = ReadMetaInt(meta, "ChartParserVersion", "ParserVersion");
                     if (meta.TryGetProperty("AudioLayout", out var audioLayout) && audioLayout.ValueKind == JsonValueKind.String)
                     {
                         string layout = audioLayout.GetString() ?? string.Empty;
@@ -491,7 +741,10 @@ namespace USM.ViewModels
                 CoverImage = coverImage,
                 AudioPath = null,
                 IsMultiTrack = isMulti,
-                IsHalfTrack = isHalfTrack
+                IsHalfTrack = isHalfTrack,
+                ChorusChartId = chorusChartId,
+                ChorusChartMd5 = chorusChartMd5,
+                ChartParserVersion = chartParserVersion
             };
         }
 
@@ -513,6 +766,21 @@ namespace USM.ViewModels
                 }
             }
             return null;
+        }
+
+        private static int ReadMetaInt(JsonElement meta, params string[] names)
+        {
+            foreach (var property in meta.EnumerateObject())
+            {
+                if (!names.Any(name => string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase)))
+                    continue;
+
+                if (property.Value.ValueKind == JsonValueKind.Number && property.Value.TryGetInt32(out int number))
+                    return number;
+                if (property.Value.ValueKind == JsonValueKind.String && int.TryParse(property.Value.GetString(), out number))
+                    return number;
+            }
+            return 0;
         }
 
         private static string CleanUsmDisplayName(string value)

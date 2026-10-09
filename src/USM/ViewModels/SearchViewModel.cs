@@ -362,7 +362,12 @@ namespace USM.ViewModels
                     chart.StatusText = cp.Message;
                 });
 
-                bool success = await SongConverter.ConvertSongAsync(tempSng, customSongsDir, convProgress);
+                bool success = await SongConverter.ConvertSongAsync(
+                    tempSng,
+                    customSongsDir,
+                    convProgress,
+                    sourceChartId: chart.Id,
+                    sourceChartMd5: chart.Md5);
                 Application.Current?.Dispatcher?.Invoke(() =>
                 {
                     if (success)

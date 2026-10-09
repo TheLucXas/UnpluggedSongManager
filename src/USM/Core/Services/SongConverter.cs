@@ -5,6 +5,7 @@ using System.IO.Compression;
 using System.Linq;
 using System.Security;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -76,6 +77,31 @@ namespace USM.Core.Services
             catch { }
             return info;
         }
+
+        public static Dictionary<string, string> GenerateJsonCharts(string inputDir, Action<string>? log = null)
+        {
+            string midPath = Path.Combine(inputDir, "notes.mid");
+            string chartPath = Path.Combine(inputDir, "notes.chart");
+            if (!File.Exists(chartPath)) chartPath = Path.Combine(inputDir, "song.chart");
+
+            if (File.Exists(midPath))
+            {
+                log?.Invoke("  [Chart] Detected notes.mid (Standard MIDI format).");
+                var midi = MidiParser.Parse(midPath);
+                return JsonGenerator.GenerateAllDifficultiesJson(
+                    midi.BpmGrid, midi.TickToSec, midi.Difficulties, midi.TicksPerBeat);
+            }
+
+            if (File.Exists(chartPath))
+            {
+                log?.Invoke("  [Chart] Detected notes.chart (Clone Hero text format).");
+                var chart = ChartParser.Parse(chartPath);
+                return JsonGenerator.GenerateAllDifficultiesJson(
+                    chart.BpmGrid, chart.TickToSec, chart.Difficulties, chart.Resolution);
+            }
+
+            throw new FileNotFoundException("No chart notes file (notes.chart or notes.mid) found in the song package.");
+        }
         
         public static void CleanupOutDir(string? outDir)
         {
@@ -87,7 +113,9 @@ namespace USM.Core.Services
             string outputParentDir,
             IProgress<ConversionProgress>? progress = null,
             Action<string>? log = null,
-            CancellationToken ct = default)
+            CancellationToken ct = default,
+            string? sourceChartId = null,
+            string? sourceChartMd5 = null)
         {
             string? tempDir = null;
             string? outDir = null;
@@ -190,20 +218,7 @@ namespace USM.Core.Services
                 // 6. Chart Note Generation -> Outputs .json
                 progress?.Report(new ConversionProgress(0.70, "Generating USM 2.0 chart notes..."));
 
-                System.Collections.Generic.Dictionary<string, string>? jsonCharts = null;
-
-                if (File.Exists(midPath))
-                {
-                    log?.Invoke("  [Chart] Detected notes.mid (Standard MIDI format).");
-                    var midi = MidiParser.Parse(midPath);
-                    jsonCharts = JsonGenerator.GenerateAllDifficultiesJson(midi.BpmGrid, midi.TickToSec, midi.Difficulties, midi.TicksPerBeat);
-                }
-                else if (File.Exists(chartPath))
-                {
-                    log?.Invoke("  [Chart] Detected notes.chart (Clone Hero text format).");
-                    var chart = ChartParser.Parse(chartPath);
-                    jsonCharts = JsonGenerator.GenerateAllDifficultiesJson(chart.BpmGrid, chart.TickToSec, chart.Difficulties, chart.Resolution);
-                }
+                Dictionary<string, string> jsonCharts = GenerateJsonCharts(inputDir, log);
                 
                 if (jsonCharts != null)
                 {
@@ -215,17 +230,21 @@ namespace USM.Core.Services
                 }
 
                 // 7. Generate meta.json
-                string metaJson = $@"{{
-""BandName"":""{CleanJsonText(iniInfo.Artist)}"",
-""FileName"":""{folderName}"",
-""InitialDelay"":{iniInfo.Delay.ToString("F1", CultureInfo.InvariantCulture)},
-""IsBuiltIn"":false,
-""IsMultiTrack"":{(audioResult.HasMultiTrack ? "true" : "false")},
-""AudioLayout"":""{(audioResult.IsHalfTrack ? "two-track-instrumental-vocals" : audioResult.HasMultiTrack ? "full-multitrack" : "single-track")}"",
-""LevelAuthorName"":""{CleanJsonText(iniInfo.Charter)}"",
-""SongID"":""CUSTOM_{folderName}"",
-""SongName"":""{CleanJsonText(iniInfo.Name)}""
-}}";
+                string metaJson = JsonSerializer.Serialize(new
+                {
+                    BandName = Regex.Replace(iniInfo.Artist ?? string.Empty, @"<[^>]*>", "").Trim(),
+                    FileName = folderName,
+                    InitialDelay = iniInfo.Delay,
+                    IsBuiltIn = false,
+                    IsMultiTrack = audioResult.HasMultiTrack,
+                    AudioLayout = audioResult.IsHalfTrack ? "two-track-instrumental-vocals" : audioResult.HasMultiTrack ? "full-multitrack" : "single-track",
+                    LevelAuthorName = Regex.Replace(iniInfo.Charter ?? string.Empty, @"<[^>]*>", "").Trim(),
+                    SongID = $"CUSTOM_{folderName}",
+                    SongName = Regex.Replace(iniInfo.Name ?? string.Empty, @"<[^>]*>", "").Trim(),
+                    ChorusChartId = sourceChartId ?? string.Empty,
+                    ChorusChartMd5 = sourceChartMd5 ?? string.Empty,
+                    ChartParserVersion = JsonGenerator.ParserVersion
+                });
 
                 // 8. Pack to .usm
                 progress?.Report(new ConversionProgress(0.90, "Packaging .usm archive..."));
