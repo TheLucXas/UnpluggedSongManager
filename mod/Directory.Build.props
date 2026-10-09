@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'UnpluggedCustomSongs'">
+    <BaseIntermediateOutputPath>$(MSBuildProjectDirectory)\..\..\obj\USM\Mod\PC\</BaseIntermediateOutputPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'UnpluggedCustomSongs.Quest'">
+    <BaseIntermediateOutputPath>$(MSBuildProjectDirectory)\..\..\obj\USM\Mod\Quest\</BaseIntermediateOutputPath>
+  </PropertyGroup>
+</Project>
