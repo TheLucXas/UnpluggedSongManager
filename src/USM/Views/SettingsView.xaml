@@ -416,7 +416,7 @@
                                         <Button Grid.Row="0"
                                                 Style="{StaticResource SpinnerBtn}"
                                                 Command="{Binding IncrementDownloadsCommand}"
-                                                ToolTip="Increase">
+                                                ToolTip="{DynamicResource Loc_Settings_IncreaseTooltip}">
                                             <TextBlock Text="▲"
                                                        FontSize="8"
                                                        Foreground="{StaticResource BrushTextSecondary}"
@@ -429,7 +429,7 @@
                                         <Button Grid.Row="2"
                                                 Style="{StaticResource SpinnerBtn}"
                                                 Command="{Binding DecrementDownloadsCommand}"
-                                                ToolTip="Decrease">
+                                                ToolTip="{DynamicResource Loc_Settings_DecreaseTooltip}">
                                             <TextBlock Text="▼"
                                                        FontSize="8"
                                                        Foreground="{StaticResource BrushTextSecondary}"

@@ -47,6 +47,7 @@ namespace USM.Core.Parsers
             public int AudioStemCount { get; init; }
             public bool HasVocalsStem { get; init; }
             public bool HasGuitarStem { get; init; }
+            public bool HasChartProfile { get; init; }
             public int SourceDifficultyCount { get; init; }
             public int ChartNoteCount { get; init; }
             public double SongDurationSeconds { get; init; }
@@ -136,6 +137,7 @@ namespace USM.Core.Parsers
             {
                 int bestDifficultyCount = 0;
                 int bestNoteCount = 0;
+                bool hasParsedChartProfile = false;
                 double bestFirstNoteTime = 0;
                 double bestLastNoteTime = 0;
                 double bestCoverageRatio = -1;
@@ -171,6 +173,8 @@ namespace USM.Core.Parsers
                             noteTimes = parsed.Difficulties.Values.SelectMany(notes => notes.Keys)
                                 .Select(parsed.TickToSec).Where(time => double.IsFinite(time) && time >= 0).ToList();
                         }
+
+                        hasParsedChartProfile = true;
 
                         double firstNoteTime = noteTimes.Count > 0 ? noteTimes.Min() : 0;
                         double lastNoteTime = noteTimes.Count > 0 ? noteTimes.Max() : 0;
@@ -211,6 +215,7 @@ namespace USM.Core.Parsers
                     AudioStemCount = profile.AudioStemCount,
                     HasVocalsStem = profile.HasVocalsStem,
                     HasGuitarStem = profile.HasGuitarStem,
+                    HasChartProfile = hasParsedChartProfile,
                     StemGroups = profile.StemGroups,
                     SourceDifficultyCount = Math.Min(4, bestDifficultyCount),
                     ChartNoteCount = bestNoteCount,

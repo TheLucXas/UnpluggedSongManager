@@ -113,7 +113,7 @@ namespace USM.Core.Services
                         string genre = item.TryGetProperty("genre", out var genreP) ? genreP.GetString() ?? "" : "";
                         string year = item.TryGetProperty("year", out var yrP) ? yrP.ToString() : "";
                         string charter = item.TryGetProperty("charter", out var chP) ? chP.GetString() ?? "Unknown" : "Unknown";
-                        string chartContentDisplay = BuildChartContentDisplay(item);
+                        ChorusChartMetadata chartMetadata = BuildChartContentMetadata(item);
 
                         DateTime? modifiedTime = null;
                         if (item.TryGetProperty("modifiedTime", out var mtP) && mtP.ValueKind == JsonValueKind.String)
@@ -137,7 +137,7 @@ namespace USM.Core.Services
                             DiffBass = diffBass,
                             PreviewStart = previewSec,
                             ModifiedTime = modifiedTime,
-                            ChartContentDisplay = chartContentDisplay,
+                            ChartMetadata = chartMetadata,
                             DownloadUrl = !string.IsNullOrEmpty(md5) ? $"{FilesUrl}/{md5}.sng" : null,
                             ArtUrl = !string.IsNullOrEmpty(artMd5) ? $"{FilesUrl}/{artMd5}.jpg" : null
                         };
@@ -162,10 +162,10 @@ namespace USM.Core.Services
             }
         }
 
-        private static string BuildChartContentDisplay(JsonElement item)
+        private static ChorusChartMetadata BuildChartContentMetadata(JsonElement item)
         {
             if (!item.TryGetProperty("notesData", out var notesData) || notesData.ValueKind != JsonValueKind.Object)
-                return string.Empty;
+                return new ChorusChartMetadata();
 
             var difficultyByInstrument = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
             if (notesData.TryGetProperty("noteCounts", out var noteCounts) && noteCounts.ValueKind == JsonValueKind.Array)
@@ -197,30 +197,16 @@ namespace USM.Core.Services
                 }
             }
 
-            var instrumentNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["guitar"] = "Guitar",
-                ["guitar_coop"] = "Co-op Guitar",
-                ["rhythm"] = "Rhythm Guitar",
-                ["bass"] = "Bass",
-                ["drums"] = "Drums",
-                ["keys"] = "Keys",
-                ["guitarghl"] = "GHL Guitar",
-                ["guitar_coop_ghl"] = "GHL Co-op Guitar",
-                ["rhythm_ghl"] = "GHL Rhythm Guitar",
-                ["bassghl"] = "GHL Bass"
-            };
             string[] instrumentOrder =
             {
                 "guitar", "bass", "drums", "keys", "rhythm", "guitar_coop",
                 "guitarghl", "guitar_coop_ghl", "rhythm_ghl", "bassghl"
             };
             string[] difficultyOrder = { "easy", "medium", "hard", "expert" };
-            var parts = new List<string>();
+            var displayDifficulties = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (string instrument in instrumentOrder)
             {
                 if (!difficultyByInstrument.TryGetValue(instrument, out var difficulties)) continue;
-                string displayName = instrumentNames.TryGetValue(instrument, out var mappedName) ? mappedName : instrument;
                 string available = string.Join("/", difficultyOrder
                     .Where(difficulties.Contains)
                     .Select(difficulty => difficulty switch
@@ -231,20 +217,17 @@ namespace USM.Core.Services
                         "expert" => "X",
                         _ => difficulty
                     }));
-                parts.Add(available.Length > 0 ? $"{displayName} {available}" : displayName);
+                displayDifficulties[instrument] = available;
             }
 
-            bool hasVocals = ReadBoolean(notesData, "hasVocals") == true;
-            bool hasLyrics = ReadBoolean(notesData, "hasLyrics") == true;
-            if (hasVocals && hasLyrics) parts.Add("Vocals + lyrics");
-            else if (hasVocals) parts.Add("Vocal chart");
-            else if (hasLyrics) parts.Add("Lyrics");
-
-            bool? hasVideo = ReadBoolean(item, "hasVideoBackground");
-            if (hasVideo == true) parts.Add("Video background");
-            else if (hasVideo == false) parts.Add("No video");
-
-            return parts.Count == 0 ? "Chart details unavailable" : "Chart: " + string.Join(" · ", parts);
+            return new ChorusChartMetadata
+            {
+                HasNotesData = true,
+                InstrumentDifficulties = displayDifficulties,
+                HasVocals = ReadBoolean(notesData, "hasVocals") == true,
+                HasLyrics = ReadBoolean(notesData, "hasLyrics") == true,
+                HasVideoBackground = ReadBoolean(item, "hasVideoBackground")
+            };
         }
 
         private static string ReadString(JsonElement element, string propertyName)

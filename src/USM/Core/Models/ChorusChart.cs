@@ -1,10 +1,22 @@
 using System;
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 using USM.Core.Services;
+using USM.Core.Services.Localization;
 using USM.ViewModels;
 
 namespace USM.Core.Models
 {
+    public sealed class ChorusChartMetadata
+    {
+        public bool HasNotesData { get; set; }
+        public Dictionary<string, string> InstrumentDifficulties { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public bool HasVocals { get; set; }
+        public bool HasLyrics { get; set; }
+        public bool? HasVideoBackground { get; set; }
+    }
+
     public class ChorusChart : ViewModelBase
     {
         public string Id { get; set; } = string.Empty;
@@ -23,8 +35,64 @@ namespace USM.Core.Models
         public string? DownloadUrl { get; set; }
         public string? ArtUrl { get; set; }
         public DateTime? ModifiedTime { get; set; }
-        public string ChartContentDisplay { get; set; } = string.Empty;
+        public ChorusChartMetadata ChartMetadata { get; set; } = new();
+        public string ChartContentDisplay
+        {
+            get
+            {
+                if (!ChartMetadata.HasNotesData)
+                    return string.Empty;
+
+                var instrumentNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["guitar"] = "Search_InstrumentGuitar",
+                    ["guitar_coop"] = "Search_InstrumentCoopGuitar",
+                    ["rhythm"] = "Search_InstrumentRhythmGuitar",
+                    ["bass"] = "Search_InstrumentBass",
+                    ["drums"] = "Search_InstrumentDrums",
+                    ["keys"] = "Search_InstrumentKeys",
+                    ["guitarghl"] = "Search_InstrumentGhlGuitar",
+                    ["guitar_coop_ghl"] = "Search_InstrumentGhlCoopGuitar",
+                    ["rhythm_ghl"] = "Search_InstrumentGhlRhythmGuitar",
+                    ["bassghl"] = "Search_InstrumentGhlBass"
+                };
+                string[] instrumentOrder =
+                {
+                    "guitar", "bass", "drums", "keys", "rhythm", "guitar_coop",
+                    "guitarghl", "guitar_coop_ghl", "rhythm_ghl", "bassghl"
+                };
+                var parts = new System.Collections.Generic.List<string>();
+                foreach (string instrument in instrumentOrder)
+                {
+                    if (!ChartMetadata.InstrumentDifficulties.TryGetValue(instrument, out string? difficulties))
+                        continue;
+                    string name = instrumentNames.TryGetValue(instrument, out string? key)
+                        ? LocalizationService.T(key)
+                        : instrument;
+                    parts.Add(string.IsNullOrEmpty(difficulties) ? name : $"{name} {difficulties}");
+                }
+
+                if (ChartMetadata.HasVocals && ChartMetadata.HasLyrics)
+                    parts.Add(LocalizationService.T("Search_VocalsLyrics"));
+                else if (ChartMetadata.HasVocals)
+                    parts.Add(LocalizationService.T("Search_VocalChart"));
+                else if (ChartMetadata.HasLyrics)
+                    parts.Add(LocalizationService.T("Search_Lyrics"));
+
+                if (ChartMetadata.HasVideoBackground == true)
+                    parts.Add(LocalizationService.T("Search_VideoBackground"));
+                else if (ChartMetadata.HasVideoBackground == false)
+                    parts.Add(LocalizationService.T("Search_NoVideo"));
+
+                return parts.Count == 0
+                    ? LocalizationService.T("Search_ChartDetailsUnavailable")
+                    : LocalizationService.T("Search_ChartPrefix") + " " + string.Join(" · ", parts);
+            }
+        }
         public string ResyncChoiceLabel => $"{Artist} — {Title}  |  {Charter}  |  {Id}";
+
+        [JsonIgnore]
+        public Task? QualityProbeTask { get; set; }
 
         private AudioTrackLayout _audioTrackLayout = AudioTrackLayout.Unknown;
         public AudioTrackLayout TrackLayout
@@ -33,21 +101,38 @@ namespace USM.Core.Models
             set
             {
                 if (SetProperty(ref _audioTrackLayout, value))
+                {
                     OnPropertyChanged(nameof(TrackLayoutDisplay));
+                    OnPropertyChanged(nameof(HasChartCoverageWarning));
+                    OnPropertyChanged(nameof(ChartCoverageWarningDisplay));
+                }
             }
         }
 
         public string TrackLayoutDisplay => TrackLayout switch
         {
-            AudioTrackLayout.Checking => "Checking audio layout…",
-            AudioTrackLayout.SingleTrack => "Single Track",
-            AudioTrackLayout.HalfTrack => "Half-Track · Instrumental + Vocals",
-            AudioTrackLayout.MultiTrack => "Multi Track",
-            _ => "Audio layout unavailable"
+            AudioTrackLayout.Checking => LocalizationService.T("Search_CheckingChartQuality"),
+            AudioTrackLayout.SingleTrack => LocalizationService.T("Search_SingleTrack"),
+            AudioTrackLayout.HalfTrack => LocalizationService.T("Search_HalfTrack"),
+            AudioTrackLayout.MultiTrack => LocalizationService.T("Search_MultiTrack"),
+            _ => LocalizationService.T("Search_AudioLayoutUnavailable")
         };
 
         public int AudioStemCount { get; set; }
         public int SourceDifficultyCount { get; set; }
+        private bool _hasChartQualityProfile;
+        public bool HasChartQualityProfile
+        {
+            get => _hasChartQualityProfile;
+            set
+            {
+                if (SetProperty(ref _hasChartQualityProfile, value))
+                {
+                    OnPropertyChanged(nameof(HasChartCoverageWarning));
+                    OnPropertyChanged(nameof(ChartCoverageWarningDisplay));
+                }
+            }
+        }
         private int _chartNoteCount;
         public int ChartNoteCount
         {
@@ -55,7 +140,10 @@ namespace USM.Core.Models
             set
             {
                 if (SetProperty(ref _chartNoteCount, value))
+                {
                     OnPropertyChanged(nameof(HasChartCoverageWarning));
+                    OnPropertyChanged(nameof(ChartCoverageWarningDisplay));
+                }
             }
         }
 
@@ -73,8 +161,21 @@ namespace USM.Core.Models
             }
         }
 
-        public bool HasChartCoverageWarning => !IsCheckingQuality && ChartNoteCount > 0 && ChartCoverageRatio < 0.50;
-        public string ChartCoverageWarningDisplay => $"Incomplete chart · {ChartCoverageRatio:P0}";
+        public bool HasChartCoverageWarning => HasChartQualityProfile && !IsCheckingQuality
+            && (ChartNoteCount <= 0 || ChartCoverageRatio < 0.50);
+        public string ChartCoverageWarningDisplay => ChartNoteCount <= 0
+            ? LocalizationService.T("Search_NoPlayableGuitarNotes")
+            : LocalizationService.T("Search_IncompleteChartPercent", ChartCoverageRatio);
+
+        public void RefreshLocalizedDisplay()
+        {
+            OnPropertyChanged(nameof(TrackLayoutDisplay));
+            OnPropertyChanged(nameof(HasChartCoverageWarning));
+            OnPropertyChanged(nameof(ChartCoverageWarningDisplay));
+            OnPropertyChanged(nameof(MetaDisplay));
+            OnPropertyChanged(nameof(GuitarDifficultyDisplay));
+            OnPropertyChanged(nameof(ChartContentDisplay));
+        }
 
         private bool _isIdealForUnplugged;
         public bool IsIdealForUnplugged
@@ -98,8 +199,12 @@ namespace USM.Core.Models
             ? (string.IsNullOrEmpty(Year) ? Artist : $"{Artist} ({Year})")
             : $"{Artist} • {Album}{(string.IsNullOrEmpty(Year) ? "" : $" ({Year})")}";
 
-        public string MetaDisplay => $"Charter: {Charter} | Duration: {Duration} | {(DiffGuitar >= 0 ? $"Guitar: Tier {DiffGuitar}" : "Guitar: Yes")}";
-        public string GuitarDifficultyDisplay => DiffGuitar >= 0 ? $"🎸 Tier {DiffGuitar}" : "🎸 Guitar";
+        public string MetaDisplay => DiffGuitar >= 0
+            ? LocalizationService.T("Search_MetaWithTier", Charter, Duration, DiffGuitar)
+            : LocalizationService.T("Search_MetaWithoutTier", Charter, Duration);
+        public string GuitarDifficultyDisplay => DiffGuitar >= 0
+            ? LocalizationService.T("Search_GuitarTier", DiffGuitar)
+            : LocalizationService.T("Search_Guitar");
 
         private bool _isInstalled;
         public bool IsInstalled
@@ -214,22 +319,51 @@ namespace USM.Core.Models
             set => SetProperty(ref _isCheckingCompatibility, value);
         }
 
-        public bool HasCompatibilityProfile { get; set; }
+        private bool _hasCompatibilityProfile;
+        public bool HasCompatibilityProfile
+        {
+            get => _hasCompatibilityProfile;
+            set
+            {
+                if (SetProperty(ref _hasCompatibilityProfile, value))
+                    OnPropertyChanged(nameof(HasChartCoverageWarning));
+            }
+        }
         public int AudioStemCount { get; set; }
         public int SourceDifficultyCount { get; set; }
-        public double ChartCoverageRatio { get; set; }
+        private double _chartCoverageRatio;
+        public double ChartCoverageRatio
+        {
+            get => _chartCoverageRatio;
+            set
+            {
+                if (SetProperty(ref _chartCoverageRatio, value))
+                {
+                    OnPropertyChanged(nameof(HasChartCoverageWarning));
+                    OnPropertyChanged(nameof(ChartCoverageWarningDisplay));
+                }
+            }
+        }
         public string? ChorusChartId { get; set; }
         public string? ChorusChartMd5 { get; set; }
         public int ChartParserVersion { get; set; }
         public bool NeedsChartResync => ChartParserVersion < USM.Core.Parsers.JsonGenerator.ParserVersion;
-        public bool HasChartCoverageWarning => ChartParserVersion >= USM.Core.Parsers.JsonGenerator.ParserVersion
+        public bool HasChartCoverageWarning => (HasCompatibilityProfile
+            || ChartParserVersion >= USM.Core.Parsers.JsonGenerator.ParserVersion)
             && ChartCoverageRatio < 0.50;
         public string ChartCoverageWarningDisplay => ChartCoverageRatio > 0
-            ? $"Incomplete chart · {ChartCoverageRatio:P0}"
-            : "Chart has no playable notes";
+            ? LocalizationService.T("Library_IncompleteChartPercent", ChartCoverageRatio)
+            : LocalizationService.T("Library_NoPlayableNotes");
         public string TrackTypeDisplay => IsHalfTrack
-            ? "Half-Track · Instrumental + Vocals"
-            : IsMultiTrack ? "Multi Track" : "Single Track";
+            ? LocalizationService.T("Library_HalfTrack")
+            : IsMultiTrack ? LocalizationService.T("Library_MultiTrack") : LocalizationService.T("Library_SingleTrack");
+
+        public void RefreshLocalizedDisplay()
+        {
+            OnPropertyChanged(nameof(TrackTypeDisplay));
+            OnPropertyChanged(nameof(HasChartCoverageWarning));
+            OnPropertyChanged(nameof(ChartCoverageWarningDisplay));
+        }
 
         private bool _isSelected;
         public bool IsSelected

@@ -9,6 +9,7 @@ using System.Windows.Input;
 using USM.Core.Models;
 using USM.Core.Parsers;
 using USM.Core.Services;
+using USM.Core.Services.Localization;
 
 namespace USM.ViewModels
 {
@@ -20,7 +21,7 @@ namespace USM.ViewModels
 
         private string _searchQuery = string.Empty;
         private bool _isSearching;
-        private string _statusText = "Type a song or artist name to search Chorus Encore / Clone Hero database.";
+        private string _statusText = LocalizationService.T("Search_InitialPrompt");
 
         private readonly ConcurrentQueue<ChorusChart> _downloadQueue = new();
         private int _activeDownloads = 0;
@@ -64,7 +65,7 @@ namespace USM.ViewModels
             set => SetProperty(ref _statusText, value);
         }
 
-        public string PageInfoText => $"Page {_currentPage}";
+        public string PageInfoText => LocalizationService.T("Search_Page", _currentPage);
         public bool CanGoToPreviousPage => !IsSearching && _currentPage > 1;
         public bool CanGoToNextPage => !IsSearching &&
             (GetFilteredCharts().Count > _currentPage * SearchPageSize || _hasMoreApiPages);
@@ -137,6 +138,17 @@ namespace USM.ViewModels
             }
         }
 
+        private int _selectedChartQualityFilterIndex;
+        public int SelectedChartQualityFilterIndex
+        {
+            get => _selectedChartQualityFilterIndex;
+            set
+            {
+                if (SetProperty(ref _selectedChartQualityFilterIndex, value))
+                    RequestSearch();
+            }
+        }
+
         public ObservableCollection<ChorusChart> Results { get; } = new();
 
         public ICommand SearchCommand { get; }
@@ -149,6 +161,7 @@ namespace USM.ViewModels
         {
             _gameDetector = gameDetector;
             _notifyCallback = notifyCallback;
+            LocalizationService.Instance.LanguageChanged += OnLanguageChanged;
 
             SearchCommand = new AsyncRelayCommand(SearchNowAsync);
             DownloadCommand = new RelayCommand(EnqueueDownload);
@@ -167,10 +180,24 @@ namespace USM.ViewModels
                 OnPropertyChanged(nameof(SelectedStatusFilterIndex));
                 _selectedAudioLayoutFilterIndex = 0;
                 OnPropertyChanged(nameof(SelectedAudioLayoutFilterIndex));
+                _selectedChartQualityFilterIndex = 0;
+                OnPropertyChanged(nameof(SelectedChartQualityFilterIndex));
                 RequestSearch();
             });
 
             _gameDetector.MaxConcurrentDownloadsChanged += _ => ProcessDownloadQueue();
+        }
+
+        private void OnLanguageChanged(string _)
+        {
+            OnPropertyChanged(nameof(PageInfoText));
+            foreach (ChorusChart chart in _rawCharts)
+                chart.RefreshLocalizedDisplay();
+
+            if (_rawCharts.Count == 0 && !IsSearching)
+                StatusText = LocalizationService.T("Search_InitialPrompt");
+            else
+                ShowCurrentPage();
         }
 
         private async Task PerformSearchAsync()
@@ -191,8 +218,8 @@ namespace USM.ViewModels
             _lastAudioFilterRefreshUtc = DateTime.MinValue;
             OnPropertyChanged(nameof(PageInfoText));
             StatusText = _activeQuery == "*"
-                ? "Browsing charts on Chorus Encore..."
-                : $"Searching Chorus Encore for '{_activeQuery}'...";
+                ? LocalizationService.T("Search_Browsing")
+                : LocalizationService.T("Search_SearchingQuery", _activeQuery);
             OnPropertyChanged(nameof(CanGoToNextPage));
 
             try
@@ -203,7 +230,7 @@ namespace USM.ViewModels
             catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
             catch (Exception ex)
             {
-                StatusText = $"Search error: {ex.Message}";
+                StatusText = LocalizationService.T("Search_Error", ex.Message);
             }
             finally
             {
@@ -250,7 +277,9 @@ namespace USM.ViewModels
 
                 chart.TrackLayout = AudioTrackLayout.Checking;
                 chart.IsCheckingQuality = true;
-                probeTasks.Add(ProbeSongProfileAsync(chart, cancellationToken));
+                Task probeTask = ProbeSongProfileAsync(chart, cancellationToken);
+                chart.QualityProbeTask = probeTask;
+                probeTasks.Add(probeTask);
             }
             return probeTasks;
         }
@@ -272,7 +301,7 @@ namespace USM.ViewModels
                         chart.DownloadUrl!, cancellationToken, chart.DurationSeconds);
                     SongProfileCache[chart.Md5] = profile;
                     ApplySongProfile(chart, profile);
-                    RefreshVisibleResultsForAudioMatch(chart, profile.TrackLayout, cancellationToken);
+                    RefreshVisibleResultsForProfile(chart, profile.TrackLayout, cancellationToken);
                 }
                 finally
                 {
@@ -282,6 +311,7 @@ namespace USM.ViewModels
             catch
             {
                 chart.TrackLayout = AudioTrackLayout.Unknown;
+                chart.HasChartQualityProfile = false;
                 chart.IsIdealForUnplugged = false;
                 chart.IsCheckingQuality = false;
             }
@@ -292,6 +322,7 @@ namespace USM.ViewModels
             chart.TrackLayout = profile.TrackLayout;
             chart.AudioStemCount = profile.AudioStemCount;
             chart.SourceDifficultyCount = profile.SourceDifficultyCount;
+            chart.HasChartQualityProfile = profile.HasChartProfile;
             chart.ChartNoteCount = profile.ChartNoteCount;
             chart.ChartCoverageRatio = profile.ChartCoverageRatio;
             chart.IsIdealForUnplugged = profile.IsIdealForUnplugged;
@@ -310,7 +341,7 @@ namespace USM.ViewModels
             _ = PerformSearchAsync();
         }
 
-        private void RefreshVisibleResultsForAudioMatch(ChorusChart chart, AudioTrackLayout layout, CancellationToken cancellationToken)
+        private void RefreshVisibleResultsForProfile(ChorusChart chart, AudioTrackLayout layout, CancellationToken cancellationToken)
         {
             if (cancellationToken.IsCancellationRequested || !_rawCharts.Contains(chart))
                 return;
@@ -322,7 +353,9 @@ namespace USM.ViewModels
                 3 => AudioTrackLayout.MultiTrack,
                 _ => null
             };
-            if (!selectedLayout.HasValue || selectedLayout != layout)
+            bool audioLayoutFilterMatched = selectedLayout.HasValue && selectedLayout == layout;
+            bool qualityFilterChanged = SelectedChartQualityFilterIndex == 1 && chart.HasChartCoverageWarning;
+            if (!audioLayoutFilterMatched && !qualityFilterChanged)
                 return;
 
             DateTime now = DateTime.UtcNow;
@@ -341,8 +374,7 @@ namespace USM.ViewModels
             while (GetFilteredCharts().Count < requiredMatchCount && _hasMoreApiPages)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                StatusText = $"Searching Chorus page {_nextApiPage} for matching charts... " +
-                             $"{GetFilteredCharts().Count} matches found so far.";
+                StatusText = LocalizationService.T("Search_ScanningPage", _nextApiPage, GetFilteredCharts().Count);
                 await FetchNextApiPageAsync(cancellationToken);
             }
         }
@@ -366,16 +398,16 @@ namespace USM.ViewModels
                     if (Directory.Exists(Path.Combine(customSongsDir, folderGuess)))
                     {
                         chart.IsInstalled = true;
-                        chart.StatusText = "✓ Installed";
+                        chart.StatusText = LocalizationService.T("Search_Installed");
                     }
                     else
                     {
-                        chart.StatusText = "📥 Download";
+                        chart.StatusText = LocalizationService.T("Search_Download");
                     }
                 }
                 else
                 {
-                    chart.StatusText = "📥 Download";
+                    chart.StatusText = LocalizationService.T("Search_Download");
                 }
                 _rawCharts.Add(chart);
             }
@@ -385,12 +417,18 @@ namespace USM.ViewModels
             // some pages. Continue until the endpoint returns an empty page.
             _hasMoreApiPages = charts.Count > 0;
 
-            _ = StartAudioLayoutProbes(
+            List<Task> profileTasks = StartAudioLayoutProbes(
                 charts,
                 cancellationToken);
 
             cancellationToken.ThrowIfCancellationRequested();
             ShowCurrentPage();
+            if (SelectedChartQualityFilterIndex == 1 && profileTasks.Count > 0)
+            {
+                await Task.WhenAll(profileTasks);
+                cancellationToken.ThrowIfCancellationRequested();
+                ShowCurrentPage();
+            }
             OnPropertyChanged(nameof(CanGoToNextPage));
         }
 
@@ -434,6 +472,13 @@ namespace USM.ViewModels
                 filtered = filtered.Where(c => c.TrackLayout == selectedLayout.Value);
             }
 
+            if (SelectedChartQualityFilterIndex == 1)
+            {
+                // Keep unverified results visible during the scan; confirmed
+                // incomplete charts disappear as soon as their profile arrives.
+                filtered = filtered.Where(c => c.IsCheckingQuality || !c.HasChartCoverageWarning);
+            }
+
             return filtered.ToList();
         }
 
@@ -461,27 +506,31 @@ namespace USM.ViewModels
             {
                 if (IsSearching && _hasMoreApiPages)
                 {
-                    StatusText = $"Searching Chorus page {_nextApiPage}; {filtered.Count} matching charts found so far.";
+                    StatusText = LocalizationService.T("Search_ScanningPage", _nextApiPage, filtered.Count);
                 }
                 else if (filtered.Count == 0)
                 {
                     StatusText = _rawCharts.Count == 0
-                        ? "No charts found on Chorus."
-                        : $"No matching charts in {_rawCharts.Count} scanned; Chorus has {_totalCharts} charts for this search.";
+                        ? LocalizationService.T("Search_NoChartsFound")
+                        : LocalizationService.T("Search_NoMatchingCharts", _rawCharts.Count, _totalCharts);
                 }
                 else
                 {
-                    StatusText = $"No results on page {_currentPage}; {filtered.Count} matching charts found.";
+                    StatusText = LocalizationService.T("Search_NoResultsPage", _currentPage, filtered.Count);
                 }
                 return;
             }
 
             int first = startIndex + 1;
             int last = startIndex + Results.Count;
-            string matchCount = _hasMoreApiPages ? $"at least {filtered.Count}" : filtered.Count.ToString();
+            string matchCount = _hasMoreApiPages
+                ? LocalizationService.T("Search_AtLeast", filtered.Count)
+                : filtered.Count.ToString();
             bool pageStillFilling = filtered.Count < _currentPage * SearchPageSize && _hasMoreApiPages;
-            string scanStatus = IsSearching && pageStillFilling ? $" · scanning {_rawCharts.Count} of {_totalCharts}" : string.Empty;
-            StatusText = $"Showing {first}–{last} of {matchCount} matching charts · scanned {_rawCharts.Count} of {_totalCharts}{scanStatus}.";
+            string scanStatus = IsSearching && pageStillFilling
+                ? LocalizationService.T("Search_ScanningSuffix", _rawCharts.Count, _totalCharts)
+                : string.Empty;
+            StatusText = LocalizationService.T("Search_ShowingResults", first, last, matchCount, _rawCharts.Count, _totalCharts, scanStatus);
         }
 
         private void MoveToPreviousPage()
@@ -514,7 +563,7 @@ namespace USM.ViewModels
             catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
             catch (Exception ex)
             {
-                StatusText = $"Search error: {ex.Message}";
+                StatusText = LocalizationService.T("Search_Error", ex.Message);
             }
             finally
             {
@@ -563,21 +612,97 @@ namespace USM.ViewModels
             string? customSongsDir = _gameDetector.GetCustomSongsDir();
             if (string.IsNullOrEmpty(customSongsDir))
             {
-                MessageBox.Show("Please configure the Unplugged game folder in Settings first!", "Game Folder Required", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(
+                    LocalizationService.T("Search_GameFolderRequiredMessage"),
+                    LocalizationService.T("Search_GameFolderRequiredTitle"),
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
                 return;
             }
 
             if (string.IsNullOrEmpty(chart.DownloadUrl))
             {
-                MessageBox.Show("This chart has no direct download URL available.", "Download Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(
+                    LocalizationService.T("Search_DownloadUrlMissingMessage"),
+                    LocalizationService.T("Search_DownloadErrorTitle"),
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
                 return;
             }
 
             chart.IsQueued = true;
-            chart.StatusText = "⏳ Queued...";
-            _downloadQueue.Enqueue(chart);
+            chart.StatusText = LocalizationService.T("Search_CheckingChartQuality");
+            _ = CheckChartQualityAndQueueDownloadAsync(chart);
+        }
 
-            ProcessDownloadQueue();
+        private async Task CheckChartQualityAndQueueDownloadAsync(ChorusChart chart)
+        {
+            bool profileTimedOut = false;
+            try
+            {
+                if (chart.QualityProbeTask is { } existingProbe)
+                {
+                    try { await existingProbe.WaitAsync(TimeSpan.FromSeconds(20)); }
+                    catch (TimeoutException) { profileTimedOut = true; }
+                }
+                else if (SongProfileCache.TryGetValue(chart.Md5, out SngDecoder.RemoteSongProfile? cachedProfile))
+                {
+                    ApplySongProfile(chart, cachedProfile);
+                }
+                else if (!string.IsNullOrWhiteSpace(chart.Md5))
+                {
+                    Task profileProbe = ProbeSongProfileAsync(chart, CancellationToken.None);
+                    chart.QualityProbeTask = profileProbe;
+                    try { await profileProbe.WaitAsync(TimeSpan.FromSeconds(20)); }
+                    catch (TimeoutException) { profileTimedOut = true; }
+                }
+
+                string? warningMessage = null;
+                if (chart.HasChartCoverageWarning)
+                {
+                    warningMessage = LocalizationService.T(
+                        "Search_IncompleteChartConfirmMessage",
+                        chart.ChartCoverageRatio,
+                        chart.ChartNoteCount,
+                        chart.SourceDifficultyCount);
+                }
+                else if (profileTimedOut || !chart.HasChartQualityProfile || chart.IsCheckingQuality)
+                {
+                    warningMessage = LocalizationService.T("Search_ChartQualityUnavailableConfirmMessage");
+                }
+
+                if (warningMessage != null)
+                {
+                    MessageBoxResult choice = MessageBox.Show(
+                        warningMessage,
+                        chart.HasChartCoverageWarning
+                            ? LocalizationService.T("Search_IncompleteChartConfirmTitle")
+                            : LocalizationService.T("Search_ChartQualityUnavailableConfirmTitle"),
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Warning,
+                        MessageBoxResult.No);
+                    if (choice != MessageBoxResult.Yes)
+                    {
+                        chart.IsQueued = false;
+                        chart.StatusText = LocalizationService.T("Search_DownloadButton");
+                        return;
+                    }
+                }
+
+                chart.StatusText = LocalizationService.T("Search_Queued");
+                _downloadQueue.Enqueue(chart);
+                ProcessDownloadQueue();
+            }
+            catch (Exception ex)
+            {
+                chart.IsQueued = false;
+                chart.StatusText = LocalizationService.T("Search_DownloadButton");
+                MessageBox.Show(
+                    LocalizationService.T("Search_DownloadCouldNotQueueMessage", ex.Message),
+                    LocalizationService.T("Search_DownloadErrorTitle"),
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
         }
 
         private void ProcessDownloadQueue()
@@ -614,7 +739,7 @@ namespace USM.ViewModels
                 chart.IsQueued = false;
                 chart.IsDownloading = true;
                 chart.DownloadProgress = 0.05;
-                chart.StatusText = "Downloading...";
+                chart.StatusText = LocalizationService.T("Search_Downloading");
             });
 
             string? customSongsDir = _gameDetector.GetCustomSongsDir();
@@ -623,7 +748,7 @@ namespace USM.ViewModels
                 Application.Current?.Dispatcher?.Invoke(() =>
                 {
                     chart.IsDownloading = false;
-                    chart.StatusText = "Failed: Missing dir/URL";
+                    chart.StatusText = LocalizationService.T("Search_MissingDownloadTarget");
                 });
                 return;
             }
@@ -635,12 +760,12 @@ namespace USM.ViewModels
                 var progress = new Progress<double>(p =>
                 {
                     chart.DownloadProgress = Math.Min(0.5, p * 0.5);
-                    chart.StatusText = $"Downloading: {p:P0}";
+                    chart.StatusText = LocalizationService.T("Search_DownloadProgress", p);
                 });
 
                 await SngDecoder.DecodeRemoteAsync(chart.DownloadUrl, tempDir, progress);
 
-                chart.StatusText = "Converting to VR...";
+                chart.StatusText = LocalizationService.T("Search_Converting");
                 var convProgress = new Progress<ConversionProgress>(cp =>
                 {
                     chart.DownloadProgress = 0.5 + (cp.Fraction * 0.5);
@@ -658,12 +783,12 @@ namespace USM.ViewModels
                     if (success)
                     {
                         chart.IsInstalled = true;
-                        chart.StatusText = "✓ Installed in CustomSongs";
-                        _notifyCallback?.Invoke($"Song '{chart.Title}' downloaded and installed successfully!");
+                        chart.StatusText = LocalizationService.T("Search_InstalledInCustomSongs");
+                        _notifyCallback?.Invoke(LocalizationService.T("Search_DownloadSuccess", chart.Title));
                     }
                     else
                     {
-                        chart.StatusText = "Conversion failed";
+                        chart.StatusText = LocalizationService.T("Search_ConversionFailed");
                     }
                 });
             }
@@ -671,7 +796,7 @@ namespace USM.ViewModels
             {
                 Application.Current?.Dispatcher?.Invoke(() =>
                 {
-                    chart.StatusText = $"Error: {ex.Message}";
+                    chart.StatusText = LocalizationService.T("Search_UnexpectedError", ex.Message);
                 });
             }
             finally

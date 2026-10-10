@@ -21,6 +21,7 @@ using System.Windows.Media.Imaging;
 using USM.Core.Models;
 using USM.Core.Parsers;
 using USM.Core.Services;
+using USM.Core.Services.Localization;
 using USM.Core.Services.Quest;
 
 namespace USM.ViewModels
@@ -61,7 +62,8 @@ namespace USM.ViewModels
         private bool _isQuestSongsAvailable;
         private bool _isRefreshingQuestSongs;
         private bool _isResyncingCharts;
-        private string _questSongsStatusText = "Connect a Quest to manage its songs.";
+        private string _questSongsStatusKey = "Library_ConnectQuest";
+        private object[] _questSongsStatusArgs = Array.Empty<object>();
 
         private readonly List<InstalledSong> _allSongs = new();
 
@@ -98,8 +100,8 @@ namespace USM.ViewModels
         public int OutdatedChartCount => _allSongs.Count(song => song.NeedsChartResync);
         public bool HasOutdatedCharts => OutdatedChartCount > 0;
         public string ResyncChartsText => IsResyncingCharts
-            ? "⏳ Resyncing charts..."
-            : $"↻ Resync Charts ({OutdatedChartCount})";
+            ? LocalizationService.T("Library_ResyncingCharts")
+            : LocalizationService.T("Library_ResyncCharts", OutdatedChartCount);
 
         public bool IsResyncingCharts
         {
@@ -128,15 +130,17 @@ namespace USM.ViewModels
         }
 
         public string SelectAllText => DisplayedSongs.Count > 0 && DisplayedSongs.All(s => s.IsSelected)
-            ? "Deselect All"
-            : "Select All";
+            ? LocalizationService.T("Library_DeselectAll")
+            : LocalizationService.T("Library_SelectAll");
 
         public string DeleteSelectedText
         {
             get
             {
                 int count = DisplayedSongs.Count(s => s.IsSelected);
-                return count > 0 ? $"🗑 Delete Selected ({count})" : "🗑 Delete Selected";
+                return count > 0
+                    ? LocalizationService.T("Library_DeleteSelectedCount", count)
+                    : LocalizationService.T("Library_DeleteSelected");
             }
         }
 
@@ -155,29 +159,32 @@ namespace USM.ViewModels
             private set
             {
                 if (SetProperty(ref _isRefreshingQuestSongs, value))
+                {
+                    OnPropertyChanged(nameof(HasNoQuestSongs));
                     CommandManager.InvalidateRequerySuggested();
+                }
             }
         }
 
-        public bool HasNoQuestSongs => IsQuestSongsAvailable && QuestSongs.Count == 0 &&
-            !IsRefreshingQuestSongs && QuestSongsStatusText.StartsWith("No .usm songs found", StringComparison.OrdinalIgnoreCase);
-        public string QuestSongsCountText => $"{QuestSongs.Count} songs";
+        public bool HasNoQuestSongs => IsQuestSongsAvailable && QuestSongs.Count == 0 && !IsRefreshingQuestSongs;
+        public string QuestSongsCountText => LocalizationService.T("Library_QuestSongsCount", QuestSongs.Count);
         public string SelectAllQuestSongsText => QuestSongs.Count > 0 && QuestSongs.All(song => song.IsSelected)
-            ? "Deselect All"
-            : "Select All";
+            ? LocalizationService.T("Library_DeselectAll")
+            : LocalizationService.T("Library_SelectAll");
         public string DeleteSelectedQuestSongsText
         {
             get
             {
                 int count = QuestSongs.Count(song => song.IsSelected);
-                return count > 0 ? $"🗑 Delete Selected ({count})" : "🗑 Delete Selected";
+                return count > 0
+                    ? LocalizationService.T("Library_DeleteSelectedCount", count)
+                    : LocalizationService.T("Library_DeleteSelected");
             }
         }
 
         public string QuestSongsStatusText
         {
-            get => _questSongsStatusText;
-            private set => SetProperty(ref _questSongsStatusText, value);
+            get => LocalizationService.T(_questSongsStatusKey, _questSongsStatusArgs);
         }
 
         public ICommand RefreshCommand { get; }
@@ -218,6 +225,7 @@ namespace USM.ViewModels
             AudioPlayerService.Instance.PlaybackStopped += OnPreviewStopped;
             _questViewModel.PropertyChanged += OnQuestViewModelPropertyChanged;
             _questViewModel.QuestSongsChanged += OnQuestSongsChanged;
+            LocalizationService.Instance.LanguageChanged += OnLanguageChanged;
 
             RefreshLibrary();
             _ = RefreshQuestSongsAsync();
@@ -231,6 +239,27 @@ namespace USM.ViewModels
 
         private void OnQuestSongsChanged(object? sender, EventArgs e) => _ = RefreshQuestSongsAsync();
 
+        private void OnLanguageChanged(string _)
+        {
+            OnPropertyChanged(nameof(ResyncChartsText));
+            OnPropertyChanged(nameof(SelectAllText));
+            OnPropertyChanged(nameof(DeleteSelectedText));
+            OnPropertyChanged(nameof(QuestSongsCountText));
+            OnPropertyChanged(nameof(SelectAllQuestSongsText));
+            OnPropertyChanged(nameof(DeleteSelectedQuestSongsText));
+            OnPropertyChanged(nameof(QuestSongsStatusText));
+            foreach (InstalledSong song in _allSongs)
+                song.RefreshLocalizedDisplay();
+            ApplyFilter();
+        }
+
+        private void SetQuestSongsStatus(string key, params object[] args)
+        {
+            _questSongsStatusKey = key;
+            _questSongsStatusArgs = args;
+            OnPropertyChanged(nameof(QuestSongsStatusText));
+        }
+
         private async Task RefreshQuestSongsAsync()
         {
             await _questSongsRefreshGate.WaitAsync();
@@ -241,7 +270,7 @@ namespace USM.ViewModels
                 {
                     ClearQuestSongs();
                     IsQuestSongsAvailable = false;
-                    QuestSongsStatusText = "Connect a Quest to manage its songs.";
+                    SetQuestSongsStatus("Library_ConnectQuest");
                     OnPropertyChanged(nameof(QuestSongsCountText));
                     OnPropertyChanged(nameof(HasNoQuestSongs));
                     UpdateQuestSongSelectionState();
@@ -249,7 +278,7 @@ namespace USM.ViewModels
                 }
 
                 IsRefreshingQuestSongs = true;
-                QuestSongsStatusText = "Checking the Quest custom-songs folder...";
+                SetQuestSongsStatus("Library_CheckingQuestFolder");
                 var result = await _questViewModel.QuestService.ListQuestSongsAsync(device.Serial);
 
                 if (_questViewModel.SelectedDevice?.Serial != device.Serial) return;
@@ -262,9 +291,11 @@ namespace USM.ViewModels
                     QuestSongs.Add(item);
                 }
                 IsQuestSongsAvailable = result.DirectoryExists;
-                QuestSongsStatusText = result.DirectoryExists
-                    ? result.Message
-                    : "The Quest custom-songs folder does not exist.";
+                SetQuestSongsStatus(!result.DirectoryExists
+                    ? "Library_QuestFolderMissing"
+                    : result.SongFiles.Count == 0
+                        ? "Library_NoQuestSongsStatus"
+                        : "Library_QuestSongsFound", result.SongFiles.Count);
                 OnPropertyChanged(nameof(QuestSongsCountText));
                 OnPropertyChanged(nameof(HasNoQuestSongs));
                 UpdateQuestSongSelectionState();
@@ -273,7 +304,7 @@ namespace USM.ViewModels
             {
                 ClearQuestSongs();
                 IsQuestSongsAvailable = false;
-                QuestSongsStatusText = $"Could not read Quest songs: {ex.Message}";
+                SetQuestSongsStatus("Library_CouldNotReadQuestSongs", ex.Message);
                 OnPropertyChanged(nameof(QuestSongsCountText));
                 OnPropertyChanged(nameof(HasNoQuestSongs));
                 UpdateQuestSongSelectionState();
@@ -321,8 +352,8 @@ namespace USM.ViewModels
             if (selected.Count == 0) return;
 
             var confirm = MessageBox.Show(
-                $"Delete {selected.Count} selected song(s) from the Quest? This cannot be undone.",
-                "Delete Quest Songs",
+                LocalizationService.T("Library_QuestDeleteSelectedConfirmMessage", selected.Count),
+                LocalizationService.T("Library_QuestDeleteSelectedConfirmTitle"),
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Warning);
             if (confirm != MessageBoxResult.Yes) return;
@@ -341,9 +372,9 @@ namespace USM.ViewModels
                 }
 
                 if (failures.Count == 0)
-                    _notifyCallback($"Deleted {selected.Count} song(s) from the Quest.");
+                    _notifyCallback(LocalizationService.T("Library_QuestDeletedCount", selected.Count));
                 else
-                    _notifyCallback($"Some Quest songs could not be deleted: {string.Join(" | ", failures)}");
+                    _notifyCallback(LocalizationService.T("Library_QuestDeleteFailures", string.Join(" | ", failures)));
 
                 await RefreshQuestSongsAsync();
             }
@@ -363,8 +394,8 @@ namespace USM.ViewModels
 
             string title = Path.GetFileNameWithoutExtension(fileName);
             var confirm = MessageBox.Show(
-                $"Delete '{title}' from the Quest? This cannot be undone.",
-                "Delete Quest Song",
+                LocalizationService.T("Library_QuestDeleteOneConfirmMessage", title),
+                LocalizationService.T("Library_QuestDeleteOneConfirmTitle"),
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Warning);
             if (confirm != MessageBoxResult.Yes) return;
@@ -380,7 +411,7 @@ namespace USM.ViewModels
                 }
                 else
                 {
-                    _notifyCallback($"Could not delete Quest song: {result.Message}");
+                    _notifyCallback(LocalizationService.T("Library_QuestDeleteFailed", result.Message));
                 }
             }
             finally
@@ -507,7 +538,7 @@ namespace USM.ViewModels
             List<InstalledSong> targets = scope.Where(song => song.NeedsChartResync).ToList();
             if (targets.Count == 0)
             {
-                _notifyCallback("The selected songs already use the current chart parser.");
+                _notifyCallback(LocalizationService.T("Library_ResyncNoOutdated"));
                 return;
             }
 
@@ -521,7 +552,7 @@ namespace USM.ViewModels
                     string tempRoot = Path.Combine(Path.GetTempPath(), $"usm_resync_{Guid.NewGuid():N}");
                     try
                     {
-                        _notifyCallback($"Resyncing chart: {song.Artist} - {song.Title}");
+                        _notifyCallback(LocalizationService.T("Library_ResyncingChart", song.Artist, song.Title));
                         var (sourceChart, resolutionMessage) = await ResolveChorusChartAsync(song);
                         if (sourceChart == null)
                         {
@@ -530,7 +561,7 @@ namespace USM.ViewModels
                         }
                         if (string.IsNullOrWhiteSpace(sourceChart.Md5))
                         {
-                            issues.Add($"{song.Artist} - {song.Title}: Chorus did not provide a chart file hash; no files were changed.");
+                            issues.Add($"{song.Artist} - {song.Title}: {LocalizationService.T("Library_ResyncChartHashMissing")}");
                             continue;
                         }
 
@@ -579,7 +610,7 @@ namespace USM.ViewModels
                 RefreshLibrary();
             }
 
-            string summary = $"Chart resync complete: {updated} updated, {issues.Count} skipped or failed.";
+            string summary = LocalizationService.T("Library_ResyncComplete", updated, issues.Count);
             if (issues.Count == 0)
             {
                 _notifyCallback(summary);
@@ -587,9 +618,10 @@ namespace USM.ViewModels
             else
             {
                 string details = string.Join(Environment.NewLine, issues.Take(8));
-                if (issues.Count > 8) details += Environment.NewLine + $"...and {issues.Count - 8} more.";
+                if (issues.Count > 8)
+                    details += Environment.NewLine + LocalizationService.T("Library_ResyncMoreIssues", issues.Count - 8);
                 MessageBox.Show($"{summary}{Environment.NewLine}{Environment.NewLine}{details}",
-                    "USM Chart Resync", MessageBoxButton.OK,
+                    LocalizationService.T("Library_ResyncDialogTitle"), MessageBoxButton.OK,
                     updated > 0 ? MessageBoxImage.Information : MessageBoxImage.Warning);
             }
         }
@@ -973,7 +1005,7 @@ namespace USM.ViewModels
                 DisplayedSongs.Add(song);
             }
 
-            SongCountText = $"{DisplayedSongs.Count} of {_allSongs.Count} songs";
+            SongCountText = LocalizationService.T("Library_SongsCount", DisplayedSongs.Count, _allSongs.Count);
             UpdateSelectionState();
         }
 

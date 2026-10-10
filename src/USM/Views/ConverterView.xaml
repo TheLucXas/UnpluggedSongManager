@@ -28,12 +28,12 @@
                 Drop="DropZone_Drop"
                 DragOver="DropZone_DragOver">
                 <StackPanel HorizontalAlignment="Center">
-                <TextBlock Text="🎸  DRAG &amp; DROP YOUR CHARTS HERE"
+                <TextBlock Text="{DynamicResource Loc_Converter_DropTitle}"
                            FontSize="18"
                            FontWeight="Bold"
                            Foreground="{StaticResource BrushTextPrimary}"
                            HorizontalAlignment="Center" />
-                <TextBlock Text="Drop single or multiple .zip, .sng files, or uncompressed Clone Hero / Rock Band song folders"
+                <TextBlock Text="{DynamicResource Loc_Converter_DropHint}"
                            FontSize="12"
                            Foreground="{StaticResource BrushTextSecondary}"
                            HorizontalAlignment="Center"
@@ -41,19 +41,19 @@
 
                 <!-- Action Buttons Row -->
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                    <Button Content="📁 Select Files (.zip / .sng)"
+                    <Button Content="{DynamicResource Loc_Converter_SelectFiles}"
                             Command="{Binding BrowseFilesCommand}"
                             Style="{StaticResource PurpleButton}"
                             Margin="0,0,10,0"
                             Padding="16,9" />
 
-                    <Button Content="📂 Select Folder"
+                    <Button Content="{DynamicResource Loc_Converter_SelectFolder}"
                             Command="{Binding BrowseFolderCommand}"
                             Style="{StaticResource SecondaryButton}"
                             Margin="0,0,10,0"
                             Padding="16,9" />
 
-                    <Button Content="Clear Queue"
+                    <Button Content="{DynamicResource Loc_Converter_ClearQueue}"
                             Command="{Binding ClearQueueCommand}"
                             Style="{StaticResource SecondaryButton}"
                             Padding="14,9" />
@@ -84,7 +84,7 @@
                            VerticalAlignment="Center" />
 
                 <Button Grid.Column="1"
-                        Content="⏹ Stop / Cancel"
+                        Content="{DynamicResource Loc_Converter_StopCancel}"
                         Command="{Binding CancelCommand}"
                         Style="{StaticResource DangerButton}"
                         IsEnabled="{Binding IsConverting}"

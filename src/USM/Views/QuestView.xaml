@@ -126,9 +126,10 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <TextBlock Text="Status: "
+                                <TextBlock Text="{DynamicResource Loc_Quest_StatusLabel}"
                                            FontWeight="Bold"
-                                           Foreground="{StaticResource BrushTextSecondary}" />
+                                           Foreground="{StaticResource BrushTextSecondary}"
+                                           Margin="0,0,4,0" />
                                 <TextBlock Text="{Binding PackageStatusText}"
                                            Foreground="{StaticResource BrushAccentBlue}"
                                            TextWrapping="Wrap" />

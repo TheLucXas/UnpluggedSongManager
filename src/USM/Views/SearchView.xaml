@@ -44,7 +44,7 @@
                 </TextBox>
 
                 <Button Grid.Column="1"
-                        Content="Search Charts"
+                        Content="{DynamicResource Loc_Search_SearchCharts}"
                         Command="{Binding SearchCommand}"
                         Padding="24,10"
                         FontSize="13"
@@ -63,7 +63,7 @@
             <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
                 <!-- Sort ComboBox -->
                 <StackPanel Orientation="Horizontal" Margin="0,2,16,2" VerticalAlignment="Center">
-                    <TextBlock Text="Sort:"
+                    <TextBlock Text="{DynamicResource Loc_Search_SortLabel}"
                                Foreground="{StaticResource BrushTextSecondary}"
                                FontSize="12"
                                VerticalAlignment="Center"
@@ -71,20 +71,20 @@
                     <ComboBox SelectedIndex="{Binding SelectedSortIndex}"
                               Width="180"
                               Height="32">
-                        <ComboBoxItem Content="Relevance" />
-                        <ComboBoxItem Content="Newest" />
-                        <ComboBoxItem Content="Title (A - Z)" />
-                        <ComboBoxItem Content="Artist (A - Z)" />
-                        <ComboBoxItem Content="Duration (Longest)" />
-                        <ComboBoxItem Content="Album (A - Z)" />
-                        <ComboBoxItem Content="Genre (A - Z)" />
-                        <ComboBoxItem Content="Year (Newest)" />
-                        <ComboBoxItem Content="Charter (A - Z)" />
+                        <ComboBoxItem Content="{DynamicResource Loc_Search_SortRelevance}" />
+                        <ComboBoxItem Content="{DynamicResource Loc_Search_SortNewest}" />
+                        <ComboBoxItem Content="{DynamicResource Loc_Search_SortTitle}" />
+                        <ComboBoxItem Content="{DynamicResource Loc_Search_SortArtist}" />
+                        <ComboBoxItem Content="{DynamicResource Loc_Search_SortDuration}" />
+                        <ComboBoxItem Content="{DynamicResource Loc_Search_SortAlbum}" />
+                        <ComboBoxItem Content="{DynamicResource Loc_Search_SortGenre}" />
+                        <ComboBoxItem Content="{DynamicResource Loc_Search_SortYear}" />
+                        <ComboBoxItem Content="{DynamicResource Loc_Search_SortCharter}" />
                     </ComboBox>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" Margin="0,2,16,2" VerticalAlignment="Center">
-                    <TextBlock Text="Order:"
+                    <TextBlock Text="{DynamicResource Loc_Search_OrderLabel}"
                                Foreground="{StaticResource BrushTextSecondary}"
                                FontSize="12"
                                VerticalAlignment="Center"
@@ -93,15 +93,15 @@
                               Width="112"
                               Height="32"
                               IsEnabled="{Binding CanChooseSortDirection}">
-                        <ComboBoxItem Content="Default" />
-                        <ComboBoxItem Content="Ascending" />
-                        <ComboBoxItem Content="Descending" />
+                        <ComboBoxItem Content="{DynamicResource Loc_Search_OrderDefault}" />
+                        <ComboBoxItem Content="{DynamicResource Loc_Search_OrderAscending}" />
+                        <ComboBoxItem Content="{DynamicResource Loc_Search_OrderDescending}" />
                     </ComboBox>
                 </StackPanel>
 
                 <!-- Difficulty Filter ComboBox -->
                 <StackPanel Orientation="Horizontal" Margin="0,2,16,2" VerticalAlignment="Center">
-                    <TextBlock Text="Difficulty:"
+                    <TextBlock Text="{DynamicResource Loc_Search_DifficultyLabel}"
                                Foreground="{StaticResource BrushTextSecondary}"
                                FontSize="12"
                                VerticalAlignment="Center"
@@ -109,16 +109,16 @@
                     <ComboBox SelectedIndex="{Binding SelectedDifficultyFilterIndex}"
                               Width="155"
                               Height="32">
-                        <ComboBoxItem Content="All Difficulties" />
-                        <ComboBoxItem Content="Beginner (Tier 0-1)" />
-                        <ComboBoxItem Content="Intermediate (Tier 2-3)" />
-                        <ComboBoxItem Content="Expert (Tier 4+)" />
+                        <ComboBoxItem Content="{DynamicResource Loc_Search_DifficultyAll}" />
+                        <ComboBoxItem Content="{DynamicResource Loc_Search_DifficultyBeginner}" />
+                        <ComboBoxItem Content="{DynamicResource Loc_Search_DifficultyIntermediate}" />
+                        <ComboBoxItem Content="{DynamicResource Loc_Search_DifficultyExpert}" />
                     </ComboBox>
                 </StackPanel>
 
                 <!-- Status Filter ComboBox -->
                 <StackPanel Orientation="Horizontal" Margin="0,2,16,2" VerticalAlignment="Center">
-                    <TextBlock Text="Status:"
+                    <TextBlock Text="{DynamicResource Loc_Search_StatusLabel}"
                                Foreground="{StaticResource BrushTextSecondary}"
                                FontSize="12"
                                VerticalAlignment="Center"
@@ -126,15 +126,15 @@
                     <ComboBox SelectedIndex="{Binding SelectedStatusFilterIndex}"
                               Width="130"
                               Height="32">
-                        <ComboBoxItem Content="All Status" />
-                        <ComboBoxItem Content="Not Installed" />
-                        <ComboBoxItem Content="Installed" />
+                        <ComboBoxItem Content="{DynamicResource Loc_Search_StatusAll}" />
+                        <ComboBoxItem Content="{DynamicResource Loc_Search_StatusNotInstalled}" />
+                        <ComboBoxItem Content="{DynamicResource Loc_Search_StatusInstalled}" />
                     </ComboBox>
                 </StackPanel>
 
                 <!-- Audio layout filter -->
                 <StackPanel Orientation="Horizontal" Margin="0,2,16,2" VerticalAlignment="Center">
-                    <TextBlock Text="Track type:"
+                    <TextBlock Text="{DynamicResource Loc_Search_TrackTypeLabel}"
                                Foreground="{StaticResource BrushTextSecondary}"
                                FontSize="12"
                                VerticalAlignment="Center"
@@ -142,15 +142,31 @@
                     <ComboBox SelectedIndex="{Binding SelectedAudioLayoutFilterIndex}"
                               Width="145"
                               Height="32">
-                        <ComboBoxItem Content="All track types" />
-                        <ComboBoxItem Content="Single Track" />
-                        <ComboBoxItem Content="Half-Track" />
-                        <ComboBoxItem Content="Multi Track" />
+                        <ComboBoxItem Content="{DynamicResource Loc_Search_TrackTypeAll}" />
+                        <ComboBoxItem Content="{DynamicResource Loc_Search_SingleTrack}" />
+                        <ComboBoxItem Content="{DynamicResource Loc_Search_HalfTrack}" />
+                        <ComboBoxItem Content="{DynamicResource Loc_Search_MultiTrack}" />
+                    </ComboBox>
+                </StackPanel>
+
+                <!-- Chart coverage filter -->
+                <StackPanel Orientation="Horizontal" Margin="0,2,16,2" VerticalAlignment="Center">
+                    <TextBlock Text="{DynamicResource Loc_Search_ChartQualityLabel}"
+                               Foreground="{StaticResource BrushTextSecondary}"
+                               FontSize="12"
+                               VerticalAlignment="Center"
+                               Margin="0,0,6,0" />
+                    <ComboBox SelectedIndex="{Binding SelectedChartQualityFilterIndex}"
+                              Width="185"
+                              Height="32"
+                              ToolTip="{DynamicResource Loc_Search_ChartQualityTooltip}">
+                        <ComboBoxItem Content="{DynamicResource Loc_Search_ChartQualityAll}" />
+                        <ComboBoxItem Content="{DynamicResource Loc_Search_HideIncompleteCharts}" />
                     </ComboBox>
                 </StackPanel>
 
                 <!-- Reset Filters Button -->
-                <Button Content="Reset ↺"
+                <Button Content="{DynamicResource Loc_Search_ResetFilters}"
                         Command="{Binding ResetFiltersCommand}"
                         Style="{StaticResource SecondaryButton}"
                         Padding="12,4"
@@ -225,8 +241,8 @@
                                                     Margin="8,0,0,0"
                                                     VerticalAlignment="Center"
                                                     Visibility="{Binding IsIdealForUnplugged, Converter={StaticResource BoolToVis}}"
-                                                    ToolTip="Full multitrack audio, vocals, four populated guitar difficulties, and broad chart coverage.">
-                                                <TextBlock Text="Ideal for Unplugged"
+                                                ToolTip="{DynamicResource Loc_Search_IdealTooltip}">
+                                                <TextBlock Text="{DynamicResource Loc_Search_IdealBadge}"
                                                            FontSize="10"
                                                            FontWeight="Bold"
                                                            Foreground="{StaticResource BrushAccentGreen}" />
@@ -250,14 +266,14 @@
                                                    Foreground="{StaticResource BrushTextMuted}"
                                                    Margin="0,2,0,0"
                                                    TextTrimming="CharacterEllipsis"
-                                                   ToolTip="Chorus chart tracks and video metadata. This does not indicate whether the audio contains separated stems." />
+                                                   ToolTip="{DynamicResource Loc_Search_ChartMetadataTooltip}" />
 
                                         <Border Background="{StaticResource BrushBgInput}"
                                                 CornerRadius="8"
                                                 Padding="8,3"
                                                 Margin="0,5,0,0"
                                                 HorizontalAlignment="Left"
-                                                ToolTip="Read from the SNG file index. Audio payloads and video are not downloaded for this check.">
+                                            ToolTip="{DynamicResource Loc_Search_TrackLayoutTooltip}">
                                             <TextBlock Text="{Binding TrackLayoutDisplay}"
                                                        FontSize="10"
                                                        FontWeight="SemiBold"
@@ -270,7 +286,7 @@
                                                 Margin="0,4,0,0"
                                                 HorizontalAlignment="Left"
                                                 Visibility="{Binding HasChartCoverageWarning, Converter={StaticResource BoolToVis}}"
-                                                ToolTip="The available guitar chart has notes in less than half of the song. This is a source-chart limitation, not a song-audio issue.">
+                                                ToolTip="{DynamicResource Loc_Search_IncompleteChartTooltip}">
                                             <TextBlock Text="{Binding ChartCoverageWarningDisplay}"
                                                        FontSize="10"
                                                        FontWeight="Bold"
@@ -308,7 +324,7 @@
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center"
                         Margin="0,10,0,0">
-                <Button Content="← Previous"
+                <Button Content="{DynamicResource Loc_Search_PreviousPage}"
                         Command="{Binding PreviousPageCommand}"
                         IsEnabled="{Binding CanGoToPreviousPage}"
                         Style="{StaticResource SecondaryButton}"
@@ -318,7 +334,7 @@
                            Foreground="{StaticResource BrushTextSecondary}"
                            VerticalAlignment="Center"
                            Margin="0,0,12,0" />
-                <Button Content="Next →"
+                <Button Content="{DynamicResource Loc_Search_NextPage}"
                         Command="{Binding NextPageCommand}"
                         IsEnabled="{Binding CanGoToNextPage}"
                         Style="{StaticResource SecondaryButton}"
