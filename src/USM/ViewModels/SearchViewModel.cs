@@ -34,6 +34,7 @@ namespace USM.ViewModels
         private string _activeQuery = "*";
         private string? _activeSortType;
         private string? _activeSortDirection;
+        private DateTime _lastAudioFilterRefreshUtc = DateTime.MinValue;
         private CancellationTokenSource? _searchCancellation;
         private static readonly SemaphoreSlim AudioLayoutProbeLimit = new(3);
         private static readonly ConcurrentDictionary<string, AudioTrackLayout> AudioLayoutCache = new(StringComparer.OrdinalIgnoreCase);
@@ -187,6 +188,7 @@ namespace USM.ViewModels
             _nextApiPage = 1;
             _totalCharts = 0;
             _hasMoreApiPages = true;
+            _lastAudioFilterRefreshUtc = DateTime.MinValue;
             OnPropertyChanged(nameof(PageInfoText));
             StatusText = _activeQuery == "*"
                 ? "Browsing charts on Chorus Encore..."
@@ -269,6 +271,7 @@ namespace USM.ViewModels
                     if (layout != AudioTrackLayout.Unknown)
                         AudioLayoutCache[chart.Md5] = layout;
                     chart.TrackLayout = layout;
+                    RefreshVisibleResultsForAudioMatch(layout, cancellationToken);
                 }
                 finally
                 {
@@ -291,6 +294,32 @@ namespace USM.ViewModels
             }
 
             _ = PerformSearchAsync();
+        }
+
+        private void RefreshVisibleResultsForAudioMatch(AudioTrackLayout layout, CancellationToken cancellationToken)
+        {
+            if (cancellationToken.IsCancellationRequested || !IsSearching)
+                return;
+
+            AudioTrackLayout? selectedLayout = SelectedAudioLayoutFilterIndex switch
+            {
+                1 => AudioTrackLayout.SingleTrack,
+                2 => AudioTrackLayout.HalfTrack,
+                3 => AudioTrackLayout.MultiTrack,
+                _ => null
+            };
+            if (selectedLayout != layout)
+                return;
+
+            DateTime now = DateTime.UtcNow;
+            if ((now - _lastAudioFilterRefreshUtc).TotalMilliseconds < 300)
+                return;
+            _lastAudioFilterRefreshUtc = now;
+
+            if (Application.Current?.Dispatcher is { } dispatcher && !dispatcher.CheckAccess())
+                dispatcher.BeginInvoke(new Action(ShowCurrentPage));
+            else
+                ShowCurrentPage();
         }
 
         private async Task FillUntilMatchCountAsync(int requiredMatchCount, CancellationToken cancellationToken)
@@ -338,10 +367,9 @@ namespace USM.ViewModels
             }
 
             _nextApiPage = page + 1;
-            int reportedPageCount = _totalCharts > 0
-                ? (int)Math.Ceiling(_totalCharts / (double)SearchPageSize)
-                : int.MaxValue;
-            _hasMoreApiPages = charts.Count == SearchPageSize && _nextApiPage <= reportedPageCount;
+            // Chorus may return a different number of entries than per_page on
+            // some pages. Continue until the endpoint returns an empty page.
+            _hasMoreApiPages = charts.Count > 0;
 
             bool filterByAudioLayout = SelectedAudioLayoutFilterIndex != 0;
             List<Task> probeTasks = StartAudioLayoutProbes(
@@ -351,6 +379,7 @@ namespace USM.ViewModels
                 await Task.WhenAll(probeTasks);
 
             cancellationToken.ThrowIfCancellationRequested();
+            ShowCurrentPage();
             OnPropertyChanged(nameof(CanGoToNextPage));
         }
 
@@ -401,28 +430,47 @@ namespace USM.ViewModels
         {
             List<ChorusChart> filtered = GetFilteredCharts();
             int startIndex = (_currentPage - 1) * SearchPageSize;
-            Results.Clear();
-            foreach (ChorusChart chart in filtered.Skip(startIndex).Take(SearchPageSize))
+            List<ChorusChart> pageResults = filtered.Skip(startIndex).Take(SearchPageSize).ToList();
+            int sharedCount = Math.Min(Results.Count, pageResults.Count);
+            for (int i = 0; i < sharedCount; i++)
             {
-                Results.Add(chart);
+                if (!ReferenceEquals(Results[i], pageResults[i]))
+                    Results[i] = pageResults[i];
             }
+            while (Results.Count > pageResults.Count)
+                Results.RemoveAt(Results.Count - 1);
+            for (int i = Results.Count; i < pageResults.Count; i++)
+                Results.Add(pageResults[i]);
 
             OnPropertyChanged(nameof(PageInfoText));
             OnPropertyChanged(nameof(CanGoToPreviousPage));
             OnPropertyChanged(nameof(CanGoToNextPage));
 
-            if (filtered.Count == 0)
+            if (filtered.Count <= startIndex)
             {
-                StatusText = _rawCharts.Count == 0
-                    ? "No charts found on Chorus."
-                    : $"No matching charts in {_rawCharts.Count} scanned; Chorus has {_totalCharts} charts for this search.";
+                if (IsSearching && _hasMoreApiPages)
+                {
+                    StatusText = $"Searching Chorus page {_nextApiPage}; {filtered.Count} matching charts found so far.";
+                }
+                else if (filtered.Count == 0)
+                {
+                    StatusText = _rawCharts.Count == 0
+                        ? "No charts found on Chorus."
+                        : $"No matching charts in {_rawCharts.Count} scanned; Chorus has {_totalCharts} charts for this search.";
+                }
+                else
+                {
+                    StatusText = $"No results on page {_currentPage}; {filtered.Count} matching charts found.";
+                }
                 return;
             }
 
             int first = startIndex + 1;
             int last = startIndex + Results.Count;
             string matchCount = _hasMoreApiPages ? $"at least {filtered.Count}" : filtered.Count.ToString();
-            StatusText = $"Showing {first}–{last} of {matchCount} matching charts · scanned {_rawCharts.Count} of {_totalCharts}.";
+            bool pageStillFilling = filtered.Count < _currentPage * SearchPageSize && _hasMoreApiPages;
+            string scanStatus = IsSearching && pageStillFilling ? $" · scanning {_rawCharts.Count} of {_totalCharts}" : string.Empty;
+            StatusText = $"Showing {first}–{last} of {matchCount} matching charts · scanned {_rawCharts.Count} of {_totalCharts}{scanStatus}.";
         }
 
         private void MoveToPreviousPage()
@@ -441,10 +489,15 @@ namespace USM.ViewModels
             _searchCancellation = cancellation;
             try
             {
-                int requiredMatchCount = (_currentPage + 1) * SearchPageSize;
+                int previousPage = _currentPage;
+                _currentPage++;
+                OnPropertyChanged(nameof(PageInfoText));
+                ShowCurrentPage();
+
+                int requiredMatchCount = _currentPage * SearchPageSize;
                 await FillUntilMatchCountAsync(requiredMatchCount, cancellation.Token);
-                if (GetFilteredCharts().Count > _currentPage * SearchPageSize)
-                    _currentPage++;
+                if (GetFilteredCharts().Count <= (_currentPage - 1) * SearchPageSize)
+                    _currentPage = previousPage;
                 ShowCurrentPage();
             }
             catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
