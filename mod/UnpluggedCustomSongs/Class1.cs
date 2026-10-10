@@ -1289,6 +1289,7 @@ namespace UnpluggedCustomSongs
 
         private static FileSystemWatcher watcher;
         private static readonly Dictionary<string, Texture2D> CoverTextureCache = new Dictionary<string, Texture2D>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, string> TrackDisplayLabelCache = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private static string ActivePreviewArchivePath;
 
         public static string ResolveUsmPath(string fileName)
@@ -1415,6 +1416,57 @@ namespace UnpluggedCustomSongs
             }
         }
 
+        private static string ReadTrackDisplayLabel(string archivePath)
+        {
+            try
+            {
+                using (var archive = System.IO.Compression.ZipFile.OpenRead(archivePath))
+                {
+                    var entry = FindArchiveEntry(archive, "meta.json");
+                    if (entry == null) return string.Empty;
+
+                    using (var reader = new StreamReader(entry.Open()))
+                    {
+                        var root = JSON.Parse(reader.ReadToEnd());
+                        string layout = root?["AudioLayout"]?.Value ?? string.Empty;
+                        bool ideal = root?["IsIdealForUnplugged"]?.AsBool ?? false;
+                        string label = layout switch
+                        {
+                            "single-track" => "<color=#69B9F2>Single Track</color>",
+                            "two-track-instrumental-vocals" => "<color=#E8B65C>Half Track · Instrumental + Vocals</color>",
+                            "full-multitrack" => "<color=#71D59B>Multi Track</color>",
+                            _ => string.Empty
+                        };
+
+                        if (ideal)
+                            label += (label.Length > 0 ? "  ·  " : string.Empty) + "<color=#A7E87A>Ideal for Unplugged</color>";
+                        return label;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[CustomSongs] Could not read track label from '{Path.GetFileName(archivePath)}': {ex.Message}");
+                return string.Empty;
+            }
+        }
+
+        public static string GetTrackDisplayLabel(SongMappingMetaData songData)
+        {
+            if (songData == null || string.IsNullOrEmpty(songData.SongID) ||
+                !songData.SongID.StartsWith("CUSTOM_", StringComparison.Ordinal))
+                return string.Empty;
+
+            string archiveName = Path.GetFileName(songData.FileName ?? string.Empty);
+            if (string.IsNullOrWhiteSpace(archiveName)) return string.Empty;
+            if (TrackDisplayLabelCache.TryGetValue(archiveName, out string cached)) return cached;
+
+            string archivePath = ResolveUsmPath(archiveName);
+            string label = string.IsNullOrEmpty(archivePath) ? string.Empty : ReadTrackDisplayLabel(archivePath);
+            TrackDisplayLabelCache[archiveName] = label;
+            return label;
+        }
+
         public static void Init()
         {
             MelonLogger.Msg($"[UnpluggedQuestMod] CustomSongLoader.Init called! Platform: {Application.platform}");
@@ -1528,6 +1580,7 @@ namespace UnpluggedCustomSongs
 
         public static void PopulateCustomSongs(AlbumData album)
         {
+            TrackDisplayLabelCache.Clear();
 #if QUEST_IL2CPP
             album.SongFiles = new Il2CppSystem.Collections.Generic.List<SongAsset>();
             album.builtInSongsMetadata = new Il2CppSystem.Collections.Generic.List<SongMappingMetaData>();
@@ -3808,6 +3861,19 @@ namespace UnpluggedCustomSongs
     {
         public static void Postfix(SongMenuItem __instance)
         {
+            try
+            {
+                if (__instance?.FileName != null && __instance.SongData != null)
+                {
+                    string trackLabel = CustomSongLoader.GetTrackDisplayLabel(__instance.SongData);
+                    if (!string.IsNullOrEmpty(trackLabel))
+                        __instance.FileName.text = trackLabel;
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[CustomSongs] Could not show the custom song track label: {ex.Message}");
+            }
             ApplyOutlines(__instance);
         }
 
