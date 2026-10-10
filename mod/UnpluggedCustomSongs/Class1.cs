@@ -2178,6 +2178,38 @@ namespace UnpluggedCustomSongs
             if (currentSong == null || string.IsNullOrEmpty(currentSong.SongID) || !currentSong.SongID.StartsWith("CUSTOM_", StringComparison.Ordinal))
                 return;
 
+#if QUEST_IL2CPP
+            // Quest's hand/controller state getters cross into the Oculus tracking
+            // runtime. Calling them from a note-result Harmony prefix can enter
+            // Android JNI while Unity is processing the first controller note. Keep
+            // Quest diagnostics limited to the already-loaded chart object itself.
+            int questEventIndex = ChartOutcomeLogCount++;
+            if (questEventIndex >= 40)
+                return;
+
+            string questInput = "noteType=other";
+            string questMode = "unknown";
+            if (note is ControllerGuitarNote questControllerNote)
+            {
+                string trigger = questControllerNote.Buttons != null && questControllerNote.Buttons.Count > 0
+                    ? questControllerNote.Buttons[0].ToString()
+                    : "missing";
+                string grip = questControllerNote.Buttons != null && questControllerNote.Buttons.Count > 1
+                    ? questControllerNote.Buttons[1].ToString()
+                    : "missing";
+                questInput = $"noteType=controller tier={questControllerNote.Tier} trigger={trigger} grip={grip}";
+                questMode = "controller";
+            }
+            else if (note is HandGuitarNote questHandNote)
+            {
+                questInput = $"noteType=hand tier={questHandNote.Tier} fingerCount={questHandNote.Fingers?.Count ?? 0}";
+                questMode = "hand";
+            }
+
+            MelonLogger.Msg($"[ChartDiag] {(succeeded ? "HIT" : "MISS")} #{questEventIndex + 1} mode={questMode} eventTime={timeStamp:F3}s noteTime={note.Time:F3}s duration={note.Duration:F3}s {questInput}");
+            return;
+#else
+
             int eventIndex = ChartOutcomeLogCount++;
             if (eventIndex >= 40)
                 return;
@@ -2247,6 +2279,7 @@ namespace UnpluggedCustomSongs
 
             string mode = GameManager.CurrentSong != null && GameManager.CurrentSong.IsHandTrackingMapping ? "hand" : "controller";
             MelonLogger.Msg($"[ChartDiag] {(succeeded ? "HIT" : "MISS")} #{eventIndex + 1} mode={mode} eventTime={timeStamp:F3}s noteTime={note.Time:F3}s duration={note.Duration:F3}s {input} runtimeType={runtimeType} {actualState}");
+#endif
         }
 
         public static void LoadCustomAudio(Mp3Player player, SongMappingMetaData data, bool loadSample)
