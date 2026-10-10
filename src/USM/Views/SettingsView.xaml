@@ -253,6 +253,15 @@
                         <TextBlock Grid.Column="1" Text="{Binding InstalledModVersion}" Foreground="{StaticResource BrushTextPrimary}" FontWeight="Bold" />
                     </Grid>
 
+                    <Grid Margin="0,4" Visibility="{Binding IsQuestModInstalled, Converter={StaticResource BoolToVis}}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="220" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{DynamicResource Loc_Settings_InstalledQuestModVersion}" Foreground="{StaticResource BrushTextSecondary}" />
+                        <TextBlock Grid.Column="1" Text="{Binding InstalledQuestModVersion}" Foreground="{StaticResource BrushTextPrimary}" FontWeight="Bold" />
+                    </Grid>
+
                     <Grid Margin="0,4">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="220" />

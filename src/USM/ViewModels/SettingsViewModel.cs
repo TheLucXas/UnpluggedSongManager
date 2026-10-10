@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
@@ -14,6 +15,7 @@ namespace USM.ViewModels
         private readonly GameDetector _gameDetector;
         private readonly Action<string> _notifyCallback;
         private readonly UpdateService _updateService;
+        private readonly QuestViewModel? _questViewModel;
         private GitHubAssetInfo? _modAsset;
 
         public string CurrentAppVersion => _updateService.CurrentAppVersion;
@@ -23,6 +25,17 @@ namespace USM.ViewModels
         {
             get => _installedModVersion ?? "N/A";
             private set => SetProperty(ref _installedModVersion, value);
+        }
+
+        public bool IsQuestModInstalled => _questViewModel?.IsModdedInstalled == true;
+
+        public string InstalledQuestModVersion
+        {
+            get
+            {
+                string? version = _questViewModel?.ModdedVersion;
+                return IsQuestModInstalled && !string.IsNullOrWhiteSpace(version) ? $"v{version}" : "N/A";
+            }
         }
 
         private string _latestReleaseVersion = "—";
@@ -252,11 +265,14 @@ namespace USM.ViewModels
         public ICommand DownloadModAssetCommand { get; }
         public ICommand UpdateAppCommand { get; }
 
-        public SettingsViewModel(GameDetector gameDetector, Action<string> notifyCallback, UpdateService? updateService = null)
+        public SettingsViewModel(GameDetector gameDetector, Action<string> notifyCallback, UpdateService? updateService = null, QuestViewModel? questViewModel = null)
         {
             _gameDetector = gameDetector;
             _notifyCallback = notifyCallback;
             _updateService = updateService ?? new UpdateService();
+            _questViewModel = questViewModel;
+            if (_questViewModel != null)
+                _questViewModel.PropertyChanged += OnQuestViewModelPropertyChanged;
 
             BrowseGamePathCommand = new RelayCommand(BrowseGamePath);
             InstallModCommand = new RelayCommand(InstallMod);
@@ -272,6 +288,16 @@ namespace USM.ViewModels
 
             RefreshStatus();
             _ = CheckForUpdatesAsync();
+        }
+
+        private void OnQuestViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(QuestViewModel.IsModdedInstalled) ||
+                e.PropertyName == nameof(QuestViewModel.ModdedVersion))
+            {
+                OnPropertyChanged(nameof(IsQuestModInstalled));
+                OnPropertyChanged(nameof(InstalledQuestModVersion));
+            }
         }
 
         private void IncrementDownloads()

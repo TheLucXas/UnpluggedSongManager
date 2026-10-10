@@ -34,7 +34,7 @@ namespace USM.Core.Services
     {
         public bool Success { get; set; }
         public bool IsUpdateAvailable { get; set; }
-        public string CurrentVersion { get; set; } = "2.0.0";
+        public string CurrentVersion { get; set; } = "1.0.0";
         public string LatestVersion { get; set; } = string.Empty;
         public GitHubReleaseInfo? Release { get; set; }
         public GitHubAssetInfo? ModAsset { get; set; }
@@ -58,7 +58,7 @@ namespace USM.Core.Services
             get
             {
                 var ver = Assembly.GetExecutingAssembly().GetName().Version;
-                return ver != null ? $"{ver.Major}.{ver.Minor}.{ver.Build}" : "2.0.0";
+                return ver != null ? $"{ver.Major}.{ver.Minor}.{ver.Build}" : "1.0.0";
             }
         }
 
