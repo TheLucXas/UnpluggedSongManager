@@ -2058,6 +2058,8 @@ namespace UnpluggedCustomSongs
 
             int sampleLimit = ModMain.ConfigChartDiagnostics ? Math.Min(3, selectedNotes.Count) : 0;
             string trackLabel = useHandTrack ? "hand" : "controller";
+            var tierCounts = new SortedDictionary<int, int>();
+            int openControllerNotes = 0;
             if (useHandTrack)
             {
 #if QUEST_IL2CPP
@@ -2074,6 +2076,7 @@ namespace UnpluggedCustomSongs
                     handNote.Time = noteNode["Time"].AsFloat;
                     handNote.Duration = noteNode["Duration"].AsFloat;
                     handNote.Tier = noteNode["Tier"].AsInt;
+                    tierCounts[handNote.Tier] = tierCounts.TryGetValue(handNote.Tier, out int handTierCount) ? handTierCount + 1 : 1;
                     handNote.CursableProbability = 0f;
                     handNote.IsBlind = false;
                     JSONArray fingers = RequireJsonArray(noteNode, "Fingers", chartName);
@@ -2124,6 +2127,7 @@ namespace UnpluggedCustomSongs
                         ChordRotation = noteNode["ChordRotation"].AsInt,
                         Intensity = noteNode["Intensity"].AsInt
                     };
+                    tierCounts[controllerNote.Tier] = tierCounts.TryGetValue(controllerNote.Tier, out int controllerTierCount) ? controllerTierCount + 1 : 1;
 #if QUEST_IL2CPP
                     controllerNote.Buttons = new Il2CppSystem.Collections.Generic.List<bool>();
 #else
@@ -2132,7 +2136,14 @@ namespace UnpluggedCustomSongs
                     controllerNote.Buttons.Add(buttons[0].AsBool);
                     controllerNote.Buttons.Add(buttons[1].AsBool);
                     if (!controllerNote.Buttons[0] && !controllerNote.Buttons[1])
-                        throw new InvalidDataException($"Chart JSON '{chartName}' controller note {i} has neither trigger nor grip set.");
+                    {
+                        // Both buttons being false represents a valid open note in some charts.
+                        // The ControllerGuitarNote HasTrigger/HasGrip patches map it to the
+                        // input implied by its tier, so rejecting it here discards the whole chart.
+                        openControllerNotes++;
+                        if (ModMain.ConfigChartDiagnostics && openControllerNotes <= 5)
+                            MelonLogger.Msg($"[ChartDiag] open controller note {i}: t={controllerNote.Time:F3}s tier={controllerNote.Tier}; no explicit fret buttons, using tier-based input.");
+                    }
                     controllerGame.Notes.Add(controllerNote);
 
                     if (i < sampleLimit)
@@ -2143,7 +2154,8 @@ namespace UnpluggedCustomSongs
                 mapping.Keys.Add(controllerGame);
             }
 
-            MelonLogger.Msg($"[ChartDiag] Loaded {Path.GetFileName(usmPath)}!{chartName}: schema={schemaVersion}, mode={trackLabel}, selectedNotes={selectedNotes.Count}, handNotes={handNotes.Count}, controllerNotes={controllerNotes.Count}, bpmChanges={mapping.BPMGrid.Count}, duration={chartDuration:F2}s");
+            string tierSummary = string.Join(",", tierCounts.Select(pair => $"{pair.Key}:{pair.Value}"));
+            MelonLogger.Msg($"[ChartDiag] Loaded {Path.GetFileName(usmPath)}!{chartName}: schema={schemaVersion}, mode={trackLabel}, selectedNotes={selectedNotes.Count}, handNotes={handNotes.Count}, controllerNotes={controllerNotes.Count}, tiers=[{tierSummary}], openControllerNotes={openControllerNotes}, bpmChanges={mapping.BPMGrid.Count}, duration={chartDuration:F2}s");
             if (selectedNotes.Count == 0)
                 MelonLogger.Warning($"[ChartDiag] The selected {trackLabel} track in {chartName} has no notes.");
 
@@ -2780,11 +2792,87 @@ namespace UnpluggedCustomSongs
         {
             if (song != null && !string.IsNullOrEmpty(song.SongID) && song.SongID.StartsWith("CUSTOM_"))
             {
-                __result = CustomSongLoader.LoadSongMapping(song, loadHandTrackingTrack);
-                return false;
+                try
+                {
+                    if (ModMain.ConfigChartDiagnostics)
+                        MelonLogger.Msg($"[ChartDiag] Load begin: songId={song.SongID}, file={song.FileName}, requestedMode={(loadHandTrackingTrack ? "hand" : "controller")}");
+                    __result = CustomSongLoader.LoadSongMapping(song, loadHandTrackingTrack);
+                    return false;
+                }
+                catch (Exception ex)
+                {
+                    MelonLogger.Error($"[ChartDiag] Load failed: songId={song.SongID}, file={song.FileName}, requestedMode={(loadHandTrackingTrack ? "hand" : "controller")}: {ex}");
+                    throw;
+                }
             }
             return true;
         }
+    }
+
+    public static class PlaybackDiagnostics
+    {
+        private static string DescribeSource(AudioSource source)
+        {
+            if (source == null) return "null";
+            try
+            {
+                string clipName = source.clip != null ? source.clip.name : "null";
+                string clipLength = source.clip != null ? $"{source.clip.length:F2}s" : "n/a";
+                return $"enabled={source.enabled},active={source.gameObject.activeInHierarchy},playing={source.isPlaying},muted={source.mute},volume={source.volume:F2},time={source.time:F2}s,clip={clipName}({clipLength})";
+            }
+            catch (Exception ex)
+            {
+                return $"stateError={ex.GetType().Name}";
+            }
+        }
+
+        public static void LogSongState(string phase)
+        {
+            if (!ModMain.ConfigChartDiagnostics) return;
+            try
+            {
+                var data = GameManager.CurrentSongData;
+                if (data == null || string.IsNullOrEmpty(data.SongID) || !data.SongID.StartsWith("CUSTOM_", StringComparison.Ordinal)) return;
+                var mapping = GameManager.CurrentSong;
+                var player = GameManager.I != null ? GameManager.I.musicPlayer : null;
+                int keyCount = mapping != null && mapping.Keys != null ? mapping.Keys.Count : -1;
+                int bpmCount = mapping != null && mapping.BPMGrid != null ? mapping.BPMGrid.Count : -1;
+                MelonLogger.Msg($"[PlaybackDiag] {phase}: songId={data?.SongID ?? "null"}, name={data?.SongName ?? "null"}, file={data?.FileName ?? "null"}, mappingKeys={keyCount}, bpmChanges={bpmCount}, handMode={mapping?.IsHandTrackingMapping}, isPlaying={GameManager.IsPlaying}, songTime={GameManager.SongTime:F3}s, master=[{DescribeSource(player != null ? player.MusicAudioSource : null)}]");
+                LogPlayerState(phase, player);
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[PlaybackDiag] Could not read song state during {phase}: {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        public static void LogPlayerState(string phase, Mp3Player player)
+        {
+            if (!ModMain.ConfigChartDiagnostics || player == null) return;
+            try
+            {
+                var currentSongData = GameManager.CurrentSongData;
+                if (currentSongData == null || string.IsNullOrEmpty(currentSongData.SongID) || !currentSongData.SongID.StartsWith("CUSTOM_", StringComparison.Ordinal)) return;
+                MelonLogger.Msg($"[PlaybackDiag] {phase}: IsMultiTrack={player.IsMultiTrack}, AllowMultitrack={player.AllowMultitrack}, sourceCount={player.AudioSources?.Count ?? 0}");
+                if (player.AudioSources == null) return;
+                for (int i = 0; i < player.AudioSources.Count; i++)
+                {
+                    var source = player.AudioSources[i];
+                    MelonLogger.Msg($"[PlaybackDiag] {phase}: source[{i}] ({(Mp3Player.SongTrackNames)i}) [{DescribeSource(source)}]");
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[PlaybackDiag] Could not read audio sources during {phase}: {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(GameManager), "StartSong")]
+    public static class Patch_GameManager_StartSong_Diagnostics
+    {
+        public static void Prefix() => PlaybackDiagnostics.LogSongState("StartSong.begin");
+        public static void Postfix() => PlaybackDiagnostics.LogSongState("StartSong.end");
     }
 
     [HarmonyPatch(typeof(KeyTime), "RaiseSuccessed")]
@@ -2845,17 +2933,14 @@ namespace UnpluggedCustomSongs
     [HarmonyPatch(typeof(Mp3Player), "Play")]
     public static class Patch_Mp3Player_Play
     {
+        public static void Prefix(Mp3Player __instance)
+        {
+            PlaybackDiagnostics.LogPlayerState("Mp3Player.Play.begin", __instance);
+        }
+
         public static void Postfix(Mp3Player __instance)
         {
-            MelonLogger.Msg($"[CustomSongs] Mp3Player.Play invoked! IsMultiTrack={__instance.IsMultiTrack}");
-            for (int i = 0; i < __instance.AudioSources.Count; i++)
-            {
-                var src = __instance.AudioSources[i];
-                if (src != null && src.clip != null)
-                {
-                    MelonLogger.Msg($"[CustomSongs] Track [{(Mp3Player.SongTrackNames)i}]: isPlaying={src.isPlaying}, vol={src.volume:F2}, clip={src.clip.name}");
-                }
-            }
+            PlaybackDiagnostics.LogPlayerState("Mp3Player.Play.end", __instance);
         }
     }
 
