@@ -3,6 +3,11 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:USM">
     <Application.Resources>
+        <!-- Resolve the font relative to this assembly's resource base URI.
+             A pack URI inside FontFamily.Source is treated as a family name by
+             WPF and silently falls back to the default composite font. -->
+        <FontFamily x:Key="FontGlory">./assets/fonts/#Glory</FontFamily>
+
         <!-- Colors -->
         <Color x:Key="ColorBgMain">#031524</Color>
         <Color x:Key="ColorBgCard">#082235</Color>

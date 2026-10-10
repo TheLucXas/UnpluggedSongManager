@@ -12,8 +12,9 @@
         Height="820"
         MinWidth="1040"
         MinHeight="660"
-        FontFamily="pack://application:,,,/USM;component/assets/fonts/#Glory"
+        FontFamily="{StaticResource FontGlory}"
         WindowStartupLocation="CenterScreen"
+        Foreground="{StaticResource BrushTextPrimary}"
         Background="{StaticResource BrushBgMain}">
     <Window.DataContext>
         <vm:MainViewModel />

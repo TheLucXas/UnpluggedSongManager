@@ -268,7 +268,7 @@
                         <TextBlock Text="{DynamicResource Loc_Quest_CustomSongsSyncTitle}"
                                    FontSize="15"
                                    FontWeight="Bold"
-                                   Foreground="{StaticResource BrushAccentPurple}"
+                                   Foreground="{StaticResource BrushAccentPink}"
                                    Margin="0,0,0,6" />
                         <TextBlock Text="{DynamicResource Loc_Quest_CustomSongsSyncDesc}"
                                    FontSize="12"
