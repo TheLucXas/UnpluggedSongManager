@@ -138,6 +138,7 @@ namespace USM.Core.Parsers
                 int bestNoteCount = 0;
                 double bestFirstNoteTime = 0;
                 double bestLastNoteTime = 0;
+                double bestCoverageRatio = -1;
                 foreach (SngFileEntry entry in chartEntries)
                 {
                     ct.ThrowIfCancellationRequested();
@@ -171,12 +172,26 @@ namespace USM.Core.Parsers
                                 .Select(parsed.TickToSec).Where(time => double.IsFinite(time) && time >= 0).ToList();
                         }
 
-                        if (difficultyCount > bestDifficultyCount || (difficultyCount == bestDifficultyCount && noteCount > bestNoteCount))
+                        double firstNoteTime = noteTimes.Count > 0 ? noteTimes.Min() : 0;
+                        double lastNoteTime = noteTimes.Count > 0 ? noteTimes.Max() : 0;
+                        double candidateCoverage = durationSeconds > 0 && noteTimes.Count > 0
+                            ? Math.Clamp((lastNoteTime - firstNoteTime) / durationSeconds, 0, 1)
+                            : -1;
+                        bool better = durationSeconds > 0
+                            ? candidateCoverage > bestCoverageRatio
+                                || (Math.Abs(candidateCoverage - bestCoverageRatio) < 0.0001
+                                    && (difficultyCount > bestDifficultyCount
+                                        || (difficultyCount == bestDifficultyCount && noteCount > bestNoteCount)))
+                            : difficultyCount > bestDifficultyCount
+                                || (difficultyCount == bestDifficultyCount && noteCount > bestNoteCount);
+
+                        if (better)
                         {
                             bestDifficultyCount = difficultyCount;
                             bestNoteCount = noteCount;
-                            bestFirstNoteTime = noteTimes.Count > 0 ? noteTimes.Min() : 0;
-                            bestLastNoteTime = noteTimes.Count > 0 ? noteTimes.Max() : 0;
+                            bestFirstNoteTime = firstNoteTime;
+                            bestLastNoteTime = lastNoteTime;
+                            bestCoverageRatio = candidateCoverage;
                         }
                     }
                     catch (Exception) when (!ct.IsCancellationRequested)
@@ -186,8 +201,8 @@ namespace USM.Core.Parsers
                     }
                 }
 
-                double coverageRatio = durationSeconds > 0 && bestNoteCount > 0
-                    ? Math.Clamp((bestLastNoteTime - bestFirstNoteTime) / durationSeconds, 0, 1)
+                double coverageRatio = durationSeconds > 0 && bestNoteCount > 0 && bestCoverageRatio >= 0
+                    ? bestCoverageRatio
                     : 0;
 
                 return new RemoteSongProfile

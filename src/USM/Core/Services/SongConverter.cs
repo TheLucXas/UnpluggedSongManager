@@ -144,10 +144,37 @@ namespace USM.Core.Services
                     Candidate = candidate,
                     DifficultyCount = candidate.Difficulties.Count(entry => entry.Value.Values.Any(group => group != null && group.Count > 0)),
                     NoteCount = candidate.Difficulties.Values.Sum(notes => notes.Values.Where(group => group != null).Sum(group => group.Count)),
-                    IsTextChart = candidate.Name.EndsWith(".chart", StringComparison.OrdinalIgnoreCase)
+                    IsTextChart = candidate.Name.EndsWith(".chart", StringComparison.OrdinalIgnoreCase),
+                    NoteTimes = candidate.Difficulties.Values
+                        .SelectMany(notes => notes.Keys)
+                        .Select(candidate.TickToSec)
+                        .Where(time => double.IsFinite(time) && time >= 0)
+                        .ToList()
+                })
+                .Select(candidate => new
+                {
+                    candidate.Candidate,
+                    candidate.DifficultyCount,
+                    candidate.NoteCount,
+                    candidate.IsTextChart,
+                    candidate.NoteTimes,
+                    FirstNoteTime = candidate.NoteTimes.Count > 0 ? candidate.NoteTimes.Min() : 0,
+                    LastNoteTime = candidate.NoteTimes.Count > 0 ? candidate.NoteTimes.Max() : 0,
+                    Coverage = songDurationSeconds > 0 && candidate.NoteTimes.Count > 0
+                        ? Math.Clamp((candidate.NoteTimes.Max() - candidate.NoteTimes.Min()) / songDurationSeconds, 0, 1)
+                        : 0,
+                    EndCoverage = songDurationSeconds > 0 && candidate.NoteTimes.Count > 0
+                        ? Math.Clamp(candidate.NoteTimes.Max() / songDurationSeconds, 0, 1)
+                        : 0
                 })
                 .Where(candidate => candidate.NoteCount > 0)
-                .OrderByDescending(candidate => candidate.DifficultyCount)
+                // Prefer the chart that spans the song. Chorus packages can
+                // contain auxiliary/truncated MIDI and text charts; choosing
+                // solely by difficulty count or note count hid long openings
+                // (for example, charts whose first note was around 139 seconds).
+                .OrderByDescending(candidate => songDurationSeconds > 0 ? candidate.Coverage : 0)
+                .ThenByDescending(candidate => songDurationSeconds > 0 ? candidate.EndCoverage : 0)
+                .ThenByDescending(candidate => candidate.DifficultyCount)
                 .ThenByDescending(candidate => candidate.NoteCount)
                 .ThenByDescending(candidate => candidate.IsTextChart)
                 .FirstOrDefault();
@@ -157,23 +184,20 @@ namespace USM.Core.Services
 
             sourceDifficultyCount = Math.Min(4, selected.DifficultyCount);
             sourceNoteCount = selected.NoteCount;
-            var noteTimes = selected.Candidate.Difficulties.Values
-                .SelectMany(notes => notes.Keys)
-                .Select(selected.Candidate.TickToSec)
-                .Where(time => double.IsFinite(time) && time >= 0)
-                .ToList();
-            double firstNoteTime = noteTimes.Count > 0 ? noteTimes.Min() : 0;
-            double lastNoteTime = noteTimes.Count > 0 ? noteTimes.Max() : 0;
-            if (songDurationSeconds > 0 && noteTimes.Count > 0)
-                chartCoverageRatio = Math.Clamp((lastNoteTime - firstNoteTime) / songDurationSeconds, 0, 1);
+            double firstNoteTime = selected.FirstNoteTime;
+            double lastNoteTime = selected.LastNoteTime;
+            chartCoverageRatio = selected.Coverage;
 
             log?.Invoke($"  [Chart] Using {selected.Candidate.Name}: {selected.DifficultyCount} populated source difficulties, {selected.NoteCount} note events; range {firstNoteTime:F1}-{lastNoteTime:F1}s of {songDurationSeconds:F1}s ({chartCoverageRatio:P0} coverage).");
+            if (songDurationSeconds > 0 && (chartCoverageRatio < 0.50 || firstNoteTime > songDurationSeconds * 0.25))
+                log?.Invoke("  [ChartWarning] The best available chart has suspiciously low song coverage or a late first note. The source chart may be incomplete; check the generated first-note time before playing.");
             return JsonGenerator.GenerateAllDifficultiesJson(
                 selected.Candidate.BpmGrid,
                 selected.Candidate.TickToSec,
                 selected.Candidate.Difficulties,
                 selected.Candidate.TicksPerBeat,
-                log);
+                log,
+                songDurationSeconds);
         }
         
         public static void CleanupOutDir(string? outDir)

@@ -15,30 +15,37 @@ namespace USM.Core.Parsers
     {
         // Bump when chart parsing or generated note semantics change. Stored in
         // meta.json so the PC library can selectively regenerate outdated charts.
-        public const int ParserVersion = 5;
+        public const int ParserVersion = 6;
 
-        private static readonly Dictionary<int, (int Tier, string[] Fingers)> FingerMap = new()
+        // These are spatial string lanes (the four white paths in the game),
+        // independent of difficulty and source fret/button colors. Every output
+        // difficulty can use all four paths. Weights are the aggregate note-lane
+        // distribution across all 57 official PC charts and four difficulties.
+        private static readonly double[] OfficialStringLaneWeights =
+            { 0.14574, 0.38999, 0.36986, 0.09441 };
+
+        private static readonly Dictionary<int, string[]> FingerMap = new()
         {
-            [0] = (0, new[] { "Index" }),
-            [1] = (0, new[] { "Index", "Middle" }),
-            [2] = (1, new[] { "Index", "Middle", "Ring" }),
-            [3] = (2, new[] { "Index", "Middle", "Ring", "Pinky" }),
-            [4] = (3, new[] { "Index", "Middle", "Ring", "Pinky" }),
-            [7] = (0, new[] { "Index" })
+            [0] = new[] { "Index" },
+            [1] = new[] { "Index", "Middle" },
+            [2] = new[] { "Index", "Middle", "Ring" },
+            [3] = new[] { "Index", "Middle", "Ring", "Pinky" },
+            [4] = new[] { "Index", "Middle", "Ring", "Pinky" },
+            [7] = new[] { "Index" }
         };
 
-        private static readonly Dictionary<string, (int Tier, string[] Fingers)> ChordMap = new()
+        private static readonly Dictionary<string, string[]> ChordMap = new()
         {
-            ["0,1"] = (0, new[] { "Index", "Middle" }),
-            ["0,2"] = (0, new[] { "Index", "Ring" }),
-            ["1,2"] = (1, new[] { "Index", "Middle" }),
-            ["1,3"] = (1, new[] { "Index", "Ring" }),
-            ["2,3"] = (2, new[] { "Index", "Middle" }),
-            ["2,4"] = (2, new[] { "Index", "Ring" }),
-            ["3,4"] = (3, new[] { "Index", "Middle" }),
-            ["0,1,2"] = (0, new[] { "Index", "Middle", "Ring" }),
-            ["1,2,3"] = (1, new[] { "Index", "Middle", "Ring" }),
-            ["2,3,4"] = (2, new[] { "Index", "Middle", "Ring" })
+            ["0,1"] = new[] { "Index", "Middle" },
+            ["0,2"] = new[] { "Index", "Ring" },
+            ["1,2"] = new[] { "Index", "Middle" },
+            ["1,3"] = new[] { "Index", "Ring" },
+            ["2,3"] = new[] { "Index", "Middle" },
+            ["2,4"] = new[] { "Index", "Ring" },
+            ["3,4"] = new[] { "Index", "Middle" },
+            ["0,1,2"] = new[] { "Index", "Middle", "Ring" },
+            ["1,2,3"] = new[] { "Index", "Middle", "Ring" },
+            ["2,3,4"] = new[] { "Index", "Middle", "Ring" }
         };
 
         private static string Number(double value) => value.ToString("0.######", CultureInfo.InvariantCulture);
@@ -49,7 +56,8 @@ namespace USM.Core.Parsers
             SortedDictionary<long, List<ChartParser.NoteEvent>> notesByTick,
             int ticksPerBeat,
             string outputDifficulty,
-            Action<string>? log = null)
+            Action<string>? log = null,
+            double songDurationSeconds = 0)
         {
             bpmGrid ??= new List<ChartParser.BpmEvent>();
             notesByTick ??= new SortedDictionary<long, List<ChartParser.NoteEvent>>();
@@ -57,11 +65,9 @@ namespace USM.Core.Parsers
 
             int initialBpm = bpmGrid.Count > 0 ? (int)Math.Round(bpmGrid[0].Bpm) : 120;
             long lastTick = notesByTick.Count > 0 ? notesByTick.Keys.Last() : 0;
-            double totalDuration = Math.Max(0, tickToSec(lastTick)) + 10.0;
-            bool superEasyDifficulty = outputDifficulty.Equals("songdata-SuperEasy.json", StringComparison.OrdinalIgnoreCase);
-
+            double totalDuration = Math.Max(Math.Max(0, tickToSec(lastTick)) + 10.0, songDurationSeconds);
             var sb = new StringBuilder(Math.Max(1024, notesByTick.Count * 140));
-            sb.Append("{\"SchemaVersion\":2,")
+            sb.Append("{\"SchemaVersion\":3,")
               .Append("\"Difficulty\":\"").Append(outputDifficulty).Append("\",")
               .Append("\"BPM\":").Append(initialBpm).Append(',')
               .Append("\"Duration\":").Append(Number(totalDuration)).Append(',')
@@ -82,9 +88,11 @@ namespace USM.Core.Parsers
             controllerNotes.Append("],\"ControllerNotes\":[");
             var tierCounts = new SortedDictionary<int, int>();
             var controllerButtonCounts = new SortedDictionary<string, int>(StringComparer.Ordinal);
+            int[] laneAssignedCounts = new int[4];
+            int generatedNoteIndex = 0;
 
             double previousTime = -999.0;
-            int previousTier = -1;
+            string previousFingers = string.Empty;
 
             foreach (var tickEntry in notesByTick)
             {
@@ -107,37 +115,36 @@ namespace USM.Core.Parsers
                     ? Math.Max(0.0, tickToSec(tick + maxDurationTicks) - noteTime)
                     : 0.0;
 
-                int tier;
                 string[] fingers;
                 if (lanes.Count == 1)
                 {
                     if (!FingerMap.TryGetValue(lanes[0], out var fingerMapping))
-                        fingerMapping = (0, new[] { "Index" });
-                    (tier, fingers) = fingerMapping;
+                        fingerMapping = new[] { "Index" };
+                    fingers = fingerMapping;
                 }
                 else
                 {
                     string chordKey = string.Join(",", lanes);
                     if (!ChordMap.TryGetValue(chordKey, out var chordMapping))
-                        chordMapping = (Math.Min(3, lanes.Last()), new[] { "Index", "Middle", "Ring" });
-                    (tier, fingers) = chordMapping;
+                        chordMapping = new[] { "Index", "Middle", "Ring" };
+                    fingers = chordMapping;
                 }
 
-                // The PC game's shipped chart catalog uses Tier 1 and Tier 2
-                // for SuperEasy. Easy uses Tier 0-3 in most official songs, so
-                // it must not be clamped with SuperEasy.
-                if (superEasyDifficulty)
-                {
-                    tier = tier <= 1 ? 1 : 2;
-                }
+                // Tier selects the spatial string/path in Unplugged. It must
+                // not be inferred from Clone Hero's fret lane: those frets map
+                // independently to Fingers and controller Buttons.
+                int tier = SelectStringLane(generatedNoteIndex++, laneAssignedCounts, OfficialStringLaneWeights);
                 tierCounts[tier] = tierCounts.TryGetValue(tier, out int tierCount) ? tierCount + 1 : 1;
 
-                bool isPullOff = noteTime - previousTime < 0.22 && previousTier != tier;
+                string fingerShape = string.Join("+", fingers);
+                bool isPullOff = noteTime - previousTime < 0.22
+                    && previousFingers.Length > 0
+                    && !previousFingers.Equals(fingerShape, StringComparison.Ordinal);
 
                 if (!firstHand) sb.Append(',');
                 sb.Append("{\"Time\":").Append(Number(noteTime))
                   .Append(",\"Duration\":").Append(Number(noteDuration))
-                  .Append(",\"Tier\":").Append(tier)
+                  .Append(",\"StringLane\":").Append(tier)
                   .Append(",\"Fingers\":[");
                 for (int i = 0; i < fingers.Length; i++)
                 {
@@ -155,7 +162,7 @@ namespace USM.Core.Parsers
                 if (!firstController) controllerNotes.Append(',');
                 controllerNotes.Append("{\"Time\":").Append(Number(noteTime))
                     .Append(",\"Duration\":").Append(Number(noteDuration))
-                    .Append(",\"Tier\":").Append(tier)
+                    .Append(",\"StringLane\":").Append(tier)
                     .Append(",\"Buttons\":[").Append(trigger ? "true" : "false").Append(',')
                     .Append(grip ? "true" : "false").Append(']')
                     // Clone Hero charts encode fret lanes, not Unplugged's guitar
@@ -166,12 +173,35 @@ namespace USM.Core.Parsers
                 firstController = false;
 
                 previousTime = noteTime;
-                previousTier = tier;
+                previousFingers = fingerShape;
             }
 
             sb.Append(controllerNotes).Append("]}");
-            log?.Invoke($"  [ChartDiag] {outputDifficulty}: tiers=[{string.Join(",", tierCounts.Select(pair => $"{pair.Key}:{pair.Value}"))}], controllerButtons[trigger,grip]=[{string.Join(",", controllerButtonCounts.Select(pair => $"{pair.Key}:{pair.Value}"))}].");
+            log?.Invoke($"  [ChartDiag] {outputDifficulty}: stringLanes=[{string.Join(",", tierCounts.Select(pair => $"{pair.Key}:{pair.Value}"))}], fretButtons[trigger,grip]=[{string.Join(",", controllerButtonCounts.Select(pair => $"{pair.Key}:{pair.Value}"))}].");
             return sb.ToString();
+        }
+
+        private static int SelectStringLane(int noteIndex, int[] assignedCounts, double[] weights)
+        {
+            // Largest-deficit scheduling keeps lane counts near the vanilla
+            // proportions while spreading short passages over the available
+            // lanes. The tie offset prevents the same opening lane in every song.
+            double bestDeficit = double.NegativeInfinity;
+            int selected = 0;
+            int tieOffset = noteIndex % assignedCounts.Length;
+            for (int offset = 0; offset < assignedCounts.Length; offset++)
+            {
+                int lane = (offset + tieOffset) % assignedCounts.Length;
+                double expected = (noteIndex + 1) * weights[lane];
+                double deficit = expected - assignedCounts[lane];
+                if (deficit > bestDeficit)
+                {
+                    bestDeficit = deficit;
+                    selected = lane;
+                }
+            }
+            assignedCounts[selected]++;
+            return selected;
         }
 
         private static void GetControllerButtons(List<int> lanes, out bool trigger, out bool grip)
@@ -200,7 +230,8 @@ namespace USM.Core.Parsers
             Func<long, double> tickToSec,
             Dictionary<string, SortedDictionary<long, List<ChartParser.NoteEvent>>> difficulties,
             int ticksPerBeat,
-            Action<string>? log = null)
+            Action<string>? log = null,
+            double songDurationSeconds = 0)
         {
             var outputFiles = new[]
             {
@@ -290,7 +321,7 @@ namespace USM.Core.Parsers
                 }
 
                 string outputFile = outputFiles[targetRank];
-                results[outputFile] = BuildSongJson(bpmGrid, tickToSec, selectedNotes, ticksPerBeat, outputFile, log);
+                results[outputFile] = BuildSongJson(bpmGrid, tickToSec, selectedNotes, ticksPerBeat, outputFile, log, songDurationSeconds);
                 log?.Invoke($"  [Chart] {outputFile}: {CountNotes(selectedNotes)} notes; {origin}.");
             }
 
@@ -315,15 +346,9 @@ namespace USM.Core.Parsers
         private static List<(int TargetRank, string SourceName, SortedDictionary<long, List<ChartParser.NoteEvent>>? Notes)> GetDifficultyAnchors(
             List<(string Name, int Rank, SortedDictionary<long, List<ChartParser.NoteEvent>>? Notes)> availableSources)
         {
-            int[] targetSlots = availableSources.Count switch
-            {
-                2 => new[] { 0, 3 },
-                3 => new[] { 0, 2, 3 },
-                _ => new[] { 0, 1, 2, 3 }
-            };
-
-            return availableSources.Select((source, index) =>
-                (TargetRank: targetSlots[index], SourceName: source.Name, Notes: source.Notes)).ToList();
+            return availableSources
+                .Select(source => (TargetRank: source.Rank, SourceName: source.Name, Notes: source.Notes))
+                .ToList();
         }
 
         private static SortedDictionary<long, List<ChartParser.NoteEvent>> BlendNotes(
