@@ -15,7 +15,7 @@ namespace USM.Core.Parsers
     {
         // Bump when chart parsing or generated note semantics change. Stored in
         // meta.json so the PC library can selectively regenerate outdated charts.
-        public const int ParserVersion = 1;
+        public const int ParserVersion = 2;
 
         private static readonly Dictionary<int, (int Tier, string[] Fingers)> FingerMap = new()
         {
@@ -116,12 +116,13 @@ namespace USM.Core.Parsers
                     (tier, fingers) = chordMapping;
                 }
 
-                // Easy and SuperEasy use only the two lower frets, in both play
-                // modes. Reducing Tier alone left Ring/Pinky in HandNotes, so the
-                // generated hand chart disagreed with its displayed note tier.
+                // Easy and SuperEasy use only tiers 0 and 1 in both play modes.
+                // Clamp higher source tiers into tier 1; modulo wrapped tier 2
+                // back to tier 0, which made the visible fret disagree with the
+                // trigger/grip state generated from the source lane.
                 if (twoTierDifficulty)
                 {
-                    tier %= 2;
+                    tier = Math.Min(tier, 1);
                     fingers = fingers
                         .Where(finger => finger == "Index" || finger == "Middle")
                         .ToArray();
