@@ -32,6 +32,47 @@ using CultureInfo = Il2CppSystem.Globalization.CultureInfo;
 
 namespace UnpluggedCustomSongs
 {
+    // Mono exposes the game's storage as fields. IL2CPP wrappers expose the
+    // same native storage as managed properties; Traverse.Field silently misses
+    // those properties. Use the actual member representation on each platform.
+    internal static class GameFieldAccess
+    {
+        private static readonly Dictionary<(Type, string), MemberInfo> Members = new Dictionary<(Type, string), MemberInfo>();
+
+        private static MemberInfo Resolve(object owner, string name)
+        {
+            Type ownerType = owner as Type ?? owner.GetType();
+            lock (Members)
+            {
+                if (Members.TryGetValue((ownerType, name), out MemberInfo member)) return member;
+                for (Type type = ownerType; type != null; type = type.BaseType)
+                {
+                    const BindingFlags flags = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+                    member = (MemberInfo)type.GetField(name, flags) ?? type.GetProperty(name, flags);
+                    if (member == null) continue;
+                    Members.Add((ownerType, name), member);
+                    return member;
+                }
+                throw new MissingMemberException(ownerType.FullName, name);
+            }
+        }
+
+        public static T Get<T>(object owner, string name)
+        {
+            MemberInfo member = Resolve(owner, name);
+            object target = owner is Type ? null : owner;
+            return (T)(member is FieldInfo field ? field.GetValue(target) : ((PropertyInfo)member).GetValue(target));
+        }
+
+        public static void Set(object owner, string name, object value)
+        {
+            MemberInfo member = Resolve(owner, name);
+            object target = owner is Type ? null : owner;
+            if (member is FieldInfo field) field.SetValue(target, value);
+            else ((PropertyInfo)member).SetValue(target, value);
+        }
+    }
+
     public static class DiscordRpcManager
     {
         private static NamedPipeClientStream pipe;
@@ -428,6 +469,8 @@ namespace UnpluggedCustomSongs
         private static float _navHoldStartTime = 0f;
         private static float _navNextStepTime = 0f;
         private static string _lastMenuPreviewSongKey = null;
+        private static string _pendingMenuPreviewSongKey = null;
+        private static float _pendingMenuPreviewSince;
 
         private void UpdateCustomSongPreview()
         {
@@ -440,16 +483,34 @@ namespace UnpluggedCustomSongs
                     album == null || album.AlbumID != "CustomSongsAlbum" || GameManager.IsPlaying)
                 {
                     _lastMenuPreviewSongKey = null;
+                    _pendingMenuPreviewSongKey = null;
                     return;
                 }
 
                 var selectedSong = startSpace.songMenu.SelectedSong;
                 if (selectedSong == null || selectedSong.SongID == null ||
                     !selectedSong.SongID.StartsWith("CUSTOM_", StringComparison.Ordinal) ||
-                    string.IsNullOrWhiteSpace(selectedSong.FileName)) return;
+                    string.IsNullOrWhiteSpace(selectedSong.FileName))
+                {
+                    _pendingMenuPreviewSongKey = null;
+                    return;
+                }
 
                 string selectionKey = (selectedSong.SongID ?? "") + "|" + selectedSong.FileName;
                 if (string.Equals(selectionKey, _lastMenuPreviewSongKey, StringComparison.Ordinal)) return;
+
+                // Match the native carousel's settling delay. Starting a decoder
+                // for every intermediate selection can stall the menu and play
+                // snippets of songs that the user never stopped on.
+                if (!string.Equals(selectionKey, _pendingMenuPreviewSongKey, StringComparison.Ordinal))
+                {
+                    _pendingMenuPreviewSongKey = selectionKey;
+                    _pendingMenuPreviewSince = Time.unscaledTime;
+                    return;
+                }
+                float settleDelay = Mathf.Max(startSpace.songMenu.SamplePlayDelay,
+                    startSpace.songMenu.CarouselSpinningDelay);
+                if (Time.unscaledTime - _pendingMenuPreviewSince < Mathf.Max(0f, settleDelay)) return;
 
                 var player = GameManager.I != null ? GameManager.I.musicPlayer : null;
                 if (player == null) player = UnityEngine.Object.FindObjectOfType<Mp3Player>();
@@ -462,6 +523,7 @@ namespace UnpluggedCustomSongs
             catch (Exception ex)
             {
                 _lastMenuPreviewSongKey = null;
+                _pendingMenuPreviewSongKey = null;
                 if (ConfigVerbose) MelonLogger.Warning($"[CustomSongs] Could not update selected-song preview: {ex.Message}");
             }
         }
@@ -596,8 +658,11 @@ namespace UnpluggedCustomSongs
             {
                 if (StartSpace.I != null && StartSpace.I.songMenu != null && StartSpace.I.gameObject.activeInHierarchy)
                 {
-                    var trav = Traverse.Create(StartSpace.I.songMenu);
-                    var list = trav.Field("songList").GetValue<List<SongMappingMetaData>>();
+#if QUEST_IL2CPP
+                    var list = GameFieldAccess.Get<Il2CppSystem.Collections.Generic.List<SongMappingMetaData>>(StartSpace.I.songMenu, "songList");
+#else
+                    var list = GameFieldAccess.Get<List<SongMappingMetaData>>(StartSpace.I.songMenu, "songList");
+#endif
                     if (list != null && list.Count > 0)
                     {
                         return StartSpace.I.songMenu.SelectedSong;
@@ -1308,6 +1373,8 @@ namespace UnpluggedCustomSongs
         private static AlbumData _lastPopulatedAlbum;
         private static string _lastPopulatedSongsFingerprint;
         private static string ActivePreviewArchivePath;
+        private static string PendingPreviewArchivePath;
+        private static int PreviewLoadGeneration;
 
         public static string ResolveUsmPath(string fileName)
         {
@@ -1990,7 +2057,7 @@ namespace UnpluggedCustomSongs
 #else
                 var freshList = new List<SongMappingMetaData>(album.builtInSongsMetadata);
 #endif
-                Traverse.Create(album).Field("songsMetadata").SetValue(freshList);
+                GameFieldAccess.Set(album, "songsMetadata", freshList);
 
                 if (CustomAlbumInstance != null && CustomAlbumInstance != album)
                 {
@@ -2002,7 +2069,7 @@ namespace UnpluggedCustomSongs
 #else
                     var copy = new List<SongMappingMetaData>(freshList);
 #endif
-                    Traverse.Create(CustomAlbumInstance).Field("songsMetadata").SetValue(copy);
+                    GameFieldAccess.Set(CustomAlbumInstance, "songsMetadata", copy);
                 }
 
                 if (AlbumsManager.I != null && AlbumsManager.SelectedAlbum != null && AlbumsManager.SelectedAlbum.AlbumID == "CustomSongsAlbum")
@@ -2341,6 +2408,7 @@ namespace UnpluggedCustomSongs
             if (string.IsNullOrWhiteSpace(jsonContent))
                 throw new InvalidDataException($"Chart JSON '{chartName}' in '{Path.GetFileName(usmPath)}' is empty.");
 
+            var loadTimer = Stopwatch.StartNew();
             JSONNode root;
             try
             {
@@ -2351,6 +2419,7 @@ namespace UnpluggedCustomSongs
                 throw new InvalidDataException($"Chart JSON '{chartName}' in '{Path.GetFileName(usmPath)}' is invalid: {ex.Message}", ex);
             }
 
+            long jsonParseMs = loadTimer.ElapsedMilliseconds;
             int schemaVersion = root != null ? root["SchemaVersion"].AsInt : 0;
             if (root == null || !root.IsObject || (schemaVersion != 2 && schemaVersion != 3))
                 throw new InvalidDataException($"Chart JSON '{chartName}' uses unsupported schema version {schemaVersion}; expected version 2 or 3.");
@@ -2499,7 +2568,7 @@ namespace UnpluggedCustomSongs
             }
 
             string tierSummary = string.Join(",", tierCounts.Select(pair => $"{pair.Key}:{pair.Value}"));
-            MelonLogger.Msg($"[ChartDiag] Loaded {Path.GetFileName(usmPath)}!{chartName}: schema={schemaVersion}, mode={trackLabel}, selectedNotes={selectedNotes.Count}, loadedNotes={loadedSelectedNotes}, handNotes={handNotes.Count}, controllerNotes={controllerNotes.Count}, ignoredEmptyControllerNotes={ignoredEmptyControllerNotes}, stringLanes=[{tierSummary}], bpmChanges={mapping.BPMGrid.Count}, duration={chartDuration:F2}s");
+            MelonLogger.Msg($"[ChartDiag] Loaded {Path.GetFileName(usmPath)}!{chartName}: schema={schemaVersion}, mode={trackLabel}, selectedNotes={selectedNotes.Count}, loadedNotes={loadedSelectedNotes}, handNotes={handNotes.Count}, controllerNotes={controllerNotes.Count}, ignoredEmptyControllerNotes={ignoredEmptyControllerNotes}, stringLanes=[{tierSummary}], bpmChanges={mapping.BPMGrid.Count}, duration={chartDuration:F2}s, jsonParseMs={jsonParseMs}, gameObjectsMs={loadTimer.ElapsedMilliseconds - jsonParseMs}, totalMs={loadTimer.ElapsedMilliseconds}");
             if (loadedSelectedNotes == 0)
                 MelonLogger.Warning($"[ChartDiag] The selected {trackLabel} track in {chartName} has no notes.");
 
@@ -2513,6 +2582,7 @@ namespace UnpluggedCustomSongs
             if (string.IsNullOrWhiteSpace(jsonContent))
                 throw new InvalidDataException($"Chart JSON '{chartName}' in '{Path.GetFileName(usmPath)}' is empty.");
 
+            var loadTimer = Stopwatch.StartNew();
             System.Text.Json.JsonDocument document;
             try
             {
@@ -2525,6 +2595,7 @@ namespace UnpluggedCustomSongs
 
             using (document)
             {
+                long jsonParseMs = loadTimer.ElapsedMilliseconds;
                 var root = document.RootElement;
                 int schemaVersion = ReadJsonInt(root, "SchemaVersion");
                 if (root.ValueKind != System.Text.Json.JsonValueKind.Object || (schemaVersion != 2 && schemaVersion != 3))
@@ -2666,7 +2737,7 @@ namespace UnpluggedCustomSongs
                 }
 
                 string tierSummary = string.Join(",", tierCounts.Select(pair => $"{pair.Key}:{pair.Value}"));
-                MelonLogger.Msg($"[ChartDiag] Loaded {Path.GetFileName(usmPath)}!{chartName}: schema={schemaVersion}, mode={trackLabel}, selectedNotes={selectedNotes.GetArrayLength()}, loadedNotes={loadedSelectedNotes}, handNotes={handNotes.GetArrayLength()}, controllerNotes={controllerNotes.GetArrayLength()}, ignoredEmptyControllerNotes={ignoredEmptyControllerNotes}, stringLanes=[{tierSummary}], bpmChanges={mapping.BPMGrid.Count}, duration={chartDuration:F2}s");
+                MelonLogger.Msg($"[ChartDiag] Loaded {Path.GetFileName(usmPath)}!{chartName}: schema={schemaVersion}, mode={trackLabel}, selectedNotes={selectedNotes.GetArrayLength()}, loadedNotes={loadedSelectedNotes}, handNotes={handNotes.GetArrayLength()}, controllerNotes={controllerNotes.GetArrayLength()}, ignoredEmptyControllerNotes={ignoredEmptyControllerNotes}, stringLanes=[{tierSummary}], bpmChanges={mapping.BPMGrid.Count}, duration={chartDuration:F2}s, jsonParseMs={jsonParseMs}, gameObjectsMs={loadTimer.ElapsedMilliseconds - jsonParseMs}, totalMs={loadTimer.ElapsedMilliseconds}");
                 if (loadedSelectedNotes == 0)
                     MelonLogger.Warning($"[ChartDiag] The selected {trackLabel} track in {chartName} has no notes.");
 
@@ -2712,6 +2783,8 @@ namespace UnpluggedCustomSongs
         }
 #endif
 
+        private static readonly Dictionary<Type, PropertyInfo> StringLaneProperties = new Dictionary<Type, PropertyInfo>();
+
         private static void SetGameplayStringLane(GuitarNote note, int lane)
         {
             if (note == null) throw new ArgumentNullException(nameof(note));
@@ -2723,15 +2796,19 @@ namespace UnpluggedCustomSongs
             // setter. Assigning note.Tier therefore writes a different backing
             // field and makes every generated note appear on lane 0 in Unity.
             // Write the exact backing property used by both game getters.
-            PropertyInfo oldTier = null;
-            for (Type type = note.GetType(); type != null && oldTier == null; type = type.BaseType)
+            Type noteType = note.GetType();
+            if (!StringLaneProperties.TryGetValue(noteType, out PropertyInfo oldTier))
             {
-                var candidate = type.GetProperty("oldTier", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
-                if (candidate != null && candidate.GetSetMethod(nonPublic: true) != null)
-                    oldTier = candidate;
+                for (Type type = noteType; type != null && oldTier == null; type = type.BaseType)
+                {
+                    var candidate = type.GetProperty("oldTier", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+                    if (candidate != null && candidate.GetSetMethod(nonPublic: true) != null)
+                        oldTier = candidate;
+                }
+                if (oldTier == null)
+                    throw new MissingMemberException(noteType.FullName, "oldTier setter");
+                StringLaneProperties.Add(noteType, oldTier);
             }
-            if (oldTier == null)
-                throw new MissingMemberException(note.GetType().FullName, "oldTier setter");
             oldTier.SetValue(note, lane);
 
             if (note.Tier != lane)
@@ -3014,7 +3091,7 @@ namespace UnpluggedCustomSongs
             }
         }
 
-                public static void PlayCustomAudioSample(Mp3Player player, string path)
+        public static void PlayCustomAudioSample(Mp3Player player, string path)
         {
             try
             {
@@ -3046,6 +3123,8 @@ namespace UnpluggedCustomSongs
                 try { previewArchivePath = Path.GetFullPath(usmPath); }
                 catch { previewArchivePath = usmPath; }
 
+                if (string.Equals(PendingPreviewArchivePath, previewArchivePath, StringComparison.OrdinalIgnoreCase)) return;
+
                 string expectedClipName = "sample_" + Path.GetFileName(usmPath);
                 if (player != null && player.MusicAudioSource != null &&
                     string.Equals(ActivePreviewArchivePath, previewArchivePath, StringComparison.OrdinalIgnoreCase) &&
@@ -3064,7 +3143,9 @@ namespace UnpluggedCustomSongs
                     var entry = FindArchiveEntry(archive, "sample.ogg", "sample.mp3", "song.ogg", "song.mp3");
                     if (entry != null)
                     {
-                        samplePath = Path.Combine(tempDir, entry.Name);
+                        // Each asynchronous request owns its file; changing the
+                        // selection must not overwrite audio still being read.
+                        samplePath = Path.Combine(tempDir, "preview_" + Guid.NewGuid().ToString("N") + Path.GetExtension(entry.Name));
                         using (var fs = new FileStream(samplePath, FileMode.Create, FileAccess.Write))
                         {
                             entry.Open().CopyTo(fs);
@@ -3074,82 +3155,146 @@ namespace UnpluggedCustomSongs
 
                 if (samplePath != null && File.Exists(samplePath))
                 {
-                    AudioClip clip = LoadClip(samplePath);
-                    if (clip != null && player.MusicAudioSource != null)
+                    int request = ++PreviewLoadGeneration;
+                    PendingPreviewArchivePath = previewArchivePath;
+                    MelonCoroutines.Start(LoadPreviewClipAsync(samplePath, () => request == PreviewLoadGeneration, clip =>
                     {
-                        clip.name = expectedClipName;
-                        player.MusicAudioSource.clip = clip;
-                        player.MusicAudioSource.loop = true;
-                        player.MusicAudioSource.volume = 1f;
-                        player.MusicAudioSource.Play();
-                        ActivePreviewArchivePath = previewArchivePath;
-                        MelonLogger.Msg($"[CustomSongs] Turntable audio preview started for '{folderName}'");
-
-                        // Live update Turntable Vinyl Texture to this song's cover!
-                        try
+                        if (request != PreviewLoadGeneration)
                         {
-                            Texture2D songCover = null;
-                            if (CustomAlbumInstance != null && CustomAlbumInstance.builtInSongsMetadata != null)
+                            if (clip != null) UnityEngine.Object.Destroy(clip);
+                            return;
+                        }
+                        PendingPreviewArchivePath = null;
+                        var menu = StartSpace.I?.songMenu;
+                        string currentArchive = menu != null && menu.gameObject.activeInHierarchy
+                            ? ResolveUsmPath(menu.SelectedSong?.FileName) : null;
+                        if (GameManager.IsPlaying || !string.Equals(currentArchive, previewArchivePath, StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (clip != null) UnityEngine.Object.Destroy(clip);
+                            return;
+                        }
+                        if (clip != null && player != null && player.MusicAudioSource != null)
+                        {
+                            clip.name = expectedClipName;
+                            var previousClip = player.MusicAudioSource.clip;
+                            player.MusicAudioSource.clip = clip;
+                            player.MusicAudioSource.loop = true;
+                            player.MusicAudioSource.volume = 1f;
+                            player.MusicAudioSource.Play();
+                            if (previousClip != null && previousClip != clip &&
+                                previousClip.name.StartsWith("sample_", StringComparison.Ordinal))
+                                UnityEngine.Object.Destroy(previousClip);
+                            ActivePreviewArchivePath = previewArchivePath;
+                            MelonLogger.Msg($"[CustomSongs] Turntable audio preview started for '{folderName}'");
+
+                            // Live update Turntable Vinyl Texture to this song's cover!
+                            try
                             {
-                                SongMappingMetaData foundMeta = null;
-                                foreach (var meta in CustomAlbumInstance.builtInSongsMetadata)
+                                Texture2D songCover = null;
+                                if (CustomAlbumInstance != null && CustomAlbumInstance.builtInSongsMetadata != null)
                                 {
-                                    if (meta != null && meta.FileName == folderName)
+                                    SongMappingMetaData foundMeta = null;
+                                    foreach (var meta in CustomAlbumInstance.builtInSongsMetadata)
                                     {
-                                        foundMeta = meta;
-                                        break;
+                                        if (meta != null && meta.FileName == folderName)
+                                        {
+                                            foundMeta = meta;
+                                            break;
+                                        }
+                                    }
+                                    if (foundMeta != null && foundMeta.Thumbnail != null)
+                                    {
+                                        songCover = foundMeta.Thumbnail;
                                     }
                                 }
-                                if (foundMeta != null && foundMeta.Thumbnail != null)
+                                                            if (songCover == null)
                                 {
-                                    songCover = foundMeta.Thumbnail;
-                                }
-                            }
-                                                        if (songCover == null)
-                            {
-                                using (var archive2 = System.IO.Compression.ZipFile.OpenRead(usmPath))
-                                {
-                                    var coverEntry = archive2.GetEntry("album.jpg") ?? archive2.GetEntry("cover.jpg") ?? archive2.GetEntry("album.png") ?? archive2.GetEntry("cover.png");
-                                    if (coverEntry != null)
+                                    using (var archive2 = System.IO.Compression.ZipFile.OpenRead(usmPath))
                                     {
-                                        using (var ms = new MemoryStream())
+                                        var coverEntry = archive2.GetEntry("album.jpg") ?? archive2.GetEntry("cover.jpg") ?? archive2.GetEntry("album.png") ?? archive2.GetEntry("cover.png");
+                                        if (coverEntry != null)
                                         {
-                                            coverEntry.Open().CopyTo(ms);
-                                            songCover = new Texture2D(2, 2);
-                                            if (ImageConversion.LoadImage(songCover, ms.ToArray()))
+                                            using (var ms = new MemoryStream())
                                             {
-                                                songCover.name = folderName;
-                                            }
-                                            else
-                                            {
-                                                songCover = null;
+                                                coverEntry.Open().CopyTo(ms);
+                                                songCover = new Texture2D(2, 2);
+                                                if (ImageConversion.LoadImage(songCover, ms.ToArray()))
+                                                {
+                                                    songCover.name = folderName;
+                                                }
+                                                else
+                                                {
+                                                    songCover = null;
+                                                }
                                             }
                                         }
                                     }
                                 }
-                            }
-                            if (songCover != null)
-                            {
-                                if (StartSpace.I != null)
+                                if (songCover != null)
                                 {
-                                    var r1 = StartSpace.I.StartSpaceLp?.GetComponent<Renderer>();
-                                    if (r1 != null && r1.material != null) r1.material.SetTexture("_MainTex", songCover);
-                                    var r2 = StartSpace.I.StartSpaceAuxLp?.GetComponent<Renderer>();
-                                    if (r2 != null && r2.material != null) r2.material.SetTexture("_MainTex", songCover);
-                                }
-                                if (CustomAlbumInstance != null)
-                                {
-                                    CustomAlbumInstance.VinylTexture = songCover;
+                                    if (StartSpace.I != null)
+                                    {
+                                        var r1 = StartSpace.I.StartSpaceLp?.GetComponent<Renderer>();
+                                        if (r1 != null && r1.material != null) r1.material.SetTexture("_MainTex", songCover);
+                                        var r2 = StartSpace.I.StartSpaceAuxLp?.GetComponent<Renderer>();
+                                        if (r2 != null && r2.material != null) r2.material.SetTexture("_MainTex", songCover);
+                                    }
+                                    if (CustomAlbumInstance != null)
+                                    {
+                                        CustomAlbumInstance.VinylTexture = songCover;
+                                    }
                                 }
                             }
+                            catch { }
                         }
-                        catch { }
-                    }
+                    }));
                 }
             }
             catch (Exception ex)
             {
                 MelonLogger.Error($"[CustomSongs] Error in PlayCustomAudioSample: {ex}");
+            }
+        }
+
+        private static IEnumerator LoadPreviewClipAsync(string filePath, Func<bool> isCurrent, Action<AudioClip> onLoaded)
+        {
+            string clean = filePath.Replace("\\", "/");
+            string url = clean.StartsWith("/") ? "file://" + clean : "file:///" + clean;
+            AudioType audioType = clean.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase) ? AudioType.OGGVORBIS : AudioType.MPEG;
+            WWW request = null;
+            try { request = new WWW(url); }
+            catch (Exception ex) { MelonLogger.Error($"[PreviewDiag] Could not open sample: {ex.Message}"); }
+            var timer = Stopwatch.StartNew();
+            try
+            {
+                // Yield to Unity while the decoder reads the file. The previous
+                // Thread.Sleep loop could block this thread for five seconds
+                // for every preview and trigger Android's not-responding dialog.
+                while (request != null && !request.isDone && isCurrent() && timer.ElapsedMilliseconds < 10000)
+                    yield return null;
+
+                AudioClip clip = null;
+                try
+                {
+                    if (request != null && isCurrent())
+                    {
+                        if (!request.isDone)
+                            MelonLogger.Error("[PreviewDiag] Sample decode timed out after 10 seconds (menu remained responsive).");
+                        else if (!string.IsNullOrEmpty(request.error))
+                            MelonLogger.Error($"[PreviewDiag] Sample decode failed: {request.error}");
+                        else
+                            clip = request.GetAudioClip(false, false, audioType);
+                    }
+                    onLoaded(clip);
+                    if (ModMain.ConfigChartDiagnostics)
+                        MelonLogger.Msg($"[PreviewDiag] Decode finished: elapsedMs={timer.ElapsedMilliseconds}, canceled={!isCurrent()}, clipReady={clip != null}.");
+                }
+                catch (Exception ex) { MelonLogger.Error($"[PreviewDiag] Could not finish sample playback: {ex}"); }
+            }
+            finally
+            {
+                request?.Dispose();
+                try { File.Delete(filePath); } catch { }
             }
         }
 
@@ -3378,8 +3523,12 @@ namespace UnpluggedCustomSongs
                 hand.Controller.IsLeftController = isLeft;
             if (hand.SkeletonInfo != null && hand.SkeletonInfo.IsLeftHand != isLeft)
                 hand.SkeletonInfo.IsLeftHand = isLeft;
-            if (hand.skeletonController is HandSkeletonControllerOculus controllerSkeleton &&
-                controllerSkeleton.IsLeftController != isLeft)
+#if QUEST_IL2CPP
+            var controllerSkeleton = hand.skeletonController?.TryCast<HandSkeletonControllerOculus>();
+#else
+            var controllerSkeleton = hand.skeletonController as HandSkeletonControllerOculus;
+#endif
+            if (controllerSkeleton != null && controllerSkeleton.IsLeftController != isLeft)
                 controllerSkeleton.IsLeftController = isLeft;
         }
 
@@ -3387,19 +3536,23 @@ namespace UnpluggedCustomSongs
         {
             try
             {
-                var handState = Traverse.Create(hand);
-                handState.Field("prevPosition").SetValue(hand.transform.position);
-                handState.Field("prevPositionIndex").SetValue(hand.IndexTip != null ? hand.IndexTip.position : hand.transform.position);
+                GameFieldAccess.Set(hand, "prevPosition", hand.transform.position);
+                GameFieldAccess.Set(hand, "prevPositionIndex", hand.IndexTip != null ? hand.IndexTip.position : hand.transform.position);
                 hand.Velocity = Vector3.zero;
                 hand.IndexVelocity = Vector3.zero;
-                handState.Field("prevIsTracked").SetValue(true);
+                GameFieldAccess.Set(hand, "prevIsTracked", true);
 
                 // Let the game's own input-mode-change handler rebuild the Oculus
                 // skeleton from its calibrated bind pose. Manually zeroing Wrist
                 // localPosition/Rotation changes that bind pose and can leave a
                 // recovered hand displaced or turned after tracking resumes.
-                if (hand.skeletonController != null)
-                    Traverse.Create(hand.skeletonController)
+#if QUEST_IL2CPP
+                var controllerSkeleton = hand.skeletonController?.TryCast<HandSkeletonControllerOculus>();
+#else
+                var controllerSkeleton = hand.skeletonController as HandSkeletonControllerOculus;
+#endif
+                if (controllerSkeleton != null)
+                    Traverse.Create(controllerSkeleton)
                         .Method("VRPlatformBase_InputControllerChanged", VRInteractionType.Controllers)
                         .GetValue();
             }
@@ -3520,11 +3673,10 @@ namespace UnpluggedCustomSongs
                 var metadata = CustomSongLoader.CustomAlbumInstance?.builtInSongsMetadata;
                 int songCount = metadata?.Count ?? 0;
                 if (songCount <= 0) return;
-                var menu = Traverse.Create(__instance);
 #if QUEST_IL2CPP
-                var songList = menu.Field("songList").GetValue<Il2CppSystem.Collections.Generic.List<SongMappingMetaData>>();
+                var songList = GameFieldAccess.Get<Il2CppSystem.Collections.Generic.List<SongMappingMetaData>>(__instance, "songList");
 #else
-                var songList = menu.Field("songList").GetValue<List<SongMappingMetaData>>();
+                var songList = GameFieldAccess.Get<List<SongMappingMetaData>>(__instance, "songList");
 #endif
                 if (songList == null || songList.Count != songCount) return;
 
@@ -3558,14 +3710,14 @@ namespace UnpluggedCustomSongs
                         int sourceIndex = ((i - centerIndex + targetPosition) % songCount + songCount) % songCount;
                         rotated.Add(songList[sourceIndex]);
                     }
-                    menu.Field("songList").SetValue(rotated);
+                    GameFieldAccess.Set(__instance, "songList", rotated);
                 }
 
                 __instance.InitialOffset = centerIndex;
-                menu.Field("CumulativeIndex").SetValue(0);
-                menu.Field("Index").SetValue(0);
-                menu.Field("CumulativeOffset").SetValue(0f);
-                menu.Field("selectedIndex").SetValue(centerIndex);
+                GameFieldAccess.Set(__instance, "CumulativeIndex", 0);
+                GameFieldAccess.Set(__instance, "Index", 0);
+                GameFieldAccess.Set(__instance, "CumulativeOffset", 0f);
+                GameFieldAccess.Set(__instance, "selectedIndex", centerIndex);
                 MelonLogger.Msg($"[CustomSongs] Direct album selection prepared: index={targetIndex}, song='{metadata[targetIndex].SongName}', centerSlot={centerIndex}, animatedSteps=0.");
             }
             catch (Exception ex)
@@ -3581,22 +3733,21 @@ namespace UnpluggedCustomSongs
     {
         public static bool Prefix(SongMenu __instance)
         {
-            var trav = Traverse.Create(__instance);
 #if QUEST_IL2CPP
-            var songList = trav.Field("songList").GetValue<Il2CppSystem.Collections.Generic.List<SongMappingMetaData>>();
+            var songList = GameFieldAccess.Get<Il2CppSystem.Collections.Generic.List<SongMappingMetaData>>(__instance, "songList");
 #else
-            var songList = trav.Field("songList").GetValue<List<SongMappingMetaData>>();
+            var songList = GameFieldAccess.Get<List<SongMappingMetaData>>(__instance, "songList");
 #endif
             if (songList != null && songList.Count == 2)
             {
-                trav.Field("smoothVirtualizedOffset").SetValue(0f);
-                trav.Field("Offset").SetValue(0.001f);
+                GameFieldAccess.Set(__instance, "smoothVirtualizedOffset", 0f);
+                GameFieldAccess.Set(__instance, "Offset", 0.001f);
                 GameProgress.Load();
 
 #if QUEST_IL2CPP
-                var virtualizedItemList = trav.Field("virtualizedItemList").GetValue<Il2CppSystem.Collections.Generic.List<SongMenuItem>>();
+                var virtualizedItemList = GameFieldAccess.Get<Il2CppSystem.Collections.Generic.List<SongMenuItem>>(__instance, "virtualizedItemList");
 #else
-                var virtualizedItemList = trav.Field("virtualizedItemList").GetValue<List<SongMenuItem>>();
+                var virtualizedItemList = GameFieldAccess.Get<List<SongMenuItem>>(__instance, "virtualizedItemList");
 #endif
                 if (virtualizedItemList == null)
                 {
@@ -3605,7 +3756,7 @@ namespace UnpluggedCustomSongs
 #else
                     virtualizedItemList = new List<SongMenuItem>();
 #endif
-                    trav.Field("virtualizedItemList").SetValue(virtualizedItemList);
+                    GameFieldAccess.Set(__instance, "virtualizedItemList", virtualizedItemList);
                 }
                 foreach (var item in virtualizedItemList)
                 {
@@ -3837,7 +3988,7 @@ namespace UnpluggedCustomSongs
         {
             try
             {
-                var mgr = Traverse.Create(typeof(LocalizationManager)).Field("I").GetValue<LocalizationManager>();
+                var mgr = GameFieldAccess.Get<LocalizationManager>(typeof(LocalizationManager), "I");
                 if (mgr == null || mgr.AvailableLanguages == null)
                 {
                     __result = new CultureInfo("en-US");
@@ -4585,8 +4736,7 @@ namespace UnpluggedCustomSongs
                 {
                     if (CustomSongLoader.CustomAlbumInstance.Cover != null)
                     {
-                        var trav = Traverse.Create(__instance);
-                        var coverImg = trav.Field("coverImage").GetValue<UnityEngine.UI.RawImage>();
+                        var coverImg = GameFieldAccess.Get<UnityEngine.UI.RawImage>(__instance, "coverImage");
                         if (coverImg != null)
                         {
                             coverImg.texture = CustomSongLoader.CustomAlbumInstance.Cover;
