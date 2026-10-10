@@ -15,7 +15,7 @@ namespace USM.Core.Parsers
     {
         // Bump when chart parsing or generated note semantics change. Stored in
         // meta.json so the PC library can selectively regenerate outdated charts.
-        public const int ParserVersion = 2;
+        public const int ParserVersion = 3;
 
         private static readonly Dictionary<int, (int Tier, string[] Fingers)> FingerMap = new()
         {
@@ -145,14 +145,17 @@ namespace USM.Core.Parsers
                 sb.Append("],\"IsPullOff\":").Append(isPullOff ? "true" : "false").Append('}');
                 firstHand = false;
 
-                GetControllerButtons(lanes, out bool trigger, out bool grip, out int rotation);
+                GetControllerButtons(lanes, out bool trigger, out bool grip);
                 if (!firstController) controllerNotes.Append(',');
                 controllerNotes.Append("{\"Time\":").Append(Number(noteTime))
                     .Append(",\"Duration\":").Append(Number(noteDuration))
                     .Append(",\"Tier\":").Append(tier)
                     .Append(",\"Buttons\":[").Append(trigger ? "true" : "false").Append(',')
                     .Append(grip ? "true" : "false").Append(']')
-                    .Append(",\"ChordRotation\":").Append(rotation)
+                    // Clone Hero charts encode fret lanes, not Unplugged's guitar
+                    // rotation gestures. Inferring a rotation from lane 4 (orange)
+                    // generated false arrows on otherwise ordinary notes.
+                    .Append(",\"ChordRotation\":0")
                     .Append(",\"Intensity\":0}");
                 firstController = false;
 
@@ -164,25 +167,23 @@ namespace USM.Core.Parsers
             return sb.ToString();
         }
 
-        private static void GetControllerButtons(List<int> lanes, out bool trigger, out bool grip, out int rotation)
+        private static void GetControllerButtons(List<int> lanes, out bool trigger, out bool grip)
         {
             trigger = false;
             grip = false;
-            rotation = 0;
 
             if (lanes.Count == 1)
             {
                 int lane = lanes[0];
                 if (lane is 0 or 1) trigger = true;
                 else if (lane is 2 or 3) grip = true;
-                else if (lane == 4) { grip = true; rotation = 1; }
+                else if (lane == 4) grip = true;
                 else trigger = true;
                 return;
             }
 
             bool hasLower = lanes.Any(lane => lane is 0 or 1);
             bool hasUpper = lanes.Any(lane => lane is 2 or 3 or 4);
-            rotation = lanes.Contains(4) && !hasLower ? 1 : 0;
             trigger = hasLower;
             grip = hasUpper;
         }
