@@ -2845,7 +2845,11 @@ namespace UnpluggedCustomSongs
 
             string questInput = "noteType=other";
             string questMode = "unknown";
-            if (note is ControllerGuitarNote questControllerNote)
+            // Harmony supplies the wrapper declared by RaiseFailed/RaiseSucceeded
+            // (KeyTime), even when the underlying native object is a controller
+            // note. A C# `is` test cannot inspect that native runtime type.
+            var questControllerNote = note.TryCast<ControllerGuitarNote>();
+            if (questControllerNote != null)
             {
                 string trigger = questControllerNote.Buttons != null && questControllerNote.Buttons.Count > 0
                     ? questControllerNote.Buttons[0].ToString()
@@ -2856,7 +2860,7 @@ namespace UnpluggedCustomSongs
                 questInput = $"noteType=controller tier={questControllerNote.Tier} trigger={trigger} grip={grip}";
                 questMode = "controller";
             }
-            else if (note is HandGuitarNote questHandNote)
+            else if (note.TryCast<HandGuitarNote>() is HandGuitarNote questHandNote)
             {
                 questInput = $"noteType=hand tier={questHandNote.Tier} fingerCount={questHandNote.Fingers?.Count ?? 0}";
                 questMode = "hand";
@@ -2940,6 +2944,7 @@ namespace UnpluggedCustomSongs
 
         public static void LoadCustomAudio(Mp3Player player, SongMappingMetaData data, bool loadSample)
         {
+            var audioLoadTimer = Stopwatch.StartNew();
             string usmPath = ResolveUsmPath(data?.FileName);
             if (string.IsNullOrEmpty(usmPath))
             {
@@ -2951,29 +2956,13 @@ namespace UnpluggedCustomSongs
 
             try
             {
-                if (Directory.Exists(folder)) Directory.Delete(folder, true);
-                Directory.CreateDirectory(folder);
-
-                using (var archive = System.IO.Compression.ZipFile.OpenRead(usmPath))
-                {
-                    foreach (var entry in archive.Entries)
-                    {
-                        if (entry.Name.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase) ||
-                            entry.Name.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase))
-                        {
-                            string dest = Path.Combine(folder, entry.Name);
-                            using (var fs = new FileStream(dest, FileMode.Create, FileAccess.Write))
-                            {
-                                entry.Open().CopyTo(fs);
-                            }
-                        }
-                    }
-                }
-                MelonLogger.Msg($"[CustomSongs] Extracted audio from .usm to {folder}");
+                ExtractCustomAudio(usmPath, folder);
+                MelonLogger.Msg($"[AudioDiag] Extracted {Path.GetFileName(usmPath)}: elapsedMs={audioLoadTimer.ElapsedMilliseconds}.");
             }
             catch (Exception ex)
             {
                 MelonLogger.Error($"[CustomSongs] Failed to extract .usm for playback: {ex}");
+                return;
             }
 
             if (player == null)
@@ -2991,7 +2980,7 @@ namespace UnpluggedCustomSongs
             // CRITICAL: Set IsMultiTrack property via Traverse
             Traverse.Create(player).Property("IsMultiTrack").SetValue(isMulti);
 
-            MelonLogger.Msg($"[CustomSongs] LoadCustomAudio: '{data.SongName}', AudioLayout='{audioLayout}', IsMultiTrack set to: {isMulti}");
+            MelonLogger.Msg($"[AudioDiag] Preparing '{data.SongName}', AudioLayout='{audioLayout}', IsMultiTrack={isMulti}.");
 
             var musicMixerGroup = player.MusicAudioSource != null ? player.MusicAudioSource.outputAudioMixerGroup : null;
 
@@ -3087,6 +3076,36 @@ namespace UnpluggedCustomSongs
                 else
                 {
                     MelonLogger.Error($"[CustomSongs] No sample/song .ogg or .mp3 was extracted from '{Path.GetFileName(usmPath)}'.");
+                }
+            }
+
+            MelonLogger.Msg($"[AudioDiag] Prepared {Path.GetFileName(usmPath)}: totalMs={audioLoadTimer.ElapsedMilliseconds}, masterClipReady={player.MusicAudioSource != null && player.MusicAudioSource.clip != null}.");
+        }
+
+        private static void ExtractCustomAudio(string usmPath, string folder)
+        {
+            Directory.CreateDirectory(folder);
+            // Preview requests own preview_<id> files until their decoder has
+            // finished. Remove only audio files from the previous song load.
+            // Deleting the whole directory could interrupt those requests.
+            foreach (string file in Directory.GetFiles(folder))
+            {
+                string name = Path.GetFileName(file);
+                bool isAudio = name.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase) ||
+                    name.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase);
+                if (isAudio && !name.StartsWith("preview_", StringComparison.OrdinalIgnoreCase))
+                    File.Delete(file);
+            }
+            using (var archive = System.IO.Compression.ZipFile.OpenRead(usmPath))
+            {
+                foreach (var entry in archive.Entries)
+                {
+                    if (!entry.Name.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase) &&
+                        !entry.Name.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase)) continue;
+                    string destination = Path.Combine(folder, entry.Name);
+                    using (var input = entry.Open())
+                    using (var output = new FileStream(destination, FileMode.Create, FileAccess.Write))
+                        input.CopyTo(output);
                 }
             }
         }
@@ -3323,6 +3342,7 @@ namespace UnpluggedCustomSongs
 
         private static AudioClip LoadClip(string filePath)
         {
+            var decodeTimer = Stopwatch.StartNew();
             string clean = filePath.Replace("\\", "/");
             string url = clean.StartsWith("/") ? "file://" + clean : "file:///" + clean;
             AudioType aType = AudioType.MPEG;
@@ -3336,7 +3356,23 @@ namespace UnpluggedCustomSongs
                 System.Threading.Thread.Sleep(10);
                 timeout++;
             }
-            return www.GetAudioClip(false, false, aType);
+            try
+            {
+                if (!www.isDone)
+                {
+                    MelonLogger.Error($"[AudioDiag] Decode timed out: {Path.GetFileName(filePath)}, elapsedMs={decodeTimer.ElapsedMilliseconds}.");
+                    return null;
+                }
+                if (!string.IsNullOrEmpty(www.error))
+                {
+                    MelonLogger.Error($"[AudioDiag] Decode failed: {Path.GetFileName(filePath)}, error={www.error}.");
+                    return null;
+                }
+                AudioClip clip = www.GetAudioClip(false, false, aType);
+                MelonLogger.Msg($"[AudioDiag] Decoded {Path.GetFileName(filePath)}: elapsedMs={decodeTimer.ElapsedMilliseconds}, clipReady={clip != null}.");
+                return clip;
+            }
+            finally { www.Dispose(); }
         }
 
         public static DateTime GetSongFolderTimestamp(string dir)
