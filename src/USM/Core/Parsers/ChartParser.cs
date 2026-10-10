@@ -127,8 +127,9 @@ namespace USM.Core.Parsers
                 return 0.0;
             };
 
-            // 3. Difficulty Sections (ExpertSingle, HardSingle, MediumSingle, EasySingle)
-            string[] sectionNames = { "ExpertSingle", "HardSingle", "MediumSingle", "EasySingle" };
+            // 3. Chart difficulties. Chorus charts normally expose Easy through
+            // Expert; Unplugged's own catalog also includes SuperEasySingle.
+            string[] sectionNames = { "SuperEasySingle", "EasySingle", "MediumSingle", "HardSingle", "ExpertSingle" };
             foreach (var secName in sectionNames)
             {
                 if (sections.TryGetValue(secName, out var lines))

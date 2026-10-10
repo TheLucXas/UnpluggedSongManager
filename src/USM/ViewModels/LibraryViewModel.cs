@@ -651,6 +651,9 @@ namespace USM.ViewModels
             string charter = "Unknown";
             bool isMulti = false;
             bool isHalfTrack = false;
+            bool isIdealForUnplugged = false;
+            int audioStemCount = 0;
+            int sourceDifficultyCount = 0;
             bool hasKnownAudioLayout = false;
             string? chorusChartId = null;
             string? chorusChartMd5 = null;
@@ -672,6 +675,13 @@ namespace USM.ViewModels
                     chorusChartId = ReadMetaValue(meta, "ChorusChartId", "SourceChartId");
                     chorusChartMd5 = ReadMetaValue(meta, "ChorusChartMd5", "SourceChartMd5");
                     chartParserVersion = ReadMetaInt(meta, "ChartParserVersion", "ParserVersion");
+                    audioStemCount = ReadMetaInt(meta, "AudioStemCount");
+                    sourceDifficultyCount = ReadMetaInt(meta, "SourceDifficultyCount");
+                    if (meta.TryGetProperty("IsIdealForUnplugged", out var idealValue))
+                    {
+                        isIdealForUnplugged = idealValue.ValueKind == JsonValueKind.True ||
+                            (idealValue.ValueKind == JsonValueKind.String && bool.TryParse(idealValue.GetString(), out var parsedIdeal) && parsedIdeal);
+                    }
                     if (meta.TryGetProperty("AudioLayout", out var audioLayout) && audioLayout.ValueKind == JsonValueKind.String)
                     {
                         string layout = audioLayout.GetString() ?? string.Empty;
@@ -743,6 +753,9 @@ namespace USM.ViewModels
                 AudioPath = null,
                 IsMultiTrack = isMulti,
                 IsHalfTrack = isHalfTrack,
+                IsIdealForUnplugged = isIdealForUnplugged,
+                AudioStemCount = audioStemCount,
+                SourceDifficultyCount = sourceDifficultyCount,
                 ChorusChartId = chorusChartId,
                 ChorusChartMd5 = chorusChartMd5,
                 ChartParserVersion = chartParserVersion

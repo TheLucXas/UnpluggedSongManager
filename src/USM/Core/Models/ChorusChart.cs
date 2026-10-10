@@ -46,6 +46,23 @@ namespace USM.Core.Models
             _ => "Audio layout unavailable"
         };
 
+        public int AudioStemCount { get; set; }
+        public int SourceDifficultyCount { get; set; }
+
+        private bool _isIdealForUnplugged;
+        public bool IsIdealForUnplugged
+        {
+            get => _isIdealForUnplugged;
+            set => SetProperty(ref _isIdealForUnplugged, value);
+        }
+
+        private bool _isCheckingQuality;
+        public bool IsCheckingQuality
+        {
+            get => _isCheckingQuality;
+            set => SetProperty(ref _isCheckingQuality, value);
+        }
+
         public string SubtitleDisplay => string.IsNullOrEmpty(Album)
             ? (string.IsNullOrEmpty(Year) ? Artist : $"{Artist} ({Year})")
             : $"{Artist} • {Album}{(string.IsNullOrEmpty(Year) ? "" : $" ({Year})")}";
@@ -131,6 +148,9 @@ namespace USM.Core.Models
         public bool HasCover => CoverImage != null || (!string.IsNullOrEmpty(CoverPath) && System.IO.File.Exists(CoverPath));
         public bool IsMultiTrack { get; set; } = false;
         public bool IsHalfTrack { get; set; } = false;
+        public bool IsIdealForUnplugged { get; set; }
+        public int AudioStemCount { get; set; }
+        public int SourceDifficultyCount { get; set; }
         public string? ChorusChartId { get; set; }
         public string? ChorusChartMd5 { get; set; }
         public int ChartParserVersion { get; set; }

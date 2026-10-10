@@ -26,6 +26,11 @@ namespace USM.Core.Services
 
         public static AudioTrackLayout Detect(IEnumerable<string> fileNames)
         {
+            return Analyze(fileNames).Layout;
+        }
+
+        public static (AudioTrackLayout Layout, int StemCount, bool HasVocals, HashSet<string> StemGroups) Analyze(IEnumerable<string> fileNames)
+        {
             var groups = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             bool hasVocals = false;
             bool hasNamedBacking = false;
@@ -53,7 +58,7 @@ namespace USM.Core.Services
             }
 
             if (groups.Count == 0)
-                return AudioTrackLayout.Unknown;
+                return (AudioTrackLayout.Unknown, 0, hasVocals, groups);
 
             // song.opus is commonly the full preview/master mix accompanying
             // individual stems. Do not count it as another stem in that case.
@@ -66,12 +71,12 @@ namespace USM.Core.Services
                 groups.Add("song");
 
             if (groups.Count <= 1)
-                return AudioTrackLayout.SingleTrack;
+                return (AudioTrackLayout.SingleTrack, groups.Count, hasVocals, groups);
 
             if (groups.Count == 2 && hasVocals)
-                return AudioTrackLayout.HalfTrack;
+                return (AudioTrackLayout.HalfTrack, groups.Count, hasVocals, groups);
 
-            return AudioTrackLayout.MultiTrack;
+            return (AudioTrackLayout.MultiTrack, groups.Count, hasVocals, groups);
         }
 
         private static string GetTrackGroup(string stem)

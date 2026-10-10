@@ -26,6 +26,8 @@ namespace USM.Core.Parsers
             public List<ChartParser.BpmEvent> BpmGrid { get; set; } = new();
             public Func<long, double> TickToSec { get; set; } = _ => 0.0;
             public Dictionary<string, SortedDictionary<long, List<ChartParser.NoteEvent>>> Difficulties { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+            public string SelectedTrackName { get; set; } = string.Empty;
+            public int SelectedTrackPlayableNoteCount { get; set; }
         }
 
         public static ParsedMidi Parse(string midiPath)
@@ -220,24 +222,9 @@ namespace USM.Core.Parsers
                 return lastT + (delta * (lastTempo / 1000000.0)) / ticksPerBeat;
             };
 
-            // 2. Locate Guitar Track
-            MidiTrack? guitarTrack = null;
-            foreach (var trk in tracks)
-            {
-                string tn = trk.Name.ToUpperInvariant();
-                if (tn.Contains("PART GUITAR") || tn.Contains("GUITAR"))
-                {
-                    guitarTrack = trk;
-                    break;
-                }
-            }
-
-            if (guitarTrack == null)
-            {
-                guitarTrack = tracks.Count > 1 ? tracks[1] : (tracks.Count > 0 ? tracks[0] : new MidiTrack());
-            }
-
-            // 3. Map MIDI pitches to difficulties
+            // 2. Find the track that actually contains chart pitches. Some
+            // charts put an empty guitar-named metadata track before the notes;
+            // selecting the first name match produced four empty difficulty files.
             var diffRanges = new Dictionary<string, (int Base, int Top)>
             {
                 ["ExpertSingle"] = (96, 100),
@@ -245,6 +232,23 @@ namespace USM.Core.Parsers
                 ["MediumSingle"] = (72, 76),
                 ["EasySingle"] = (60, 64)
             };
+
+            int PlayableMidiNoteCount(MidiTrack track) => track.Notes.Count(note =>
+                diffRanges.Values.Any(range => note.NoteNumber >= range.Base && note.NoteNumber <= range.Top));
+
+            MidiTrack? guitarTrack = tracks
+                .Where(track => !string.IsNullOrWhiteSpace(track.Name) &&
+                    (track.Name.Contains("GUITAR", StringComparison.OrdinalIgnoreCase) ||
+                     track.Name.Contains("PART GUITAR", StringComparison.OrdinalIgnoreCase)))
+                .OrderByDescending(PlayableMidiNoteCount)
+                .ThenByDescending(track => track.Name.Contains("PART GUITAR", StringComparison.OrdinalIgnoreCase))
+                .FirstOrDefault();
+
+            if (guitarTrack == null || PlayableMidiNoteCount(guitarTrack) == 0)
+            {
+                guitarTrack = tracks.OrderByDescending(PlayableMidiNoteCount).FirstOrDefault()
+                    ?? new MidiTrack();
+            }
 
             var difficulties = new Dictionary<string, SortedDictionary<long, List<ChartParser.NoteEvent>>>(StringComparer.OrdinalIgnoreCase);
             foreach (var kvp in diffRanges)
@@ -277,7 +281,9 @@ namespace USM.Core.Parsers
                 TicksPerBeat = ticksPerBeat,
                 BpmGrid = bpmGrid,
                 TickToSec = tickToSec,
-                Difficulties = difficulties
+                Difficulties = difficulties,
+                SelectedTrackName = guitarTrack.Name,
+                SelectedTrackPlayableNoteCount = PlayableMidiNoteCount(guitarTrack)
             };
         }
 

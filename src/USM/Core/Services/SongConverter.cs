@@ -80,31 +80,83 @@ namespace USM.Core.Services
 
         public static Dictionary<string, string> GenerateJsonCharts(string inputDir, Action<string>? log = null)
         {
+            return GenerateJsonCharts(inputDir, log, out _, out _);
+        }
+
+        private static Dictionary<string, string> GenerateJsonCharts(
+            string inputDir,
+            Action<string>? log,
+            out int sourceDifficultyCount,
+            out int sourceNoteCount)
+        {
+            sourceDifficultyCount = 0;
+            sourceNoteCount = 0;
             string midPath = Path.Combine(inputDir, "notes.mid");
             string chartPath = Path.Combine(inputDir, "notes.chart");
             if (!File.Exists(chartPath)) chartPath = Path.Combine(inputDir, "song.chart");
 
+            var candidates = new List<(string Name, List<ChartParser.BpmEvent> BpmGrid, Func<long, double> TickToSec,
+                Dictionary<string, SortedDictionary<long, List<ChartParser.NoteEvent>>> Difficulties, int TicksPerBeat)>();
+
             if (File.Exists(midPath))
             {
-                log?.Invoke("  [Chart] Detected notes.mid (Standard MIDI format).");
-                var midi = MidiParser.Parse(midPath);
-                return JsonGenerator.GenerateAllDifficultiesJson(
-                    midi.BpmGrid, midi.TickToSec, midi.Difficulties, midi.TicksPerBeat);
+                try
+                {
+                    log?.Invoke("  [Chart] Reading notes.mid (Standard MIDI format).");
+                    var midi = MidiParser.Parse(midPath);
+                    log?.Invoke($"  [Chart] MIDI guitar track '{midi.SelectedTrackName}' contains {midi.SelectedTrackPlayableNoteCount} notes in supported difficulty ranges.");
+                    candidates.Add(("notes.mid", midi.BpmGrid, midi.TickToSec, midi.Difficulties, midi.TicksPerBeat));
+                }
+                catch (Exception ex)
+                {
+                    log?.Invoke($"  [Chart] Could not parse notes.mid: {ex.Message}");
+                }
             }
 
             if (File.Exists(chartPath))
             {
-                log?.Invoke("  [Chart] Detected notes.chart (Clone Hero text format).");
-                var chart = ChartParser.Parse(chartPath);
-                if (chart.IgnoredNonPlayableNoteEvents > 0)
+                try
                 {
-                    log?.Invoke($"  [Chart] Ignored {chart.IgnoredNonPlayableNoteEvents} non-playable note events (HOPO/tap markers or unsupported lanes).");
+                    log?.Invoke($"  [Chart] Reading {Path.GetFileName(chartPath)} (Clone Hero text format).");
+                    var chart = ChartParser.Parse(chartPath);
+                    if (chart.IgnoredNonPlayableNoteEvents > 0)
+                    {
+                        log?.Invoke($"  [Chart] Ignored {chart.IgnoredNonPlayableNoteEvents} non-playable note events (HOPO/tap markers or unsupported lanes).");
+                    }
+                    candidates.Add((Path.GetFileName(chartPath), chart.BpmGrid, chart.TickToSec, chart.Difficulties, chart.Resolution));
                 }
-                return JsonGenerator.GenerateAllDifficultiesJson(
-                    chart.BpmGrid, chart.TickToSec, chart.Difficulties, chart.Resolution);
+                catch (Exception ex)
+                {
+                    log?.Invoke($"  [Chart] Could not parse {Path.GetFileName(chartPath)}: {ex.Message}");
+                }
             }
 
-            throw new FileNotFoundException("No chart notes file (notes.chart or notes.mid) found in the song package.");
+            var selected = candidates
+                .Select(candidate => new
+                {
+                    Candidate = candidate,
+                    DifficultyCount = candidate.Difficulties.Count(entry => entry.Value.Values.Any(group => group != null && group.Count > 0)),
+                    NoteCount = candidate.Difficulties.Values.Sum(notes => notes.Values.Where(group => group != null).Sum(group => group.Count)),
+                    IsTextChart = candidate.Name.EndsWith(".chart", StringComparison.OrdinalIgnoreCase)
+                })
+                .Where(candidate => candidate.NoteCount > 0)
+                .OrderByDescending(candidate => candidate.DifficultyCount)
+                .ThenByDescending(candidate => candidate.NoteCount)
+                .ThenByDescending(candidate => candidate.IsTextChart)
+                .FirstOrDefault();
+
+            if (selected == null)
+                throw new FileNotFoundException("No playable guitar notes were found in notes.chart, song.chart, or notes.mid.");
+
+            sourceDifficultyCount = Math.Min(4, selected.DifficultyCount);
+            sourceNoteCount = selected.NoteCount;
+            log?.Invoke($"  [Chart] Using {selected.Candidate.Name}: {selected.DifficultyCount} populated source difficulties, {selected.NoteCount} note events.");
+            return JsonGenerator.GenerateAllDifficultiesJson(
+                selected.Candidate.BpmGrid,
+                selected.Candidate.TickToSec,
+                selected.Candidate.Difficulties,
+                selected.Candidate.TicksPerBeat,
+                log);
         }
         
         public static void CleanupOutDir(string? outDir)
@@ -222,7 +274,7 @@ namespace USM.Core.Services
                 // 6. Chart Note Generation -> Outputs .json
                 progress?.Report(new ConversionProgress(0.70, "Generating USM 2.0 chart notes..."));
 
-                Dictionary<string, string> jsonCharts = GenerateJsonCharts(inputDir, log);
+                Dictionary<string, string> jsonCharts = GenerateJsonCharts(inputDir, log, out int sourceDifficultyCount, out int sourceNoteCount);
                 
                 if (jsonCharts != null)
                 {
@@ -233,6 +285,15 @@ namespace USM.Core.Services
                     log?.Invoke($"  [Chart] Generated {jsonCharts.Count} JSON difficulty files with both hand and controller tracks precomputed.");
                 }
 
+                var outputAudio = AudioLayoutDetector.Analyze(Directory.GetFiles(outDir)
+                    .Select(path => Path.GetFileName(path) ?? string.Empty));
+                bool isIdealForUnplugged = outputAudio.Layout == AudioTrackLayout.MultiTrack
+                    && outputAudio.StemCount >= 4
+                    && outputAudio.HasVocals
+                    && outputAudio.StemGroups.Contains("guitar")
+                    && sourceDifficultyCount >= 4
+                    && sourceNoteCount > 0;
+
                 // 7. Generate meta.json
                 string metaJson = JsonSerializer.Serialize(new
                 {
@@ -242,6 +303,10 @@ namespace USM.Core.Services
                     IsBuiltIn = false,
                     IsMultiTrack = audioResult.HasMultiTrack,
                     AudioLayout = audioResult.IsHalfTrack ? "two-track-instrumental-vocals" : audioResult.HasMultiTrack ? "full-multitrack" : "single-track",
+                    AudioStemCount = outputAudio.StemCount,
+                    SourceDifficultyCount = sourceDifficultyCount,
+                    SourceChartNoteCount = sourceNoteCount,
+                    IsIdealForUnplugged = isIdealForUnplugged,
                     LevelAuthorName = Regex.Replace(iniInfo.Charter ?? string.Empty, @"<[^>]*>", "").Trim(),
                     SongID = $"CUSTOM_{folderName}",
                     SongName = Regex.Replace(iniInfo.Name ?? string.Empty, @"<[^>]*>", "").Trim(),

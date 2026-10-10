@@ -15,7 +15,7 @@ namespace USM.Core.Parsers
     {
         // Bump when chart parsing or generated note semantics change. Stored in
         // meta.json so the PC library can selectively regenerate outdated charts.
-        public const int ParserVersion = 4;
+        public const int ParserVersion = 5;
 
         private static readonly Dictionary<int, (int Tier, string[] Fingers)> FingerMap = new()
         {
@@ -57,8 +57,7 @@ namespace USM.Core.Parsers
             int initialBpm = bpmGrid.Count > 0 ? (int)Math.Round(bpmGrid[0].Bpm) : 120;
             long lastTick = notesByTick.Count > 0 ? notesByTick.Keys.Last() : 0;
             double totalDuration = Math.Max(0, tickToSec(lastTick)) + 10.0;
-            bool twoTierDifficulty = outputDifficulty.Equals("songdata-Easy.json", StringComparison.OrdinalIgnoreCase)
-                || outputDifficulty.Equals("songdata-SuperEasy.json", StringComparison.OrdinalIgnoreCase);
+            bool superEasyDifficulty = outputDifficulty.Equals("songdata-SuperEasy.json", StringComparison.OrdinalIgnoreCase);
 
             var sb = new StringBuilder(Math.Max(1024, notesByTick.Count * 140));
             sb.Append("{\"SchemaVersion\":2,")
@@ -121,18 +120,12 @@ namespace USM.Core.Parsers
                     (tier, fingers) = chordMapping;
                 }
 
-                // Easy and SuperEasy use only tiers 0 and 1 in both play modes.
-                // Clamp higher source tiers into tier 1; modulo wrapped tier 2
-                // back to tier 0, which made the visible fret disagree with the
-                // trigger/grip state generated from the source lane.
-                if (twoTierDifficulty)
+                // The PC game's shipped chart catalog uses Tier 1 and Tier 2
+                // for SuperEasy. Easy uses Tier 0-3 in most official songs, so
+                // it must not be clamped with SuperEasy.
+                if (superEasyDifficulty)
                 {
-                    tier = Math.Min(tier, 1);
-                    fingers = fingers
-                        .Where(finger => finger == "Index" || finger == "Middle")
-                        .ToArray();
-                    if (fingers.Length == 0)
-                        fingers = new[] { tier == 0 ? "Index" : "Middle" };
+                    tier = tier <= 1 ? 1 : 2;
                 }
 
                 bool isPullOff = noteTime - previousTime < 0.22 && previousTier != tier;
@@ -197,34 +190,198 @@ namespace USM.Core.Parsers
             List<ChartParser.BpmEvent> bpmGrid,
             Func<long, double> tickToSec,
             Dictionary<string, SortedDictionary<long, List<ChartParser.NoteEvent>>> difficulties,
-            int ticksPerBeat)
+            int ticksPerBeat,
+            Action<string>? log = null)
         {
-            var difficultyMappings = new Dictionary<string, string[]>
+            var outputFiles = new[]
             {
-                ["songdata-Hard.json"] = new[] { "ExpertSingle", "HardSingle", "MediumSingle", "EasySingle" },
-                ["songdata-Normal.json"] = new[] { "HardSingle", "ExpertSingle", "MediumSingle", "EasySingle" },
-                ["songdata-Easy.json"] = new[] { "MediumSingle", "EasySingle", "HardSingle", "ExpertSingle" },
-                ["songdata-SuperEasy.json"] = new[] { "EasySingle", "MediumSingle", "HardSingle", "ExpertSingle" }
+                "songdata-SuperEasy.json",
+                "songdata-Easy.json",
+                "songdata-Normal.json",
+                "songdata-Hard.json"
             };
+            bool hasNativeSuperEasy = difficulties.TryGetValue("SuperEasySingle", out var nativeSuperEasyNotes)
+                && HasNotes(nativeSuperEasyNotes);
+            string[] sourceDifficulties = hasNativeSuperEasy
+                ? new[] { "SuperEasySingle", "EasySingle", "MediumSingle", "HardSingle" }
+                : new[] { "EasySingle", "MediumSingle", "HardSingle", "ExpertSingle" };
+            double[] singleSourceKeepRatios = { 0.60, 0.75, 0.90, 1.0 };
+
+            difficulties ??= new Dictionary<string, SortedDictionary<long, List<ChartParser.NoteEvent>>>(StringComparer.OrdinalIgnoreCase);
+            var availableSources = sourceDifficulties
+                .Select((name, rank) =>
+                {
+                    difficulties.TryGetValue(name, out var notes);
+                    return (Name: name, Rank: rank, Notes: notes);
+                })
+                .Where(source => HasNotes(source.Notes))
+                .ToList();
+
+            log?.Invoke(availableSources.Count == 0
+                ? "  [Chart] No playable guitar difficulty sections were found."
+                : "  [Chart] Source difficulties: " + string.Join(", ", availableSources.Select(source =>
+                    $"{source.Name} ({CountNotes(source.Notes)} notes)")));
+            if (hasNativeSuperEasy && difficulties.TryGetValue("ExpertSingle", out var expertNotes) && HasNotes(expertNotes))
+                log?.Invoke("  [Chart] The fifth source tier (ExpertSingle) is omitted because USM writes four playable difficulty files.");
 
             var results = new Dictionary<string, string>();
-            foreach (var difficulty in difficultyMappings)
+            for (int targetRank = 0; targetRank < outputFiles.Length; targetRank++)
             {
-                SortedDictionary<long, List<ChartParser.NoteEvent>>? selectedNotes = null;
-                foreach (string sourceDifficulty in difficulty.Value)
+                SortedDictionary<long, List<ChartParser.NoteEvent>> selectedNotes;
+                string origin;
+
+                if (availableSources.Count == 0)
                 {
-                    if (difficulties.TryGetValue(sourceDifficulty, out var notes) && notes.Count > 0)
+                    selectedNotes = new SortedDictionary<long, List<ChartParser.NoteEvent>>();
+                    origin = "no source notes";
+                }
+                else if (availableSources.Count == 1)
+                {
+                    selectedNotes = ThinNotes(availableSources[0].Notes!, singleSourceKeepRatios[targetRank]);
+                    origin = $"adapted from {availableSources[0].Name} at {singleSourceKeepRatios[targetRank]:P0} density";
+                }
+                else
+                {
+                    var anchors = GetDifficultyAnchors(availableSources);
+                    var exactAnchor = anchors.FirstOrDefault(anchor => anchor.TargetRank == targetRank);
+                    if (exactAnchor.Notes != null)
                     {
-                        selectedNotes = notes;
-                        break;
+                        selectedNotes = CloneNotes(exactAnchor.Notes);
+                        origin = $"source {exactAnchor.SourceName}";
+                    }
+                    else
+                    {
+                        var lower = anchors.Where(anchor => anchor.TargetRank < targetRank).OrderByDescending(anchor => anchor.TargetRank).FirstOrDefault();
+                        var upper = anchors.Where(anchor => anchor.TargetRank > targetRank).OrderBy(anchor => anchor.TargetRank).FirstOrDefault();
+
+                        if (lower.Notes != null && upper.Notes != null)
+                        {
+                            double fraction = (targetRank - lower.TargetRank) / (double)(upper.TargetRank - lower.TargetRank);
+                            selectedNotes = BlendNotes(lower.Notes, upper.Notes, fraction);
+                            origin = $"interpolated between {lower.SourceName} and {upper.SourceName} ({fraction:P0})";
+                        }
+                        else if (lower.Notes != null)
+                        {
+                            double keepRatio = singleSourceKeepRatios[targetRank];
+                            selectedNotes = ThinNotes(lower.Notes, keepRatio);
+                            origin = $"adapted from {lower.SourceName} at {keepRatio:P0} density";
+                        }
+                        else if (upper.Notes != null)
+                        {
+                            double keepRatio = singleSourceKeepRatios[targetRank];
+                            selectedNotes = ThinNotes(upper.Notes, keepRatio);
+                            origin = $"adapted from {upper.SourceName} at {keepRatio:P0} density";
+                        }
+                        else
+                        {
+                            selectedNotes = new SortedDictionary<long, List<ChartParser.NoteEvent>>();
+                            origin = "no source notes";
+                        }
                     }
                 }
 
-                selectedNotes ??= new SortedDictionary<long, List<ChartParser.NoteEvent>>();
-                results[difficulty.Key] = BuildSongJson(bpmGrid, tickToSec, selectedNotes, ticksPerBeat, difficulty.Key);
+                string outputFile = outputFiles[targetRank];
+                results[outputFile] = BuildSongJson(bpmGrid, tickToSec, selectedNotes, ticksPerBeat, outputFile);
+                log?.Invoke($"  [Chart] {outputFile}: {CountNotes(selectedNotes)} notes; {origin}.");
             }
 
             return results;
+        }
+
+        private static bool HasNotes(SortedDictionary<long, List<ChartParser.NoteEvent>>? notes) =>
+            notes != null && notes.Values.Any(group => group != null && group.Count > 0);
+
+        private static int CountNotes(SortedDictionary<long, List<ChartParser.NoteEvent>>? notes) =>
+            notes?.Values.Where(group => group != null).Sum(group => group.Count) ?? 0;
+
+        private static SortedDictionary<long, List<ChartParser.NoteEvent>> CloneNotes(
+            SortedDictionary<long, List<ChartParser.NoteEvent>> source)
+        {
+            return new SortedDictionary<long, List<ChartParser.NoteEvent>>(
+                source.ToDictionary(entry => entry.Key, entry => entry.Value
+                    .Select(note => new ChartParser.NoteEvent { Lane = note.Lane, DurationTicks = note.DurationTicks })
+                    .ToList()));
+        }
+
+        private static List<(int TargetRank, string SourceName, SortedDictionary<long, List<ChartParser.NoteEvent>>? Notes)> GetDifficultyAnchors(
+            List<(string Name, int Rank, SortedDictionary<long, List<ChartParser.NoteEvent>>? Notes)> availableSources)
+        {
+            int[] targetSlots = availableSources.Count switch
+            {
+                2 => new[] { 0, 3 },
+                3 => new[] { 0, 2, 3 },
+                _ => new[] { 0, 1, 2, 3 }
+            };
+
+            return availableSources.Select((source, index) =>
+                (TargetRank: targetSlots[index], SourceName: source.Name, Notes: source.Notes)).ToList();
+        }
+
+        private static SortedDictionary<long, List<ChartParser.NoteEvent>> BlendNotes(
+            SortedDictionary<long, List<ChartParser.NoteEvent>> easier,
+            SortedDictionary<long, List<ChartParser.NoteEvent>> harder,
+            double harderFraction)
+        {
+            var result = CloneNotes(easier);
+            var additions = harder
+                .Select(entry => (entry.Key, Notes: entry.Value.Where(note =>
+                {
+                    if (!result.TryGetValue(entry.Key, out var existing))
+                        return true;
+                    return !existing.Any(current => current.Lane == note.Lane && current.DurationTicks == note.DurationTicks);
+                }).ToList()))
+                .Where(entry => entry.Notes.Count > 0)
+                .OrderBy(entry => entry.Key)
+                .ToList();
+
+            int countToAdd = Math.Clamp((int)Math.Round(additions.Count * harderFraction), 0, additions.Count);
+            foreach (int index in GetEvenlySpacedIndices(additions.Count, countToAdd))
+            {
+                var addition = additions[index];
+                if (!result.TryGetValue(addition.Key, out var group))
+                {
+                    group = new List<ChartParser.NoteEvent>();
+                    result[addition.Key] = group;
+                }
+                group.AddRange(addition.Notes.Select(note => new ChartParser.NoteEvent
+                {
+                    Lane = note.Lane,
+                    DurationTicks = note.DurationTicks
+                }));
+            }
+            return result;
+        }
+
+        private static SortedDictionary<long, List<ChartParser.NoteEvent>> ThinNotes(
+            SortedDictionary<long, List<ChartParser.NoteEvent>> source,
+            double keepRatio)
+        {
+            var groups = source.Where(entry => entry.Value != null && entry.Value.Count > 0).ToList();
+            if (groups.Count < 2 || keepRatio >= 1.0)
+                return CloneNotes(source);
+
+            int keepCount = Math.Clamp((int)Math.Round(groups.Count * keepRatio), 1, groups.Count - 1);
+            var result = new SortedDictionary<long, List<ChartParser.NoteEvent>>();
+            foreach (int index in GetEvenlySpacedIndices(groups.Count, keepCount))
+            {
+                var group = groups[index];
+                result[group.Key] = group.Value
+                    .Select(note => new ChartParser.NoteEvent { Lane = note.Lane, DurationTicks = note.DurationTicks })
+                    .ToList();
+            }
+            return result;
+        }
+
+        private static IEnumerable<int> GetEvenlySpacedIndices(int totalCount, int selectedCount)
+        {
+            if (selectedCount <= 0 || totalCount <= 0)
+                yield break;
+
+            for (int i = 0; i < selectedCount; i++)
+            {
+                int index = Math.Min(totalCount - 1, (int)Math.Floor(((i + 0.5) * totalCount) / selectedCount));
+                yield return index;
+            }
         }
     }
 }

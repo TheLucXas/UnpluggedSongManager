@@ -40,6 +40,22 @@ namespace USM.Core.Parsers
             public List<SngFileEntry> Files { get; init; } = new();
         }
 
+        public sealed class RemoteSongProfile
+        {
+            public AudioTrackLayout TrackLayout { get; init; } = AudioTrackLayout.Unknown;
+            public int AudioStemCount { get; init; }
+            public bool HasVocalsStem { get; init; }
+            public bool HasGuitarStem { get; init; }
+            public int SourceDifficultyCount { get; init; }
+            public int ChartNoteCount { get; init; }
+            public bool IsIdealForUnplugged => TrackLayout == AudioTrackLayout.MultiTrack
+                && AudioStemCount >= 4
+                && HasVocalsStem
+                && HasGuitarStem
+                && SourceDifficultyCount >= 4
+                && ChartNoteCount > 0;
+        }
+
         /// <summary>
         /// Reads only the SNG package index and infers its audio layout from the
         /// listed filenames. It never downloads audio or video payloads.
@@ -58,6 +74,112 @@ namespace USM.Core.Parsers
                 return AudioTrackLayout.Unknown;
 
             return AudioLayoutDetector.Detect(index.Files.Select(entry => entry.FileName));
+        }
+
+        /// <summary>
+        /// Inspects the SNG index and downloads only chart note files with byte
+        /// ranges. It never downloads audio or video payloads for this check.
+        /// If the server ignores range requests, it returns the index-derived
+        /// audio layout and leaves chart quality unknown.
+        /// </summary>
+        public static async Task<RemoteSongProfile> ProbeRemoteSongProfileAsync(string sngUrl, CancellationToken ct = default)
+        {
+            if (!Uri.TryCreate(sngUrl, UriKind.Absolute, out var uri) ||
+                uri.Scheme != Uri.UriSchemeHttps ||
+                !uri.Host.Equals("files.enchor.us", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException("Only HTTPS SNG downloads from files.enchor.us are supported.");
+            }
+
+            SngPackageIndex? index = await ReadRemotePackageIndexAsync(uri, ct);
+            if (index == null)
+                return new RemoteSongProfile();
+
+            var audio = AudioLayoutDetector.Analyze(index.Files.Select(entry => entry.FileName));
+            var profile = new RemoteSongProfile
+            {
+                TrackLayout = audio.Layout,
+                AudioStemCount = audio.StemCount,
+                HasVocalsStem = audio.HasVocals,
+                HasGuitarStem = audio.StemGroups.Contains("guitar")
+            };
+
+            var chartEntries = index.Files
+                .Where(entry =>
+                {
+                    string name = Path.GetFileName(entry.FileName);
+                    string extension = Path.GetExtension(name);
+                    return extension.Equals(".chart", StringComparison.OrdinalIgnoreCase)
+                        || extension.Equals(".mid", StringComparison.OrdinalIgnoreCase)
+                        || extension.Equals(".midi", StringComparison.OrdinalIgnoreCase);
+                })
+                .Where(entry => entry.ContentLength > 0 && entry.ContentLength <= 8UL * 1024 * 1024)
+                .ToList();
+
+            if (chartEntries.Count == 0)
+                return profile;
+
+            string tempDir = Path.Combine(Path.GetTempPath(), $"usm_chart_probe_{Guid.NewGuid():N}");
+            Directory.CreateDirectory(tempDir);
+            try
+            {
+                int bestDifficultyCount = 0;
+                int bestNoteCount = 0;
+                foreach (SngFileEntry entry in chartEntries)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    byte[]? chartBytes = await ReadRemoteEntryBytesAsync(uri, index, entry, ct);
+                    if (chartBytes == null || chartBytes.Length == 0)
+                        continue;
+
+                    string name = Path.GetFileName(entry.FileName);
+                    string path = Path.Combine(tempDir, name);
+                    await File.WriteAllBytesAsync(path, chartBytes, ct);
+                    try
+                    {
+                        int difficultyCount;
+                        int noteCount;
+                        string extension = Path.GetExtension(name);
+                        if (extension.Equals(".chart", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var parsed = ChartParser.Parse(path);
+                            difficultyCount = parsed.Difficulties.Count(pair => pair.Value.Values.Any(group => group.Count > 0));
+                            noteCount = parsed.Difficulties.Values.Sum(notes => notes.Values.Sum(group => group.Count));
+                        }
+                        else
+                        {
+                            var parsed = MidiParser.Parse(path);
+                            difficultyCount = parsed.Difficulties.Count(pair => pair.Value.Values.Any(group => group.Count > 0));
+                            noteCount = parsed.Difficulties.Values.Sum(notes => notes.Values.Sum(group => group.Count));
+                        }
+
+                        if (difficultyCount > bestDifficultyCount || (difficultyCount == bestDifficultyCount && noteCount > bestNoteCount))
+                        {
+                            bestDifficultyCount = difficultyCount;
+                            bestNoteCount = noteCount;
+                        }
+                    }
+                    catch (Exception) when (!ct.IsCancellationRequested)
+                    {
+                        // Try another chart file in the package. Chorus SNGs can
+                        // contain auxiliary chart files that are not playable guitar charts.
+                    }
+                }
+
+                return new RemoteSongProfile
+                {
+                    TrackLayout = profile.TrackLayout,
+                    AudioStemCount = profile.AudioStemCount,
+                    HasVocalsStem = profile.HasVocalsStem,
+                    HasGuitarStem = profile.HasGuitarStem,
+                    SourceDifficultyCount = Math.Min(4, bestDifficultyCount),
+                    ChartNoteCount = bestNoteCount
+                };
+            }
+            finally
+            {
+                try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, recursive: true); } catch { }
+            }
         }
 
         /// <summary>
@@ -254,6 +376,39 @@ namespace USM.Core.Parsers
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
             request.Headers.Range = new RangeHeaderValue(start, end);
             return await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        }
+
+        private static async Task<byte[]?> ReadRemoteEntryBytesAsync(
+            Uri uri,
+            SngPackageIndex index,
+            SngFileEntry entry,
+            CancellationToken ct)
+        {
+            if (entry.ContentIndex > (ulong)long.MaxValue || entry.ContentLength > (ulong)long.MaxValue)
+                return null;
+
+            long start = checked((long)entry.ContentIndex);
+            long end = checked(start + (long)entry.ContentLength - 1);
+            using var response = await GetRangeAsync(uri, start, end, ct);
+            if (response.StatusCode == HttpStatusCode.OK)
+                return null; // Do not read a full SNG package as a fallback.
+            if (response.StatusCode != HttpStatusCode.PartialContent)
+                response.EnsureSuccessStatusCode();
+
+            var contentRange = response.Content.Headers.ContentRange;
+            if (contentRange?.From != start || contentRange.To != end ||
+                (contentRange.Length.HasValue && end >= contentRange.Length.Value))
+            {
+                throw new InvalidDataException($"The SNG server returned an unexpected range for '{Path.GetFileName(entry.FileName)}'.");
+            }
+
+            byte[] bytes = await response.Content.ReadAsByteArrayAsync(ct);
+            if ((ulong)bytes.Length != entry.ContentLength)
+                throw new EndOfStreamException($"The SNG entry '{Path.GetFileName(entry.FileName)}' ended unexpectedly.");
+
+            for (int i = 0; i < bytes.Length; i++)
+                bytes[i] ^= (byte)(index.XorMask[i % 16] ^ (byte)(i & 0xFF));
+            return bytes;
         }
 
         private static async Task<SngPackageIndex?> ReadRemotePackageIndexAsync(Uri uri, CancellationToken ct)

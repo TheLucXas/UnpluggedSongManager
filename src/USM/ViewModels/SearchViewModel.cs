@@ -37,7 +37,7 @@ namespace USM.ViewModels
         private DateTime _lastAudioFilterRefreshUtc = DateTime.MinValue;
         private CancellationTokenSource? _searchCancellation;
         private static readonly SemaphoreSlim AudioLayoutProbeLimit = new(3);
-        private static readonly ConcurrentDictionary<string, AudioTrackLayout> AudioLayoutCache = new(StringComparer.OrdinalIgnoreCase);
+        private static readonly ConcurrentDictionary<string, SngDecoder.RemoteSongProfile> SongProfileCache = new(StringComparer.OrdinalIgnoreCase);
 
         public string SearchQuery
         {
@@ -242,36 +242,36 @@ namespace USM.ViewModels
                     continue;
                 }
 
-                if (AudioLayoutCache.TryGetValue(chart.Md5, out AudioTrackLayout cachedLayout))
+                if (SongProfileCache.TryGetValue(chart.Md5, out SngDecoder.RemoteSongProfile? cachedProfile))
                 {
-                    chart.TrackLayout = cachedLayout;
+                    ApplySongProfile(chart, cachedProfile);
                     continue;
                 }
 
                 chart.TrackLayout = AudioTrackLayout.Checking;
-                probeTasks.Add(ProbeAudioLayoutAsync(chart, cancellationToken));
+                chart.IsCheckingQuality = true;
+                probeTasks.Add(ProbeSongProfileAsync(chart, cancellationToken));
             }
             return probeTasks;
         }
 
-        private async Task ProbeAudioLayoutAsync(ChorusChart chart, CancellationToken cancellationToken)
+        private async Task ProbeSongProfileAsync(ChorusChart chart, CancellationToken cancellationToken)
         {
             try
             {
                 await AudioLayoutProbeLimit.WaitAsync(cancellationToken);
                 try
                 {
-                    if (AudioLayoutCache.TryGetValue(chart.Md5, out AudioTrackLayout cachedLayout))
+                    if (SongProfileCache.TryGetValue(chart.Md5, out SngDecoder.RemoteSongProfile? cachedProfile))
                     {
-                        chart.TrackLayout = cachedLayout;
+                        ApplySongProfile(chart, cachedProfile);
                         return;
                     }
 
-                    AudioTrackLayout layout = await SngDecoder.ProbeRemoteAudioLayoutAsync(chart.DownloadUrl!, cancellationToken);
-                    if (layout != AudioTrackLayout.Unknown)
-                        AudioLayoutCache[chart.Md5] = layout;
-                    chart.TrackLayout = layout;
-                    RefreshVisibleResultsForAudioMatch(layout, cancellationToken);
+                    SngDecoder.RemoteSongProfile profile = await SngDecoder.ProbeRemoteSongProfileAsync(chart.DownloadUrl!, cancellationToken);
+                    SongProfileCache[chart.Md5] = profile;
+                    ApplySongProfile(chart, profile);
+                    RefreshVisibleResultsForAudioMatch(chart, profile.TrackLayout, cancellationToken);
                 }
                 finally
                 {
@@ -281,7 +281,18 @@ namespace USM.ViewModels
             catch
             {
                 chart.TrackLayout = AudioTrackLayout.Unknown;
+                chart.IsIdealForUnplugged = false;
+                chart.IsCheckingQuality = false;
             }
+        }
+
+        private static void ApplySongProfile(ChorusChart chart, SngDecoder.RemoteSongProfile profile)
+        {
+            chart.TrackLayout = profile.TrackLayout;
+            chart.AudioStemCount = profile.AudioStemCount;
+            chart.SourceDifficultyCount = profile.SourceDifficultyCount;
+            chart.IsIdealForUnplugged = profile.IsIdealForUnplugged;
+            chart.IsCheckingQuality = false;
         }
 
         private void RequestSearch()
@@ -296,9 +307,9 @@ namespace USM.ViewModels
             _ = PerformSearchAsync();
         }
 
-        private void RefreshVisibleResultsForAudioMatch(AudioTrackLayout layout, CancellationToken cancellationToken)
+        private void RefreshVisibleResultsForAudioMatch(ChorusChart chart, AudioTrackLayout layout, CancellationToken cancellationToken)
         {
-            if (cancellationToken.IsCancellationRequested || !IsSearching)
+            if (cancellationToken.IsCancellationRequested || !_rawCharts.Contains(chart))
                 return;
 
             AudioTrackLayout? selectedLayout = SelectedAudioLayoutFilterIndex switch
@@ -308,7 +319,7 @@ namespace USM.ViewModels
                 3 => AudioTrackLayout.MultiTrack,
                 _ => null
             };
-            if (selectedLayout != layout)
+            if (!selectedLayout.HasValue || selectedLayout != layout)
                 return;
 
             DateTime now = DateTime.UtcNow;
@@ -371,12 +382,9 @@ namespace USM.ViewModels
             // some pages. Continue until the endpoint returns an empty page.
             _hasMoreApiPages = charts.Count > 0;
 
-            bool filterByAudioLayout = SelectedAudioLayoutFilterIndex != 0;
-            List<Task> probeTasks = StartAudioLayoutProbes(
+            _ = StartAudioLayoutProbes(
                 charts,
-                filterByAudioLayout ? cancellationToken : CancellationToken.None);
-            if (filterByAudioLayout)
-                await Task.WhenAll(probeTasks);
+                cancellationToken);
 
             cancellationToken.ThrowIfCancellationRequested();
             ShowCurrentPage();

@@ -289,6 +289,19 @@
                                                        FontWeight="SemiBold"
                                                        Foreground="{Binding IsMultiTrack, Converter={x:Static local:LibraryView.MultiTrackColorConverter}}" />
                                         </Border>
+
+                                        <Border CornerRadius="4"
+                                                Padding="6,2"
+                                                Margin="6,0,0,0"
+                                                VerticalAlignment="Center"
+                                                Background="#203B2B"
+                                                Visibility="{Binding IsIdealForUnplugged, Converter={StaticResource BoolToVis}}"
+                                                ToolTip="Four populated guitar difficulty levels and at least four separate audio stems, including vocals.">
+                                            <TextBlock Text="Ideal for Unplugged"
+                                                       FontSize="10"
+                                                       FontWeight="Bold"
+                                                       Foreground="{StaticResource BrushAccentGreen}" />
+                                        </Border>
                                     </StackPanel>
 
                                     <TextBlock Text="{Binding Artist}"
