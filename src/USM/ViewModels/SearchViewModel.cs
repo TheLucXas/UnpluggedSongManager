@@ -102,6 +102,19 @@ namespace USM.ViewModels
             }
         }
 
+        private int _selectedAudioLayoutFilterIndex;
+        public int SelectedAudioLayoutFilterIndex
+        {
+            get => _selectedAudioLayoutFilterIndex;
+            set
+            {
+                if (SetProperty(ref _selectedAudioLayoutFilterIndex, value))
+                {
+                    ApplyFilterAndSort();
+                }
+            }
+        }
+
         public ObservableCollection<ChorusChart> Results { get; } = new();
 
         public ICommand SearchCommand { get; }
@@ -126,6 +139,8 @@ namespace USM.ViewModels
                 OnPropertyChanged(nameof(SelectedDifficultyFilterIndex));
                 _selectedStatusFilterIndex = 0;
                 OnPropertyChanged(nameof(SelectedStatusFilterIndex));
+                _selectedAudioLayoutFilterIndex = 0;
+                OnPropertyChanged(nameof(SelectedAudioLayoutFilterIndex));
                 RequestSearch();
             });
 
@@ -197,7 +212,7 @@ namespace USM.ViewModels
             }
         }
 
-        private static void StartAudioLayoutProbes(IEnumerable<ChorusChart> charts)
+        private void StartAudioLayoutProbes(IEnumerable<ChorusChart> charts)
         {
             foreach (ChorusChart chart in charts)
             {
@@ -218,7 +233,7 @@ namespace USM.ViewModels
             }
         }
 
-        private static async Task ProbeAudioLayoutAsync(ChorusChart chart)
+        private async Task ProbeAudioLayoutAsync(ChorusChart chart)
         {
             try
             {
@@ -228,6 +243,7 @@ namespace USM.ViewModels
                     if (AudioLayoutCache.TryGetValue(chart.Md5, out AudioTrackLayout cachedLayout))
                     {
                         chart.TrackLayout = cachedLayout;
+                        RefreshAudioLayoutFilter();
                         return;
                     }
 
@@ -235,6 +251,7 @@ namespace USM.ViewModels
                     if (layout != AudioTrackLayout.Unknown)
                         AudioLayoutCache[chart.Md5] = layout;
                     chart.TrackLayout = layout;
+                    RefreshAudioLayoutFilter();
                 }
                 finally
                 {
@@ -244,6 +261,15 @@ namespace USM.ViewModels
             catch
             {
                 chart.TrackLayout = AudioTrackLayout.Unknown;
+                RefreshAudioLayoutFilter();
+            }
+        }
+
+        private void RefreshAudioLayoutFilter()
+        {
+            if (SelectedAudioLayoutFilterIndex != 0)
+            {
+                ApplyFilterAndSort();
             }
         }
 
@@ -285,6 +311,18 @@ namespace USM.ViewModels
             else if (SelectedStatusFilterIndex == 2) // Installed Only
             {
                 filtered = System.Linq.Enumerable.Where(filtered, c => c.IsInstalled);
+            }
+
+            AudioTrackLayout? selectedLayout = SelectedAudioLayoutFilterIndex switch
+            {
+                1 => AudioTrackLayout.SingleTrack,
+                2 => AudioTrackLayout.HalfTrack,
+                3 => AudioTrackLayout.MultiTrack,
+                _ => null
+            };
+            if (selectedLayout.HasValue)
+            {
+                filtered = System.Linq.Enumerable.Where(filtered, c => c.TrackLayout == selectedLayout.Value);
             }
 
             // Chorus returns the selected server-side ordering; filtering preserves that order.

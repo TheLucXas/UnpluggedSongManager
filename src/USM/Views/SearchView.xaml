@@ -132,6 +132,23 @@
                     </ComboBox>
                 </StackPanel>
 
+                <!-- Audio layout filter -->
+                <StackPanel Orientation="Horizontal" Margin="0,2,16,2" VerticalAlignment="Center">
+                    <TextBlock Text="Track type:"
+                               Foreground="{StaticResource BrushTextSecondary}"
+                               FontSize="12"
+                               VerticalAlignment="Center"
+                               Margin="0,0,6,0" />
+                    <ComboBox SelectedIndex="{Binding SelectedAudioLayoutFilterIndex}"
+                              Width="145"
+                              Height="32">
+                        <ComboBoxItem Content="All track types" />
+                        <ComboBoxItem Content="Single Track" />
+                        <ComboBoxItem Content="Half-Track" />
+                        <ComboBoxItem Content="Multi Track" />
+                    </ComboBox>
+                </StackPanel>
+
                 <!-- Reset Filters Button -->
                 <Button Content="Reset ↺"
                         Command="{Binding ResetFiltersCommand}"
