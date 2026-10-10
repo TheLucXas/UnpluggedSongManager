@@ -298,6 +298,9 @@ namespace USM.Core.Services.Localization
                 ["Library_QuestDeletedCount"] = "Deleted {0} song(s) from the Quest.",
                 ["Library_QuestDeleteFailures"] = "Some Quest songs could not be deleted: {0}",
                 ["Library_QuestDeleteFailed"] = "Could not delete Quest song: {0}",
+                ["Library_QuestInvalidFilename"] = "Invalid Quest song filename.",
+                ["Library_QuestDeleteNotConfirmed"] = "Could not confirm deletion. Refresh Quest Songs and try again.",
+                ["Library_QuestDeletedOne"] = "Deleted {0} from Quest.",
 
                 // Quest Tab - Headset ADB Connection
                 ["Quest_ConnectionTitle"] = "Meta Quest ADB Connection",
@@ -669,6 +672,9 @@ namespace USM.Core.Services.Localization
                 ["Library_QuestDeletedCount"] = "Se eliminaron {0} canciones del Quest.",
                 ["Library_QuestDeleteFailures"] = "No se pudieron eliminar algunas canciones del Quest: {0}",
                 ["Library_QuestDeleteFailed"] = "No se pudo eliminar la canción del Quest: {0}",
+                ["Library_QuestInvalidFilename"] = "El nombre del archivo de la canción del Quest no es válido.",
+                ["Library_QuestDeleteNotConfirmed"] = "No se pudo confirmar el borrado. Actualiza las canciones del Quest e inténtalo de nuevo.",
+                ["Library_QuestDeletedOne"] = "Se eliminó {0} del Quest.",
 
                 // Quest Tab - Headset ADB Connection
                 ["Quest_ConnectionTitle"] = "Conexión ADB de Meta Quest",
@@ -1040,6 +1046,9 @@ namespace USM.Core.Services.Localization
                 ["Library_QuestDeletedCount"] = "{0} música(s) excluída(s) do Quest.",
                 ["Library_QuestDeleteFailures"] = "Não foi possível excluir algumas músicas do Quest: {0}",
                 ["Library_QuestDeleteFailed"] = "Não foi possível excluir a música do Quest: {0}",
+                ["Library_QuestInvalidFilename"] = "O nome do arquivo da música do Quest é inválido.",
+                ["Library_QuestDeleteNotConfirmed"] = "Não foi possível confirmar a exclusão. Atualize as músicas do Quest e tente novamente.",
+                ["Library_QuestDeletedOne"] = "{0} excluída do Quest.",
 
                 // Quest Tab - Headset ADB Connection
                 ["Quest_ConnectionTitle"] = "Conexão ADB Meta Quest",

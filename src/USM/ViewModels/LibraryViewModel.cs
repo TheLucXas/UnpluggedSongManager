@@ -374,7 +374,8 @@ namespace USM.ViewModels
                 if (failures.Count == 0)
                     _notifyCallback(LocalizationService.T("Library_QuestDeletedCount", selected.Count));
                 else
-                    _notifyCallback(LocalizationService.T("Library_QuestDeleteFailures", string.Join(" | ", failures)));
+                    _notifyCallback(LocalizationService.T("Library_QuestDeletedCount", selected.Count - failures.Count)
+                        + " " + LocalizationService.T("Library_QuestDeleteFailures", string.Join(" | ", failures)));
 
                 await RefreshQuestSongsAsync();
             }
@@ -407,12 +408,12 @@ namespace USM.ViewModels
                 if (result.Success)
                 {
                     _notifyCallback(result.Message);
-                    await RefreshQuestSongsAsync();
                 }
                 else
                 {
                     _notifyCallback(LocalizationService.T("Library_QuestDeleteFailed", result.Message));
                 }
+                await RefreshQuestSongsAsync();
             }
             finally
             {

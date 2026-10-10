@@ -7,6 +7,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -1535,7 +1536,7 @@ namespace USM.Core.Services.Quest
                     var lines = stdout.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
                     foreach (var line in lines)
                     {
-                        string name = line.Trim();
+                        string name = line;
                         if (!string.IsNullOrEmpty(name) && !name.Contains("No such file", StringComparison.OrdinalIgnoreCase))
                         {
                             installed.Add(name);
@@ -1567,7 +1568,6 @@ namespace USM.Core.Services.Quest
             }
 
             var songs = stdout.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
-                .Select(name => name.Trim())
                 .Where(name => name.EndsWith(".usm", StringComparison.OrdinalIgnoreCase))
                 .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
@@ -1578,17 +1578,43 @@ namespace USM.Core.Services.Quest
         {
             if (string.IsNullOrWhiteSpace(fileName) ||
                 fileName.Contains('/') || fileName.Contains('\\') ||
+                fileName.Any(char.IsControl) ||
                 !fileName.EndsWith(".usm", StringComparison.OrdinalIgnoreCase))
             {
-                return (false, "Invalid Quest song filename.");
+                return (false, LocalizationService.T("Library_QuestInvalidFilename"));
             }
 
             string remotePath = $"{ModdedSongsPath}/{fileName}";
             string shellQuotedPath = "'" + remotePath.Replace("'", "'\\''", StringComparison.Ordinal) + "'";
-            var (code, stdout, stderr) = await RunProcessAsync(
-                GetAdbPath(), $"-s {serial} shell rm -f -- {shellQuotedPath}", 30000);
-            if (code == 0) return (true, $"Deleted {fileName} from Quest.");
-            return (false, (stdout + " " + stderr).Trim());
+            // Without -f, a stale/corrupt filename cannot be reported as deleted.
+            var (code, stdout, stderr) = await RunAdbShellAsync(
+                serial, $"rm -- {shellQuotedPath}", 30000);
+            if (code != 0)
+            {
+                string error = (stdout + " " + stderr).Trim();
+                return (false, string.IsNullOrEmpty(error)
+                    ? LocalizationService.T("Library_QuestDeleteNotConfirmed") : error);
+            }
+
+            var (verifyCode, _, _) = await RunAdbShellAsync(
+                serial, $"test -d '{ModdedSongsPath}' && test ! -e {shellQuotedPath}", 15000);
+            if (verifyCode != 0)
+                return (false, LocalizationService.T("Library_QuestDeleteNotConfirmed"));
+
+            return (true, LocalizationService.T("Library_QuestDeletedOne", fileName));
+        }
+
+        private Task<(int ExitCode, string StdOut, string StdErr)> RunAdbShellAsync(
+            string serial, string command, int timeoutMs)
+        {
+            var psi = CreateProcessStartInfo(GetAdbPath());
+            // Pass the remote command as one argument. Windows must not consume quotes
+            // that belong to a song filename before the Android shell sees them.
+            psi.ArgumentList.Add("-s");
+            psi.ArgumentList.Add(serial);
+            psi.ArgumentList.Add("shell");
+            psi.ArgumentList.Add(command);
+            return RunProcessWithStartInfoAsync(psi, timeoutMs);
         }
 
         public async Task<int> SyncSongsToQuestAsync(
@@ -1641,18 +1667,35 @@ namespace USM.Core.Services.Quest
             return transferred;
         }
 
-        public static async Task<(int ExitCode, string StdOut, string StdErr)> RunProcessAsync(string fileName, string arguments, int timeoutMs = 60000)
+        private static ProcessStartInfo CreateProcessStartInfo(string fileName)
         {
             var psi = new ProcessStartInfo
             {
                 FileName = fileName,
-                Arguments = arguments,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true
             };
+            // ADB forwards Android filenames/logs as UTF-8, independent of the Windows
+            // console code page. Other tools retain their own default encoding.
+            if (string.Equals(Path.GetFileNameWithoutExtension(fileName), "adb", StringComparison.OrdinalIgnoreCase))
+            {
+                psi.StandardOutputEncoding = Encoding.UTF8;
+                psi.StandardErrorEncoding = Encoding.UTF8;
+            }
+            return psi;
+        }
 
+        public static Task<(int ExitCode, string StdOut, string StdErr)> RunProcessAsync(string fileName, string arguments, int timeoutMs = 60000)
+        {
+            var psi = CreateProcessStartInfo(fileName);
+            psi.Arguments = arguments;
+            return RunProcessWithStartInfoAsync(psi, timeoutMs);
+        }
+
+        private static async Task<(int ExitCode, string StdOut, string StdErr)> RunProcessWithStartInfoAsync(ProcessStartInfo psi, int timeoutMs)
+        {
             using var process = new Process { StartInfo = psi };
             try
             {
@@ -1686,15 +1729,8 @@ namespace USM.Core.Services.Quest
             string arguments,
             int captureWindowMs)
         {
-            var psi = new ProcessStartInfo
-            {
-                FileName = fileName,
-                Arguments = arguments,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
+            var psi = CreateProcessStartInfo(fileName);
+            psi.Arguments = arguments;
 
             using var process = new Process { StartInfo = psi };
             try
