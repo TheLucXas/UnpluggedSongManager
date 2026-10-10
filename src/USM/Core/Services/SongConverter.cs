@@ -334,6 +334,15 @@ namespace USM.Core.Services
                     && sourceDifficultyCount >= 4
                     && sourceNoteCount > 0
                     && chartCoverageRatio >= 0.90;
+                bool hasPackagedMultipleTracks = outputAudio.Layout is AudioTrackLayout.HalfTrack or AudioTrackLayout.MultiTrack;
+                string packagedAudioLayout = outputAudio.Layout switch
+                {
+                    AudioTrackLayout.HalfTrack => "two-track-instrumental-vocals",
+                    AudioTrackLayout.MultiTrack => "full-multitrack",
+                    AudioTrackLayout.SingleTrack => "single-track",
+                    _ => "unknown"
+                };
+                log?.Invoke($"  [Audio] Packaged layout: {packagedAudioLayout}; {outputAudio.StemCount} independent audio channel(s): {string.Join(", ", outputAudio.StemGroups.OrderBy(group => group, StringComparer.OrdinalIgnoreCase))}.");
 
                 // 7. Generate meta.json
                 string metaJson = JsonSerializer.Serialize(new
@@ -342,8 +351,8 @@ namespace USM.Core.Services
                     FileName = folderName,
                     InitialDelay = iniInfo.Delay,
                     IsBuiltIn = false,
-                    IsMultiTrack = audioResult.HasMultiTrack,
-                    AudioLayout = audioResult.IsHalfTrack ? "two-track-instrumental-vocals" : audioResult.HasMultiTrack ? "full-multitrack" : "single-track",
+                    IsMultiTrack = hasPackagedMultipleTracks,
+                    AudioLayout = packagedAudioLayout,
                     AudioStemCount = outputAudio.StemCount,
                     SourceDifficultyCount = sourceDifficultyCount,
                     SourceChartNoteCount = sourceNoteCount,

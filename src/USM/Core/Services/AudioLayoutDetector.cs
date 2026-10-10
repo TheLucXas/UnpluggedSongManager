@@ -81,6 +81,25 @@ namespace USM.Core.Services
 
         private static string GetTrackGroup(string stem)
         {
+            // USM output names its independent channels "song-guitar.ogg",
+            // "song-vocals.ogg", etc. The "song-" prefix is a file namespace,
+            // not part of the channel name. Treating it as a master mix made
+            // every packaged stem collapse into one group, so the game showed
+            // Single Track and never marked complete multi-stem songs as Ideal.
+            foreach (string separator in new[] { "-", "_", " " })
+            {
+                string prefix = "song" + separator;
+                if (!stem.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                string channel = stem.Substring(prefix.Length);
+                if (IsKnownChannelName(channel))
+                {
+                    stem = channel;
+                    break;
+                }
+            }
+
             if (StartsWithStem(stem, "vocal", "vocals")) return "vocals";
             if (StartsWithStem(stem, "guitar", "lead")) return "guitar";
             if (StartsWithStem(stem, "bass")) return "bass";
@@ -93,6 +112,14 @@ namespace USM.Core.Services
             if (StartsWithStem(stem, "instrumental", "backing")) return "other";
             if (StartsWithStem(stem, "song")) return "song";
             return stem;
+        }
+
+        private static bool IsKnownChannelName(string value)
+        {
+            return StartsWithStem(value,
+                "vocal", "vocals", "guitar", "lead", "bass", "rhythm",
+                "drum", "drums", "key", "keys", "keyboard", "band",
+                "crowd", "other", "instrumental", "backing");
         }
 
         private static bool StartsWithStem(string value, params string[] stems)

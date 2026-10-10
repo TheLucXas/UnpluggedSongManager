@@ -77,6 +77,8 @@ namespace USM.Core.Services
                         && sourceDifficultyCount >= 4
                         && sourceNoteCount > 0
                         && chartCoverageRatio >= 0.90;
+                    string audioLayout = GetAudioLayoutName(audioProfile.Layout);
+                    bool hasMultipleTracks = audioProfile.Layout is AudioTrackLayout.HalfTrack or AudioTrackLayout.MultiTrack;
                     bool wroteMeta = false;
                     foreach (var sourceEntry in source.Entries)
                     {
@@ -100,16 +102,8 @@ namespace USM.Core.Services
                             meta["AudioStemCount"] = audioProfile.StemCount;
                             meta["CompatibilityProfileVersion"] = CompatibilityProfileVersion;
                             meta["IsIdealForUnplugged"] = isIdealForUnplugged;
-                            if (meta["AudioLayout"] == null)
-                            {
-                                meta["AudioLayout"] = audioProfile.Layout switch
-                                {
-                                    AudioTrackLayout.HalfTrack => "two-track-instrumental-vocals",
-                                    AudioTrackLayout.MultiTrack => "full-multitrack",
-                                    AudioTrackLayout.SingleTrack => "single-track",
-                                    _ => "unknown"
-                                };
-                            }
+                            meta["AudioLayout"] = audioLayout;
+                            meta["IsMultiTrack"] = hasMultipleTracks;
                             WriteEntry(destination, sourceEntry.FullName, meta.ToJsonString(), CompressionLevel.Fastest, sourceEntry.LastWriteTime);
                             wroteMeta = true;
                             continue;
@@ -136,13 +130,8 @@ namespace USM.Core.Services
                             ["AudioStemCount"] = audioProfile.StemCount,
                             ["CompatibilityProfileVersion"] = CompatibilityProfileVersion,
                             ["IsIdealForUnplugged"] = isIdealForUnplugged,
-                            ["AudioLayout"] = audioProfile.Layout switch
-                            {
-                                AudioTrackLayout.HalfTrack => "two-track-instrumental-vocals",
-                                AudioTrackLayout.MultiTrack => "full-multitrack",
-                                AudioTrackLayout.SingleTrack => "single-track",
-                                _ => "unknown"
-                            }
+                            ["AudioLayout"] = audioLayout,
+                            ["IsMultiTrack"] = hasMultipleTracks
                         };
                         WriteEntry(destination, "meta.json", meta.ToJsonString(), CompressionLevel.Fastest, DateTimeOffset.UtcNow);
                     }
@@ -167,6 +156,17 @@ namespace USM.Core.Services
             string fileName = Path.GetFileName(entryName);
             return fileName.StartsWith("songdata-", StringComparison.OrdinalIgnoreCase) &&
                 fileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string GetAudioLayoutName(AudioTrackLayout layout)
+        {
+            return layout switch
+            {
+                AudioTrackLayout.HalfTrack => "two-track-instrumental-vocals",
+                AudioTrackLayout.MultiTrack => "full-multitrack",
+                AudioTrackLayout.SingleTrack => "single-track",
+                _ => "unknown"
+            };
         }
 
         private static CompressionLevel GetCompressionLevel(string fileName)

@@ -444,7 +444,9 @@ namespace UnpluggedCustomSongs
                 }
 
                 var selectedSong = startSpace.songMenu.SelectedSong;
-                if (selectedSong == null || string.IsNullOrWhiteSpace(selectedSong.FileName)) return;
+                if (selectedSong == null || selectedSong.SongID == null ||
+                    !selectedSong.SongID.StartsWith("CUSTOM_", StringComparison.Ordinal) ||
+                    string.IsNullOrWhiteSpace(selectedSong.FileName)) return;
 
                 string selectionKey = (selectedSong.SongID ?? "") + "|" + selectedSong.FileName;
                 if (string.Equals(selectionKey, _lastMenuPreviewSongKey, StringComparison.Ordinal)) return;
@@ -1288,6 +1290,17 @@ namespace UnpluggedCustomSongs
             public float InitialDelay = 4f;
             public bool IsMultiTrack;
         }
+        private sealed class ParsedUsmMetadata
+        {
+            public string SongName = string.Empty;
+            public string BandName = string.Empty;
+            public string AudioLayout = string.Empty;
+            public float InitialDelay = 4f;
+            public bool? IsMultiTrack;
+            public bool IsIdealForUnplugged;
+            public int ChartParserVersion;
+            public float ChartCoverageRatio;
+        }
         private static readonly Dictionary<string, ArchiveSongMetadata> ArchiveSongMetadataCache = new Dictionary<string, ArchiveSongMetadata>(StringComparer.OrdinalIgnoreCase);
         public const string LastCustomSongFilePreference = "USM.LastCustomSongFile";
         private static bool _hasPendingDirectSelection;
@@ -1406,8 +1419,7 @@ namespace UnpluggedCustomSongs
 
                     using (var reader = new StreamReader(entry.Open()))
                     {
-                        var root = JSON.Parse(reader.ReadToEnd());
-                        return root?["AudioLayout"]?.Value ?? string.Empty;
+                        return ParseUsmMetadata(reader.ReadToEnd()).AudioLayout;
                     }
                 }
             }
@@ -1478,15 +1490,14 @@ namespace UnpluggedCustomSongs
                     {
                         using (var reader = new StreamReader(entryMeta.Open()))
                         {
-                            var root = JSON.Parse(reader.ReadToEnd());
-                            if (!string.IsNullOrWhiteSpace(root?["SongName"]?.Value))
-                                metadata.SongName = root["SongName"].Value;
-                            if (!string.IsNullOrWhiteSpace(root?["BandName"]?.Value))
-                                metadata.BandName = root["BandName"].Value;
-                            if (root?["InitialDelay"] != null)
-                                metadata.InitialDelay = root["InitialDelay"].AsFloat;
-                            metadata.AudioLayout = root?["AudioLayout"]?.Value ?? string.Empty;
-                            metadata.IsMultiTrack = root?["IsMultiTrack"]?.AsBool ?? false;
+                            ParsedUsmMetadata parsed = ParseUsmMetadata(reader.ReadToEnd());
+                            if (!string.IsNullOrWhiteSpace(parsed.SongName))
+                                metadata.SongName = parsed.SongName;
+                            if (!string.IsNullOrWhiteSpace(parsed.BandName))
+                                metadata.BandName = parsed.BandName;
+                            metadata.InitialDelay = parsed.InitialDelay;
+                            metadata.AudioLayout = parsed.AudioLayout;
+                            metadata.IsMultiTrack = parsed.IsMultiTrack ?? false;
 
                             string layout = metadata.AudioLayout;
                             if (string.IsNullOrEmpty(layout))
@@ -1496,13 +1507,11 @@ namespace UnpluggedCustomSongs
                                     : "full-multitrack";
                                 metadata.AudioLayout = layout;
                             }
-                            if (root?["IsMultiTrack"] == null)
+                            if (!parsed.IsMultiTrack.HasValue)
                                 metadata.IsMultiTrack = !string.Equals(layout, "single-track", StringComparison.OrdinalIgnoreCase);
 
-                            bool ideal = root?["IsIdealForUnplugged"]?.AsBool ?? false;
-                            int parserVersion = root?["ChartParserVersion"]?.AsInt ?? 0;
-                            float coverage = root?["ChartCoverageRatio"]?.AsFloat ?? 0f;
-                            metadata.TrackDisplayLabel = BuildTrackDisplayLabel(layout, ideal, parserVersion, coverage);
+                            metadata.TrackDisplayLabel = BuildTrackDisplayLabel(layout, parsed.IsIdealForUnplugged,
+                                parsed.ChartParserVersion, parsed.ChartCoverageRatio);
                         }
                     }
                     else
@@ -1523,6 +1532,52 @@ namespace UnpluggedCustomSongs
 
             ArchiveSongMetadataCache[fullPath] = metadata;
             return metadata;
+        }
+
+        private static ParsedUsmMetadata ParseUsmMetadata(string json)
+        {
+            var parsed = new ParsedUsmMetadata();
+#if QUEST_IL2CPP
+            // Startup metadata scanning runs on a worker so dozens of .usm ZIPs
+            // do not block Unity. SimpleJSON here is an IL2CPP game type and
+            // must not be invoked from that worker; System.Text.Json is managed
+            // and safe to use off the Unity thread.
+            using (var document = System.Text.Json.JsonDocument.Parse(json))
+            {
+                var root = document.RootElement;
+                if (root.ValueKind != System.Text.Json.JsonValueKind.Object) return parsed;
+                if (root.TryGetProperty("SongName", out var songName) && songName.ValueKind == System.Text.Json.JsonValueKind.String)
+                    parsed.SongName = songName.GetString() ?? string.Empty;
+                if (root.TryGetProperty("BandName", out var bandName) && bandName.ValueKind == System.Text.Json.JsonValueKind.String)
+                    parsed.BandName = bandName.GetString() ?? string.Empty;
+                if (root.TryGetProperty("AudioLayout", out var audioLayout) && audioLayout.ValueKind == System.Text.Json.JsonValueKind.String)
+                    parsed.AudioLayout = audioLayout.GetString() ?? string.Empty;
+                if (root.TryGetProperty("InitialDelay", out var initialDelay) && initialDelay.TryGetSingle(out float delay))
+                    parsed.InitialDelay = delay;
+                if (root.TryGetProperty("IsMultiTrack", out var isMultiTrack) &&
+                    (isMultiTrack.ValueKind == System.Text.Json.JsonValueKind.True || isMultiTrack.ValueKind == System.Text.Json.JsonValueKind.False))
+                    parsed.IsMultiTrack = isMultiTrack.GetBoolean();
+                if (root.TryGetProperty("IsIdealForUnplugged", out var isIdeal) &&
+                    (isIdeal.ValueKind == System.Text.Json.JsonValueKind.True || isIdeal.ValueKind == System.Text.Json.JsonValueKind.False))
+                    parsed.IsIdealForUnplugged = isIdeal.GetBoolean();
+                if (root.TryGetProperty("ChartParserVersion", out var parserVersion) && parserVersion.TryGetInt32(out int version))
+                    parsed.ChartParserVersion = version;
+                if (root.TryGetProperty("ChartCoverageRatio", out var coverage) && coverage.TryGetSingle(out float ratio))
+                    parsed.ChartCoverageRatio = ratio;
+            }
+#else
+            var root = JSON.Parse(json);
+            if (root == null) return parsed;
+            parsed.SongName = root["SongName"]?.Value ?? string.Empty;
+            parsed.BandName = root["BandName"]?.Value ?? string.Empty;
+            parsed.AudioLayout = root["AudioLayout"]?.Value ?? string.Empty;
+            if (root["InitialDelay"] != null) parsed.InitialDelay = root["InitialDelay"].AsFloat;
+            if (root["IsMultiTrack"] != null) parsed.IsMultiTrack = root["IsMultiTrack"].AsBool;
+            if (root["IsIdealForUnplugged"] != null) parsed.IsIdealForUnplugged = root["IsIdealForUnplugged"].AsBool;
+            if (root["ChartParserVersion"] != null) parsed.ChartParserVersion = root["ChartParserVersion"].AsInt;
+            if (root["ChartCoverageRatio"] != null) parsed.ChartCoverageRatio = root["ChartCoverageRatio"].AsFloat;
+#endif
+            return parsed;
         }
 
         private static string BuildTrackDisplayLabel(string layout, bool ideal, int chartParserVersion, float chartCoverage)
@@ -3123,11 +3178,6 @@ namespace UnpluggedCustomSongs
         {
             try
             {
-                if (hand.SkeletonInfo != null && hand.SkeletonInfo.Wrist != null)
-                {
-                    hand.SkeletonInfo.Wrist.localPosition = Vector3.zero;
-                    hand.SkeletonInfo.Wrist.localRotation = Quaternion.identity;
-                }
                 var handState = Traverse.Create(hand);
                 handState.Field("prevPosition").SetValue(hand.transform.position);
                 handState.Field("prevPositionIndex").SetValue(hand.IndexTip != null ? hand.IndexTip.position : hand.transform.position);
@@ -3135,8 +3185,10 @@ namespace UnpluggedCustomSongs
                 hand.IndexVelocity = Vector3.zero;
                 handState.Field("prevIsTracked").SetValue(true);
 
-                // The game's own input-mode-change handler reinitializes these
-                // Oculus bones. Reuse it when a sleeping controller regains 6DoF.
+                // Let the game's own input-mode-change handler rebuild the Oculus
+                // skeleton from its calibrated bind pose. Manually zeroing Wrist
+                // localPosition/Rotation changes that bind pose and can leave a
+                // recovered hand displaced or turned after tracking resumes.
                 if (hand.skeletonController != null)
                     Traverse.Create(hand.skeletonController)
                         .Method("VRPlatformBase_InputControllerChanged", VRInteractionType.Controllers)
@@ -3218,26 +3270,30 @@ namespace UnpluggedCustomSongs
     [HarmonyPatch(typeof(StartSpace), "SetInitialSongInMenu")]
     public static class Patch_StartSpace_SetInitialSongInMenu
     {
-        public static void Postfix(StartSpace __instance)
+        public static bool Prefix(StartSpace __instance)
         {
             try
             {
-                if (__instance?.songMenu == null)
-                    return;
-
                 string lastAlbum = GamePreferences.Load(UnpluggedInfo.LastSongPlayedAlbum, "");
                 if (!string.Equals(lastAlbum, "CustomSongsAlbum", StringComparison.Ordinal))
-                    return;
+                    return true;
 
-                // AlbumsManager restores before the async custom album scan has
-                // registered CustomSongsAlbum. Do not apply its saved song index
-                // to the temporary campaign album shown during startup.
-                __instance.songMenu.InitialOffset = 0;
-                MelonLogger.Msg("[CustomSongs] Deferred the saved custom song index until the custom album is registered; startup carousel offset reset to zero.");
+                // StartSpace.Awake calls this before the mod has scanned and
+                // registered the custom album. The game's method only copies
+                // LastSongPlayed into SongMenu.InitialOffset; applying that
+                // custom index to the temporary campaign list starts a visible
+                // carousel walk (and plays each intervening preview). Skip that
+                // assignment entirely; the custom album is restored once its
+                // metadata is ready and CreateAlbum centers the saved song.
+                if (__instance?.songMenu != null)
+                    __instance.songMenu.InitialOffset = 0;
+                MelonLogger.Msg("[StartupDiag] Skipped vanilla LastSongPlayed offset because it belongs to the custom album; campaign carousel starts at index 0.");
+                return false;
             }
             catch (Exception ex)
             {
                 MelonLogger.Warning($"[CustomSongs] Could not defer the custom startup offset: {ex.Message}");
+                return true;
             }
         }
     }
@@ -4285,25 +4341,10 @@ namespace UnpluggedCustomSongs
 #endif
                 }
 
-                string lastAlbum = GamePreferences.Load(UnpluggedInfo.LastSongPlayedAlbum, "");
-                if (lastAlbum == "CustomSongsAlbum" && CustomSongLoader.CustomAlbumInstance != null)
-                {
-                    if (AlbumsManager.SelectedAlbum != CustomSongLoader.CustomAlbumInstance)
-                    {
-                        AlbumsManager.SelectedAlbum = CustomSongLoader.CustomAlbumInstance;
-                    }
-                    if (AlbumsManager.I != null)
-                        AlbumsManager.I.CurrentAlbumSongs = CustomSongLoader.CustomAlbumInstance.SongsMetadata;
-                    int lastSong = CustomSongLoader.GetLastPlayedCustomSongIndex();
-                    if (lastSong < 0) lastSong = 0;
-                    CustomSongLoader.QueueDirectSelectionIndex(lastSong);
-                    if (__instance.songMenu != null) __instance.songMenu.InitialOffset = 0;
-                    Traverse.Create(__instance).Method("SetChallengeSetup", CustomSongLoader.CustomAlbumInstance).GetValue();
-                    if (lastSong < CustomSongLoader.CustomAlbumInstance.builtInSongsMetadata.Count)
-                        Traverse.Create(__instance).Method("SongMenu_SelectedSongChanged", CustomSongLoader.CustomAlbumInstance.builtInSongsMetadata[lastSong]).GetValue();
-                    CustomSongLoader.MarkSavedCustomAlbumRestored();
-                    MelonLogger.Msg($"[CustomSongs] StartSpace: queued direct restore of custom song index {lastSong}.");
-                }
+                // Saved custom-song restoration is centralized in
+                // ProcessDeferredAlbumRegistration. Restoring again from Start
+                // queued a second selection after the album was already being
+                // created, which could reset the selected card and preview.
                 CustomSongLoader.UpdateAlbumCover(CustomSongLoader.CustomAlbumInstance);
 
             }
