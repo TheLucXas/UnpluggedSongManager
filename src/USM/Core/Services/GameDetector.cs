@@ -272,8 +272,7 @@ namespace USM.Core.Services
             if (!File.Exists(modDll)) return null;
             try
             {
-                var vi = System.Diagnostics.FileVersionInfo.GetVersionInfo(modDll);
-                return vi.FileVersion ?? vi.ProductVersion;
+                return ModAssemblyMetadata.GetVersion(modDll);
             }
             catch
             {
@@ -288,8 +287,7 @@ namespace USM.Core.Services
             {
                 try
                 {
-                    var vi = System.Diagnostics.FileVersionInfo.GetVersionInfo(pcMod);
-                    return vi.FileVersion ?? vi.ProductVersion;
+                    return ModAssemblyMetadata.GetVersion(pcMod);
                 }
                 catch { }
             }

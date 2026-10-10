@@ -33,8 +33,10 @@ namespace USM.ViewModels
         {
             get
             {
-                string? version = _questViewModel?.ModdedVersion;
-                return IsQuestModInstalled && !string.IsNullOrWhiteSpace(version) ? $"v{version}" : "N/A";
+                var mod = _questViewModel?.InstalledModInfo;
+                if (!IsQuestModInstalled || mod == null) return "N/A";
+                string status = LocalizationService.T(mod.MatchesPackagedBuild ? "Settings_ModCurrent" : "Settings_ModOutdated");
+                return $"v{mod.Version} · {status}";
             }
         }
 
@@ -293,7 +295,7 @@ namespace USM.ViewModels
         private void OnQuestViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
             if (e.PropertyName == nameof(QuestViewModel.IsModdedInstalled) ||
-                e.PropertyName == nameof(QuestViewModel.ModdedVersion))
+                e.PropertyName == nameof(QuestViewModel.InstalledModInfo))
             {
                 OnPropertyChanged(nameof(IsQuestModInstalled));
                 OnPropertyChanged(nameof(InstalledQuestModVersion));
@@ -335,6 +337,7 @@ namespace USM.ViewModels
             _maxDownloadsText = _gameDetector.MaxConcurrentDownloads.ToString();
             CanDownloadModAsset = _modAsset != null && IsGameFound;
             OnPropertyChanged(nameof(CurrentAppVersion));
+            OnPropertyChanged(nameof(InstalledQuestModVersion));
             OnPropertyChanged(nameof(EnableDiscordRpc));
             OnPropertyChanged(nameof(EnableVerboseDebug));
             OnPropertyChanged(nameof(MaxConcurrentDownloads));

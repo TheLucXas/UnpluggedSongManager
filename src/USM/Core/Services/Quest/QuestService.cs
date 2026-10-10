@@ -6,6 +6,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -17,6 +18,7 @@ using USM.Core.Services.Localization;
 namespace USM.Core.Services.Quest
 {
     public sealed record WirelessAdbEndpoint(string Ip, int Port, string ServiceName, string DeviceName);
+    public sealed record QuestModInstallationInfo(string Version, bool MatchesPackagedBuild);
 
     public class QuestService
     {
@@ -596,6 +598,33 @@ namespace USM.Core.Services.Quest
                 }
             }
             return null;
+        }
+
+        public async Task<QuestModInstallationInfo?> GetInstalledQuestModInfoAsync(string serial, string packageName)
+        {
+            if (!Regex.IsMatch(packageName, @"^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$")) return null;
+            string tempFile = Path.Combine(Path.GetTempPath(), $"USM_QuestMod_{Guid.NewGuid():N}.dll");
+            try
+            {
+                string directory = await ResolveQuestModDirectoryAsync(serial, packageName);
+                var (code, _, _) = await RunProcessAsync(GetAdbPath(),
+                    $"-s {serial} pull \"{directory}/UnpluggedCustomSongs.Quest.dll\" \"{tempFile}\"", 15000);
+                if (code != 0 || !File.Exists(tempFile) || !IsQuestModAssembly(tempFile)) return null;
+                string? version = ModAssemblyMetadata.GetVersion(tempFile);
+                if (version == null) return null;
+                bool matches = false;
+                if (!string.IsNullOrEmpty(_modDllPath) && File.Exists(_modDllPath))
+                {
+                    using var installed = File.OpenRead(tempFile);
+                    using var packaged = File.OpenRead(_modDllPath);
+                    byte[] installedHash = await SHA256.HashDataAsync(installed);
+                    byte[] packagedHash = await SHA256.HashDataAsync(packaged);
+                    matches = installedHash.AsSpan().SequenceEqual(packagedHash);
+                }
+                return new QuestModInstallationInfo(version, matches);
+            }
+            catch { return null; }
+            finally { try { File.Delete(tempFile); } catch { } }
         }
 
         public async Task<(bool Success, string Message)> UninstallModdedPackageAsync(string serial, Action<string>? log = null)
@@ -1273,25 +1302,11 @@ namespace USM.Core.Services.Quest
                 }
             }
 
-            // Fallback to uber-apk-signer if lemon_patcher was not available
+            // A signed clone without LemonLoader cannot load the mod. Do not install
+            // an unmodified APK and report success after the injection has failed.
             if (string.IsNullOrEmpty(signedApk))
             {
-                progress.Report((88, LocalizationService.T("Log_SigningApk")));
-                log(LocalizationService.T("Log_SigningApk"));
-                string signedDir = Path.Combine(workDir, "signed");
-                Directory.CreateDirectory(signedDir);
-                var (sCode, sOut, sErr) = await RunProcessAsync("java", $"-jar \"{_signerJar}\" -a \"{unsignedApk}\" -o \"{signedDir}\"", 300000);
-                if (sCode != 0)
-                {
-                    log($"Signing error: {sOut} {sErr}");
-                    return false;
-                }
-                signedApk = Directory.GetFiles(signedDir, "*.apk").FirstOrDefault();
-            }
-
-            if (string.IsNullOrEmpty(signedApk))
-            {
-                log("ERROR: Signed APK not found in output directory.");
+                log(LocalizationService.T("Log_LemonLoaderFailed"));
                 return false;
             }
 
@@ -1364,9 +1379,13 @@ namespace USM.Core.Services.Quest
                 progress.Report((97, LocalizationService.T("Log_GrantingPermissions")));
                 await GrantStoragePermissionsAsync(serial, ModdedPackage, log);
 
-                // Deploy the Quest mod DLL under the package's ModData directory.
+                // The loader's DLL directory is independent of the ModData song directory.
                 progress.Report((98, LocalizationService.T("Log_DeployingModDll")));
-                await DeployModDllAsync(serial, ModdedPackage, log);
+                if (!await DeployModDllAsync(serial, ModdedPackage, log))
+                {
+                    log(LocalizationService.T("Log_ModDllFailed"));
+                    return false;
+                }
 
                 if (skipIntroAndUnlockCampaign)
                 {
@@ -1405,29 +1424,64 @@ namespace USM.Core.Services.Quest
                 if (!string.IsNullOrEmpty(modDll) && File.Exists(modDll))
                 {
                     log?.Invoke(LocalizationService.T("Log_DeployingModDll"));
-                    if (!Regex.IsMatch(packageName, @"^[A-Za-z0-9_.]+$"))
+                    if (!Regex.IsMatch(packageName, @"^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$"))
                         throw new ArgumentException("Invalid Android package name for the mod folder.", nameof(packageName));
 
-                    // Keep the mod assembly under the app's ModData tree, alongside
-                    // the separate Songs directory managed by the library sync.
-                    string targetDir = $"/sdcard/ModData/{packageName}/Mods";
-                    await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p \"{targetDir}\"");
+                    // LemonLoader 0.6.5 loads Mods beside its runtime, not beside Songs.
+                    // Prefer its actual log path when available; songs always stay in ModData.
+                    string targetDir = await ResolveQuestModDirectoryAsync(serial, packageName);
+                    string targetPath = $"{targetDir}/UnpluggedCustomSongs.Quest.dll";
+                    string pendingPath = targetPath + ".pending";
+                    var (dirCode, dirOut, dirErr) = await RunProcessAsync(
+                        GetAdbPath(), $"-s {serial} shell mkdir -p \"{targetDir}\"");
+                    if (dirCode != 0)
+                        throw new IOException($"Could not create {targetDir}: {(dirOut + " " + dirErr).Trim()}");
+
+                    string expectedHash;
+                    using (var stream = File.OpenRead(modDll))
+                        expectedHash = Convert.ToHexString(await SHA256.HashDataAsync(stream));
+
                     var (pushCode, pushOut, pushErr) = await RunProcessAsync(
-                        GetAdbPath(), $"-s {serial} push \"{modDll}\" \"{targetDir}/UnpluggedCustomSongs.Quest.dll\"", 30000);
+                        GetAdbPath(), $"-s {serial} push \"{modDll}\" \"{pendingPath}\"", 30000);
                     if (pushCode != 0)
                     {
                         log?.Invoke($"Could not deploy the mod DLL to {targetDir}: {(pushOut + " " + pushErr).Trim()}");
                         return false;
                     }
-                    // Remove older duplicate names and the stale DLL in the previous
-                    // deployment directory so only the current Quest assembly remains.
-                    await RunProcessAsync(GetAdbPath(), $"-s {serial} shell rm -f \"{targetDir}/UnpluggedCustomSongs.dll\" \"/sdcard/MelonLoader/{packageName}/Mods/UnpluggedCustomSongs.Quest.dll\" \"/sdcard/MelonLoader/{packageName}/Mods/UnpluggedCustomSongs.dll\"");
+                    var (hashCode, hashOut, hashErr) = await RunProcessAsync(
+                        GetAdbPath(), $"-s {serial} shell sha256sum \"{pendingPath}\"", 15000);
+                    string remoteHash = hashOut.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;
+                    if (hashCode != 0 || !expectedHash.Equals(remoteHash, StringComparison.OrdinalIgnoreCase))
+                    {
+                        await RunProcessAsync(GetAdbPath(), $"-s {serial} shell rm -f \"{pendingPath}\"");
+                        throw new IOException($"Quest mod verification failed; the previous DLL was kept. {(hashOut + " " + hashErr).Trim()}");
+                    }
+
+                    // Replace the previous file only after the whole payload is verified.
+                    var (moveCode, moveOut, moveErr) = await RunProcessAsync(
+                        GetAdbPath(), $"-s {serial} shell mv -f \"{pendingPath}\" \"{targetPath}\"");
+                    if (moveCode != 0)
+                        throw new IOException($"Could not activate the verified Quest DLL: {(moveOut + " " + moveErr).Trim()}");
+                    // Clean only USM's duplicate DLLs, after the active file is verified.
+                    string[] knownDirs = GetQuestModDirectories(packageName);
+                    string[] duplicates = knownDirs
+                        .SelectMany(dir => new[] { $"{dir}/UnpluggedCustomSongs.dll", $"{dir}/UnpluggedCustomSongs.Quest.dll" })
+                        .Where(path => !path.Equals(targetPath, StringComparison.Ordinal))
+                        .ToArray();
+                    var (cleanCode, cleanOut, cleanErr) = await RunProcessAsync(
+                        GetAdbPath(), $"-s {serial} shell rm -f {string.Join(" ", duplicates.Select(path => $"\"{path}\""))}");
+                    if (cleanCode != 0)
+                    {
+                        log?.Invoke($"Quest DLL was copied, but duplicate cleanup failed: {(cleanOut + " " + cleanErr).Trim()}");
+                        return false;
+                    }
+                    log?.Invoke($"Quest DLL verified: {targetPath} (SHA256 {expectedHash}).");
                     log?.Invoke(LocalizationService.T("Log_ModDllSuccess"));
                     return true;
                 }
                 else
                 {
-                    log?.Invoke("Warning: UnpluggedCustomSongs.Quest.dll was not found in USM's package for deployment to Quest ModData.");
+                    log?.Invoke("Warning: UnpluggedCustomSongs.Quest.dll was not found in USM's package for Quest deployment.");
                     return false;
                 }
             }
@@ -1436,6 +1490,37 @@ namespace USM.Core.Services.Quest
                 log?.Invoke($"Warning: Could not deploy mod DLL to Quest: {ex.Message}");
                 return false;
             }
+        }
+
+        private static string[] GetQuestModDirectories(string packageName) => new[]
+        {
+            $"/sdcard/MelonLoader/{packageName}/Mods",
+            $"/sdcard/ModData/{packageName}/Mods",
+            $"/sdcard/Android/data/{packageName}/files/Mods"
+        };
+
+        private async Task<string> ResolveQuestModDirectoryAsync(string serial, string packageName)
+        {
+            string[] knownDirs = GetQuestModDirectories(packageName);
+            string logPath = $"/sdcard/MelonLoader/{packageName}/MelonLoader/Latest.log";
+            var (code, output, _) = await RunProcessAsync(
+                GetAdbPath(), $"-s {serial} shell cat \"{logPath}\"", 15000);
+            if (code == 0)
+            {
+                foreach (Match match in Regex.Matches(output, @"Loading Mods from '([^'\r\n]+)'"))
+                {
+                    string path = match.Groups[1].Value.TrimEnd('/');
+                    const string storagePrefix = "/storage/emulated/0/";
+                    if (path.StartsWith(storagePrefix, StringComparison.Ordinal))
+                        path = "/sdcard/" + path.Substring(storagePrefix.Length);
+                    if (knownDirs.Contains(path, StringComparer.Ordinal))
+                        return path;
+                }
+            }
+
+            // On a fresh install no log exists yet. This is the path computed by the
+            // bundled 0.6.5 MelonEnvironment.ModsDirectory getter (runtime root + Mods).
+            return knownDirs[0];
         }
 
         public async Task<HashSet<string>> GetQuestInstalledSongsAsync(string serial)

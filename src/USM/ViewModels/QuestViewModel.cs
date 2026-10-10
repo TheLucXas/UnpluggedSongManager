@@ -173,6 +173,13 @@ namespace USM.ViewModels
             set => SetProperty(ref _moddedVersion, value);
         }
 
+        private QuestModInstallationInfo? _installedModInfo;
+        public QuestModInstallationInfo? InstalledModInfo
+        {
+            get => _installedModInfo;
+            private set => SetProperty(ref _installedModInfo, value);
+        }
+
         public bool CanUninstallModded => IsDeviceConnected && IsModdedInstalled;
 
         public bool UseCustomApk
@@ -413,6 +420,7 @@ namespace USM.ViewModels
                 IsModdedInstalled = false;
                 OriginalVersion = null;
                 ModdedVersion = null;
+                InstalledModInfo = null;
                 PatchButtonText = LocalizationService.T("Quest_PatchButton_Install");
                 PatchButtonDescription = LocalizationService.T("Quest_PatchDesc_Install");
                 return;
@@ -424,6 +432,7 @@ namespace USM.ViewModels
                 AppendLog(LocalizationService.T("Quest_StatusUnauthorized"));
                 IsOriginalInstalled = false;
                 IsModdedInstalled = false;
+                InstalledModInfo = null;
                 return;
             }
 
@@ -445,10 +454,12 @@ namespace USM.ViewModels
                 if (IsModdedInstalled)
                 {
                     ModdedVersion = await _questService.GetPackageVersionAsync(SelectedDevice.Serial, QuestService.ModdedPackage);
+                    InstalledModInfo = await _questService.GetInstalledQuestModInfoAsync(SelectedDevice.Serial, QuestService.ModdedPackage);
                 }
                 else
                 {
                     ModdedVersion = null;
+                    InstalledModInfo = null;
                 }
 
                 var sb = new StringBuilder();
@@ -497,6 +508,7 @@ namespace USM.ViewModels
             }
             catch (Exception ex)
             {
+                InstalledModInfo = null;
                 PackageStatusText = $"Error checking packages: {ex.Message}";
             }
         }
