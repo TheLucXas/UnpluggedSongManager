@@ -1364,7 +1364,7 @@ namespace USM.Core.Services.Quest
                 progress.Report((97, LocalizationService.T("Log_GrantingPermissions")));
                 await GrantStoragePermissionsAsync(serial, ModdedPackage, log);
 
-                // Deploy UnpluggedCustomSongs mod DLL to Quest Mods folder
+                // Deploy the Quest mod DLL under the package's ModData directory.
                 progress.Report((98, LocalizationService.T("Log_DeployingModDll")));
                 await DeployModDllAsync(serial, ModdedPackage, log);
 
@@ -1408,9 +1408,9 @@ namespace USM.Core.Services.Quest
                     if (!Regex.IsMatch(packageName, @"^[A-Za-z0-9_.]+$"))
                         throw new ArgumentException("Invalid Android package name for the mod folder.", nameof(packageName));
 
-                    // LemonLoader loads mod assemblies from its own package directory.
-                    // Song archives remain under ModData/{packageName}/Songs.
-                    string targetDir = $"/sdcard/MelonLoader/{packageName}/Mods";
+                    // Keep the mod assembly under the app's ModData tree, alongside
+                    // the separate Songs directory managed by the library sync.
+                    string targetDir = $"/sdcard/ModData/{packageName}/Mods";
                     await RunProcessAsync(GetAdbPath(), $"-s {serial} shell mkdir -p \"{targetDir}\"");
                     var (pushCode, pushOut, pushErr) = await RunProcessAsync(
                         GetAdbPath(), $"-s {serial} push \"{modDll}\" \"{targetDir}/UnpluggedCustomSongs.Quest.dll\"", 30000);
@@ -1419,15 +1419,15 @@ namespace USM.Core.Services.Quest
                         log?.Invoke($"Could not deploy the mod DLL to {targetDir}: {(pushOut + " " + pushErr).Trim()}");
                         return false;
                     }
-                    // Remove the older duplicate names previously written by USM. Having
-                    // both assemblies in Mods can make MelonLoader reject one as cyclic.
-                    await RunProcessAsync(GetAdbPath(), $"-s {serial} shell rm -f \"{targetDir}/UnpluggedCustomSongs.dll\" \"/sdcard/ModData/{packageName}/Mods/UnpluggedCustomSongs.dll\"");
+                    // Remove older duplicate names and the stale DLL in the previous
+                    // deployment directory so only the current Quest assembly remains.
+                    await RunProcessAsync(GetAdbPath(), $"-s {serial} shell rm -f \"{targetDir}/UnpluggedCustomSongs.dll\" \"/sdcard/MelonLoader/{packageName}/Mods/UnpluggedCustomSongs.Quest.dll\" \"/sdcard/MelonLoader/{packageName}/Mods/UnpluggedCustomSongs.dll\"");
                     log?.Invoke(LocalizationService.T("Log_ModDllSuccess"));
                     return true;
                 }
                 else
                 {
-                    log?.Invoke("Warning: UnpluggedCustomSongs.dll not found to deploy to Quest Mods folder.");
+                    log?.Invoke("Warning: UnpluggedCustomSongs.Quest.dll was not found in USM's package for deployment to Quest ModData.");
                     return false;
                 }
             }

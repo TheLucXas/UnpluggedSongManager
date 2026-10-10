@@ -3106,11 +3106,57 @@ namespace UnpluggedCustomSongs
     {
         private static readonly Dictionary<int, bool> LastControllerTrackingState = new Dictionary<int, bool>();
 
+        public static void NormalizeHandSide(InteractiveHandOculus hand)
+        {
+            if (hand == null) return;
+            bool isLeft = hand.IsLeftHand;
+            if (hand.Controller != null && hand.Controller.IsLeftController != isLeft)
+                hand.Controller.IsLeftController = isLeft;
+            if (hand.SkeletonInfo != null && hand.SkeletonInfo.IsLeftHand != isLeft)
+                hand.SkeletonInfo.IsLeftHand = isLeft;
+            if (hand.skeletonController is HandSkeletonControllerOculus controllerSkeleton &&
+                controllerSkeleton.IsLeftController != isLeft)
+                controllerSkeleton.IsLeftController = isLeft;
+        }
+
+        private static void ResetRecoveredControllerHand(InteractiveHandOculus hand)
+        {
+            try
+            {
+                if (hand.SkeletonInfo != null && hand.SkeletonInfo.Wrist != null)
+                {
+                    hand.SkeletonInfo.Wrist.localPosition = Vector3.zero;
+                    hand.SkeletonInfo.Wrist.localRotation = Quaternion.identity;
+                }
+                var handState = Traverse.Create(hand);
+                handState.Field("prevPosition").SetValue(hand.transform.position);
+                handState.Field("prevPositionIndex").SetValue(hand.IndexTip != null ? hand.IndexTip.position : hand.transform.position);
+                hand.Velocity = Vector3.zero;
+                hand.IndexVelocity = Vector3.zero;
+                handState.Field("prevIsTracked").SetValue(true);
+
+                // The game's own input-mode-change handler reinitializes these
+                // Oculus bones. Reuse it when a sleeping controller regains 6DoF.
+                if (hand.skeletonController != null)
+                    Traverse.Create(hand.skeletonController)
+                        .Method("VRPlatformBase_InputControllerChanged", VRInteractionType.Controllers)
+                        .GetValue();
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[HandPoseDiag] Could not reset the recovered {(hand.IsLeftHand ? "left" : "right")} controller hand: {ex.Message}");
+            }
+        }
+
         public static bool Prefix(InteractiveHandOculus __instance, ref bool __result)
         {
             try
             {
-                if (__instance == null || VRPlatformBase.I == null || VRPlatformBase.I.IsHandTrackingEnabled)
+                if (__instance == null)
+                    return true;
+
+                NormalizeHandSide(__instance);
+                if (VRPlatformBase.I == null || VRPlatformBase.I.IsHandTrackingEnabled)
                     return true;
 
                 if (Params.Global.DisableControllerMode)
@@ -3130,9 +3176,16 @@ namespace UnpluggedCustomSongs
                 __result = tracked;
 
                 int instanceId = __instance.GetInstanceID();
-                if (!LastControllerTrackingState.TryGetValue(instanceId, out bool previous) || previous != tracked)
+                bool hadPrevious = LastControllerTrackingState.TryGetValue(instanceId, out bool previous);
+                if (!hadPrevious || previous != tracked)
                 {
                     LastControllerTrackingState[instanceId] = tracked;
+                    if (hadPrevious && !previous && tracked)
+                    {
+                        ResetRecoveredControllerHand(__instance);
+                        if (ModMain.ConfigChartDiagnostics)
+                            MelonLogger.Msg($"[HandPoseDiag] {( __instance.IsLeftHand ? "left" : "right" )} controller reacquired; hand side, wrist, skeleton and velocity state reset.");
+                    }
                     if (ModMain.ConfigChartDiagnostics)
                         MelonLogger.Msg($"[HandPoseDiag] {( __instance.IsLeftHand ? "left" : "right" )} controller tracking={tracked}.");
                 }
@@ -3142,6 +3195,49 @@ namespace UnpluggedCustomSongs
             {
                 MelonLogger.Warning($"[HandPoseDiag] Controller tracking query failed; using the game's getter: {ex.Message}");
                 return true;
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(InteractiveHandOculus), "Awake")]
+    public static class Patch_InteractiveHandOculus_Awake
+    {
+        public static void Postfix(InteractiveHandOculus __instance)
+        {
+            try
+            {
+                Patch_InteractiveHandOculus_IsTracked.NormalizeHandSide(__instance);
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[HandPoseDiag] Could not normalize Oculus hand side during Awake: {ex.Message}");
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(StartSpace), "SetInitialSongInMenu")]
+    public static class Patch_StartSpace_SetInitialSongInMenu
+    {
+        public static void Postfix(StartSpace __instance)
+        {
+            try
+            {
+                if (__instance?.songMenu == null)
+                    return;
+
+                string lastAlbum = GamePreferences.Load(UnpluggedInfo.LastSongPlayedAlbum, "");
+                if (!string.Equals(lastAlbum, "CustomSongsAlbum", StringComparison.Ordinal))
+                    return;
+
+                // AlbumsManager restores before the async custom album scan has
+                // registered CustomSongsAlbum. Do not apply its saved song index
+                // to the temporary campaign album shown during startup.
+                __instance.songMenu.InitialOffset = 0;
+                MelonLogger.Msg("[CustomSongs] Deferred the saved custom song index until the custom album is registered; startup carousel offset reset to zero.");
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[CustomSongs] Could not defer the custom startup offset: {ex.Message}");
             }
         }
     }
@@ -3201,6 +3297,9 @@ namespace UnpluggedCustomSongs
                 }
 
                 __instance.InitialOffset = centerIndex;
+                menu.Field("CumulativeIndex").SetValue(0);
+                menu.Field("Index").SetValue(0);
+                menu.Field("CumulativeOffset").SetValue(0f);
                 menu.Field("selectedIndex").SetValue(centerIndex);
                 MelonLogger.Msg($"[CustomSongs] Direct album selection prepared: index={targetIndex}, song='{metadata[targetIndex].SongName}', centerSlot={centerIndex}, animatedSteps=0.");
             }
@@ -3613,46 +3712,6 @@ namespace UnpluggedCustomSongs
         static bool Prefix(KeyTime __0)
         {
             return __0 != null && NoteController.Notes.ContainsKey(__0);
-        }
-    }
-
-    [HarmonyPatch(typeof(ControllerGuitarNote), "get_HasTrigger")]
-    public static class Patch_ControllerGuitarNote_HasTrigger
-    {
-        public static bool Prefix(ControllerGuitarNote __instance, ref bool __result)
-        {
-            if (__instance.Buttons == null || __instance.Buttons.Count == 0)
-            {
-                __result = __instance.Tier < 2;
-                return false;
-            }
-            if (!__instance.Buttons[0] && (__instance.Buttons.Count < 2 || !__instance.Buttons[1]))
-            {
-                __result = __instance.Tier < 2;
-                return false;
-            }
-            __result = __instance.Buttons[0];
-            return false;
-        }
-    }
-
-    [HarmonyPatch(typeof(ControllerGuitarNote), "get_HasGrip")]
-    public static class Patch_ControllerGuitarNote_HasGrip
-    {
-        public static bool Prefix(ControllerGuitarNote __instance, ref bool __result)
-        {
-            if (__instance.Buttons == null || __instance.Buttons.Count < 2)
-            {
-                __result = __instance.Tier >= 2;
-                return false;
-            }
-            if (!__instance.Buttons[0] && !__instance.Buttons[1])
-            {
-                __result = __instance.Tier >= 2;
-                return false;
-            }
-            __result = __instance.Buttons[1];
-            return false;
         }
     }
 
@@ -4302,23 +4361,27 @@ namespace UnpluggedCustomSongs
             try
             {
                 if (__instance?.SongData != null)
+                {
                     CustomSongLoader.QueueSongCoverLoad(__instance, __instance.SongData);
 
-                if (__instance?.FileName != null && __instance.SongData != null)
-                {
-                    string trackLabel = CustomSongLoader.GetTrackDisplayLabel(__instance.SongData);
-                    if (!string.IsNullOrEmpty(trackLabel))
+                    if (__instance.SongData.SongID != null &&
+                        __instance.SongData.SongID.StartsWith("CUSTOM_", StringComparison.Ordinal))
                     {
-                        // FileName is hidden on the selected vinyl in the main album
-                        // view. Put the badges under the visible artist line as well.
-                        if (__instance.BandName != null)
+                        string trackLabel = CustomSongLoader.GetTrackDisplayLabel(__instance.SongData);
+                        if (!string.IsNullOrEmpty(trackLabel))
                         {
-                            string artist = __instance.SongData.BandName ?? string.Empty;
-                            __instance.BandName.text = string.IsNullOrEmpty(artist)
-                                ? $"<size=70%>{trackLabel}</size>"
-                                : $"{artist}\n<size=70%>{trackLabel}</size>";
+                            // The hidden FileName TMP is optional in the Quest
+                            // prefab; never gate the visible badge on that field.
+                            if (__instance.BandName != null)
+                            {
+                                string artist = __instance.SongData.BandName ?? string.Empty;
+                                __instance.BandName.text = string.IsNullOrEmpty(artist)
+                                    ? $"<size=65%>{trackLabel}</size>"
+                                    : $"{artist}\n<size=65%>{trackLabel}</size>";
+                            }
+                            if (__instance.FileName != null)
+                                __instance.FileName.text = trackLabel;
                         }
-                        __instance.FileName.text = trackLabel;
                     }
                 }
             }
