@@ -268,7 +268,8 @@ namespace USM.ViewModels
                         return;
                     }
 
-                    SngDecoder.RemoteSongProfile profile = await SngDecoder.ProbeRemoteSongProfileAsync(chart.DownloadUrl!, cancellationToken);
+                    SngDecoder.RemoteSongProfile profile = await SngDecoder.ProbeRemoteSongProfileAsync(
+                        chart.DownloadUrl!, cancellationToken, chart.DurationSeconds);
                     SongProfileCache[chart.Md5] = profile;
                     ApplySongProfile(chart, profile);
                     RefreshVisibleResultsForAudioMatch(chart, profile.TrackLayout, cancellationToken);
@@ -291,6 +292,7 @@ namespace USM.ViewModels
             chart.TrackLayout = profile.TrackLayout;
             chart.AudioStemCount = profile.AudioStemCount;
             chart.SourceDifficultyCount = profile.SourceDifficultyCount;
+            chart.ChartCoverageRatio = profile.ChartCoverageRatio;
             chart.IsIdealForUnplugged = profile.IsIdealForUnplugged;
             chart.IsCheckingQuality = false;
         }

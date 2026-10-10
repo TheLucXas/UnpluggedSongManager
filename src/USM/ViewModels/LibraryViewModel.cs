@@ -472,13 +472,24 @@ namespace USM.ViewModels
                             includeFile: fileName => fileName.Equals("notes.mid", StringComparison.OrdinalIgnoreCase)
                                 || fileName.Equals("notes.chart", StringComparison.OrdinalIgnoreCase)
                                 || fileName.Equals("song.chart", StringComparison.OrdinalIgnoreCase));
-                        var jsonCharts = SongConverter.GenerateJsonCharts(chartSourceDir);
+                        SongIni resyncIni = SongConverter.ParseSongIni(Path.Combine(chartSourceDir, "song.ini"));
+                        var jsonCharts = SongConverter.GenerateJsonCharts(
+                            chartSourceDir,
+                            null,
+                            resyncIni.DurationSeconds,
+                            out int sourceDifficultyCount,
+                            out int sourceNoteCount,
+                            out double chartCoverageRatio);
                         UsmPacker.ReplaceChartData(
                             song.FolderPath,
                             jsonCharts,
                             sourceChart.Id,
                             sourceChart.Md5,
-                            JsonGenerator.ParserVersion);
+                            JsonGenerator.ParserVersion,
+                            sourceDifficultyCount,
+                            sourceNoteCount,
+                            chartCoverageRatio,
+                            resyncIni.DurationSeconds);
                         updated++;
                     }
                     catch (Exception ex)
@@ -654,6 +665,7 @@ namespace USM.ViewModels
             bool isIdealForUnplugged = false;
             int audioStemCount = 0;
             int sourceDifficultyCount = 0;
+            double chartCoverageRatio = 0;
             bool hasKnownAudioLayout = false;
             string? chorusChartId = null;
             string? chorusChartMd5 = null;
@@ -677,6 +689,13 @@ namespace USM.ViewModels
                     chartParserVersion = ReadMetaInt(meta, "ChartParserVersion", "ParserVersion");
                     audioStemCount = ReadMetaInt(meta, "AudioStemCount");
                     sourceDifficultyCount = ReadMetaInt(meta, "SourceDifficultyCount");
+                    if (meta.TryGetProperty("ChartCoverageRatio", out var coverageValue))
+                    {
+                        if (coverageValue.ValueKind == JsonValueKind.Number && coverageValue.TryGetDouble(out double coverage))
+                            chartCoverageRatio = Math.Clamp(coverage, 0, 1);
+                        else if (coverageValue.ValueKind == JsonValueKind.String && double.TryParse(coverageValue.GetString(), out double parsedCoverage))
+                            chartCoverageRatio = Math.Clamp(parsedCoverage, 0, 1);
+                    }
                     if (meta.TryGetProperty("IsIdealForUnplugged", out var idealValue))
                     {
                         isIdealForUnplugged = idealValue.ValueKind == JsonValueKind.True ||
@@ -756,6 +775,7 @@ namespace USM.ViewModels
                 IsIdealForUnplugged = isIdealForUnplugged,
                 AudioStemCount = audioStemCount,
                 SourceDifficultyCount = sourceDifficultyCount,
+                ChartCoverageRatio = chartCoverageRatio,
                 ChorusChartId = chorusChartId,
                 ChorusChartMd5 = chorusChartMd5,
                 ChartParserVersion = chartParserVersion

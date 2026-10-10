@@ -48,7 +48,8 @@ namespace USM.Core.Parsers
             Func<long, double> tickToSec,
             SortedDictionary<long, List<ChartParser.NoteEvent>> notesByTick,
             int ticksPerBeat,
-            string outputDifficulty)
+            string outputDifficulty,
+            Action<string>? log = null)
         {
             bpmGrid ??= new List<ChartParser.BpmEvent>();
             notesByTick ??= new SortedDictionary<long, List<ChartParser.NoteEvent>>();
@@ -79,6 +80,8 @@ namespace USM.Core.Parsers
             bool firstController = true;
             var controllerNotes = new StringBuilder();
             controllerNotes.Append("],\"ControllerNotes\":[");
+            var tierCounts = new SortedDictionary<int, int>();
+            var controllerButtonCounts = new SortedDictionary<string, int>(StringComparer.Ordinal);
 
             double previousTime = -999.0;
             int previousTier = -1;
@@ -127,6 +130,7 @@ namespace USM.Core.Parsers
                 {
                     tier = tier <= 1 ? 1 : 2;
                 }
+                tierCounts[tier] = tierCounts.TryGetValue(tier, out int tierCount) ? tierCount + 1 : 1;
 
                 bool isPullOff = noteTime - previousTime < 0.22 && previousTier != tier;
 
@@ -144,6 +148,10 @@ namespace USM.Core.Parsers
                 firstHand = false;
 
                 GetControllerButtons(lanes, out bool trigger, out bool grip);
+                string buttonsKey = $"{(trigger ? 1 : 0)}{(grip ? 1 : 0)}";
+                controllerButtonCounts[buttonsKey] = controllerButtonCounts.TryGetValue(buttonsKey, out int buttonCount)
+                    ? buttonCount + 1
+                    : 1;
                 if (!firstController) controllerNotes.Append(',');
                 controllerNotes.Append("{\"Time\":").Append(Number(noteTime))
                     .Append(",\"Duration\":").Append(Number(noteDuration))
@@ -162,6 +170,7 @@ namespace USM.Core.Parsers
             }
 
             sb.Append(controllerNotes).Append("]}");
+            log?.Invoke($"  [ChartDiag] {outputDifficulty}: tiers=[{string.Join(",", tierCounts.Select(pair => $"{pair.Key}:{pair.Value}"))}], controllerButtons[trigger,grip]=[{string.Join(",", controllerButtonCounts.Select(pair => $"{pair.Key}:{pair.Value}"))}].");
             return sb.ToString();
         }
 
@@ -281,7 +290,7 @@ namespace USM.Core.Parsers
                 }
 
                 string outputFile = outputFiles[targetRank];
-                results[outputFile] = BuildSongJson(bpmGrid, tickToSec, selectedNotes, ticksPerBeat, outputFile);
+                results[outputFile] = BuildSongJson(bpmGrid, tickToSec, selectedNotes, ticksPerBeat, outputFile, log);
                 log?.Invoke($"  [Chart] {outputFile}: {CountNotes(selectedNotes)} notes; {origin}.");
             }
 

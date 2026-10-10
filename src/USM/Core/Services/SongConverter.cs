@@ -71,6 +71,10 @@ namespace USM.Core.Services
                         case "delay":
                             if (double.TryParse(val, out double del)) info.Delay = Math.Max(2.0, del / 1000.0);
                             break;
+                        case "song_length":
+                            if (double.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out double lengthMs) && lengthMs > 0)
+                                info.DurationSeconds = lengthMs / 1000.0;
+                            break;
                     }
                 }
             }
@@ -80,17 +84,20 @@ namespace USM.Core.Services
 
         public static Dictionary<string, string> GenerateJsonCharts(string inputDir, Action<string>? log = null)
         {
-            return GenerateJsonCharts(inputDir, log, out _, out _);
+            return GenerateJsonCharts(inputDir, log, 0, out _, out _, out _);
         }
 
-        private static Dictionary<string, string> GenerateJsonCharts(
+        public static Dictionary<string, string> GenerateJsonCharts(
             string inputDir,
             Action<string>? log,
+            double songDurationSeconds,
             out int sourceDifficultyCount,
-            out int sourceNoteCount)
+            out int sourceNoteCount,
+            out double chartCoverageRatio)
         {
             sourceDifficultyCount = 0;
             sourceNoteCount = 0;
+            chartCoverageRatio = 0;
             string midPath = Path.Combine(inputDir, "notes.mid");
             string chartPath = Path.Combine(inputDir, "notes.chart");
             if (!File.Exists(chartPath)) chartPath = Path.Combine(inputDir, "song.chart");
@@ -150,7 +157,17 @@ namespace USM.Core.Services
 
             sourceDifficultyCount = Math.Min(4, selected.DifficultyCount);
             sourceNoteCount = selected.NoteCount;
-            log?.Invoke($"  [Chart] Using {selected.Candidate.Name}: {selected.DifficultyCount} populated source difficulties, {selected.NoteCount} note events.");
+            var noteTimes = selected.Candidate.Difficulties.Values
+                .SelectMany(notes => notes.Keys)
+                .Select(selected.Candidate.TickToSec)
+                .Where(time => double.IsFinite(time) && time >= 0)
+                .ToList();
+            double firstNoteTime = noteTimes.Count > 0 ? noteTimes.Min() : 0;
+            double lastNoteTime = noteTimes.Count > 0 ? noteTimes.Max() : 0;
+            if (songDurationSeconds > 0 && noteTimes.Count > 0)
+                chartCoverageRatio = Math.Clamp((lastNoteTime - firstNoteTime) / songDurationSeconds, 0, 1);
+
+            log?.Invoke($"  [Chart] Using {selected.Candidate.Name}: {selected.DifficultyCount} populated source difficulties, {selected.NoteCount} note events; range {firstNoteTime:F1}-{lastNoteTime:F1}s of {songDurationSeconds:F1}s ({chartCoverageRatio:P0} coverage).");
             return JsonGenerator.GenerateAllDifficultiesJson(
                 selected.Candidate.BpmGrid,
                 selected.Candidate.TickToSec,
@@ -274,7 +291,8 @@ namespace USM.Core.Services
                 // 6. Chart Note Generation -> Outputs .json
                 progress?.Report(new ConversionProgress(0.70, "Generating USM 2.0 chart notes..."));
 
-                Dictionary<string, string> jsonCharts = GenerateJsonCharts(inputDir, log, out int sourceDifficultyCount, out int sourceNoteCount);
+                Dictionary<string, string> jsonCharts = GenerateJsonCharts(inputDir, log, iniInfo.DurationSeconds,
+                    out int sourceDifficultyCount, out int sourceNoteCount, out double chartCoverageRatio);
                 
                 if (jsonCharts != null)
                 {
@@ -288,11 +306,10 @@ namespace USM.Core.Services
                 var outputAudio = AudioLayoutDetector.Analyze(Directory.GetFiles(outDir)
                     .Select(path => Path.GetFileName(path) ?? string.Empty));
                 bool isIdealForUnplugged = outputAudio.Layout == AudioTrackLayout.MultiTrack
-                    && outputAudio.StemCount >= 4
-                    && outputAudio.HasVocals
-                    && outputAudio.StemGroups.Contains("guitar")
+                    && new[] { "guitar", "bass", "drums", "vocals" }.All(outputAudio.StemGroups.Contains)
                     && sourceDifficultyCount >= 4
-                    && sourceNoteCount > 0;
+                    && sourceNoteCount > 0
+                    && chartCoverageRatio >= 0.90;
 
                 // 7. Generate meta.json
                 string metaJson = JsonSerializer.Serialize(new
@@ -306,6 +323,8 @@ namespace USM.Core.Services
                     AudioStemCount = outputAudio.StemCount,
                     SourceDifficultyCount = sourceDifficultyCount,
                     SourceChartNoteCount = sourceNoteCount,
+                    ChartCoverageRatio = chartCoverageRatio,
+                    SongDurationSeconds = iniInfo.DurationSeconds,
                     IsIdealForUnplugged = isIdealForUnplugged,
                     LevelAuthorName = Regex.Replace(iniInfo.Charter ?? string.Empty, @"<[^>]*>", "").Trim(),
                     SongID = $"CUSTOM_{folderName}",

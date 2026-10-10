@@ -48,6 +48,7 @@ namespace USM.Core.Models
 
         public int AudioStemCount { get; set; }
         public int SourceDifficultyCount { get; set; }
+        public double ChartCoverageRatio { get; set; }
 
         private bool _isIdealForUnplugged;
         public bool IsIdealForUnplugged
@@ -133,6 +134,7 @@ namespace USM.Core.Models
         public string Charter { get; set; } = "Unknown";
         public double PreviewStart { get; set; } = 30.0;
         public double Delay { get; set; } = 3.0;
+        public double DurationSeconds { get; set; }
     }
 
     public class InstalledSong : ViewModelBase
@@ -151,6 +153,7 @@ namespace USM.Core.Models
         public bool IsIdealForUnplugged { get; set; }
         public int AudioStemCount { get; set; }
         public int SourceDifficultyCount { get; set; }
+        public double ChartCoverageRatio { get; set; }
         public string? ChorusChartId { get; set; }
         public string? ChorusChartMd5 { get; set; }
         public int ChartParserVersion { get; set; }

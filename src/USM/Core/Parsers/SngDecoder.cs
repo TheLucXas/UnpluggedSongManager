@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -48,12 +49,14 @@ namespace USM.Core.Parsers
             public bool HasGuitarStem { get; init; }
             public int SourceDifficultyCount { get; init; }
             public int ChartNoteCount { get; init; }
+            public double SongDurationSeconds { get; init; }
+            public double ChartCoverageRatio { get; init; }
+            public HashSet<string> StemGroups { get; init; } = new(StringComparer.OrdinalIgnoreCase);
             public bool IsIdealForUnplugged => TrackLayout == AudioTrackLayout.MultiTrack
-                && AudioStemCount >= 4
-                && HasVocalsStem
-                && HasGuitarStem
+                && new[] { "guitar", "bass", "drums", "vocals" }.All(StemGroups.Contains)
                 && SourceDifficultyCount >= 4
-                && ChartNoteCount > 0;
+                && ChartNoteCount > 0
+                && ChartCoverageRatio >= 0.90;
         }
 
         /// <summary>
@@ -82,7 +85,10 @@ namespace USM.Core.Parsers
         /// If the server ignores range requests, it returns the index-derived
         /// audio layout and leaves chart quality unknown.
         /// </summary>
-        public static async Task<RemoteSongProfile> ProbeRemoteSongProfileAsync(string sngUrl, CancellationToken ct = default)
+        public static async Task<RemoteSongProfile> ProbeRemoteSongProfileAsync(
+            string sngUrl,
+            CancellationToken ct = default,
+            int songDurationSeconds = 0)
         {
             if (!Uri.TryCreate(sngUrl, UriKind.Absolute, out var uri) ||
                 uri.Scheme != Uri.UriSchemeHttps ||
@@ -101,8 +107,13 @@ namespace USM.Core.Parsers
                 TrackLayout = audio.Layout,
                 AudioStemCount = audio.StemCount,
                 HasVocalsStem = audio.HasVocals,
-                HasGuitarStem = audio.StemGroups.Contains("guitar")
+                HasGuitarStem = audio.StemGroups.Contains("guitar"),
+                StemGroups = audio.StemGroups
             };
+
+            double durationSeconds = songDurationSeconds > 0
+                ? songDurationSeconds
+                : ReadDurationFromMetadata(index.Metadata);
 
             var chartEntries = index.Files
                 .Where(entry =>
@@ -125,6 +136,8 @@ namespace USM.Core.Parsers
             {
                 int bestDifficultyCount = 0;
                 int bestNoteCount = 0;
+                double bestFirstNoteTime = 0;
+                double bestLastNoteTime = 0;
                 foreach (SngFileEntry entry in chartEntries)
                 {
                     ct.ThrowIfCancellationRequested();
@@ -139,24 +152,31 @@ namespace USM.Core.Parsers
                     {
                         int difficultyCount;
                         int noteCount;
+                        List<double> noteTimes;
                         string extension = Path.GetExtension(name);
                         if (extension.Equals(".chart", StringComparison.OrdinalIgnoreCase))
                         {
                             var parsed = ChartParser.Parse(path);
                             difficultyCount = parsed.Difficulties.Count(pair => pair.Value.Values.Any(group => group.Count > 0));
                             noteCount = parsed.Difficulties.Values.Sum(notes => notes.Values.Sum(group => group.Count));
+                            noteTimes = parsed.Difficulties.Values.SelectMany(notes => notes.Keys)
+                                .Select(parsed.TickToSec).Where(time => double.IsFinite(time) && time >= 0).ToList();
                         }
                         else
                         {
                             var parsed = MidiParser.Parse(path);
                             difficultyCount = parsed.Difficulties.Count(pair => pair.Value.Values.Any(group => group.Count > 0));
                             noteCount = parsed.Difficulties.Values.Sum(notes => notes.Values.Sum(group => group.Count));
+                            noteTimes = parsed.Difficulties.Values.SelectMany(notes => notes.Keys)
+                                .Select(parsed.TickToSec).Where(time => double.IsFinite(time) && time >= 0).ToList();
                         }
 
                         if (difficultyCount > bestDifficultyCount || (difficultyCount == bestDifficultyCount && noteCount > bestNoteCount))
                         {
                             bestDifficultyCount = difficultyCount;
                             bestNoteCount = noteCount;
+                            bestFirstNoteTime = noteTimes.Count > 0 ? noteTimes.Min() : 0;
+                            bestLastNoteTime = noteTimes.Count > 0 ? noteTimes.Max() : 0;
                         }
                     }
                     catch (Exception) when (!ct.IsCancellationRequested)
@@ -166,20 +186,45 @@ namespace USM.Core.Parsers
                     }
                 }
 
+                double coverageRatio = durationSeconds > 0 && bestNoteCount > 0
+                    ? Math.Clamp((bestLastNoteTime - bestFirstNoteTime) / durationSeconds, 0, 1)
+                    : 0;
+
                 return new RemoteSongProfile
                 {
                     TrackLayout = profile.TrackLayout,
                     AudioStemCount = profile.AudioStemCount,
                     HasVocalsStem = profile.HasVocalsStem,
                     HasGuitarStem = profile.HasGuitarStem,
+                    StemGroups = profile.StemGroups,
                     SourceDifficultyCount = Math.Min(4, bestDifficultyCount),
-                    ChartNoteCount = bestNoteCount
+                    ChartNoteCount = bestNoteCount,
+                    SongDurationSeconds = durationSeconds,
+                    ChartCoverageRatio = coverageRatio
                 };
             }
             finally
             {
                 try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, recursive: true); } catch { }
             }
+        }
+
+        private static double ReadDurationFromMetadata(Dictionary<string, string> metadata)
+        {
+            foreach (var pair in metadata)
+            {
+                if (!pair.Key.Equals("song_length", StringComparison.OrdinalIgnoreCase)
+                    && !pair.Key.Equals("duration", StringComparison.OrdinalIgnoreCase)
+                    && !pair.Key.Equals("length", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (!double.TryParse(pair.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double value) || value <= 0)
+                    continue;
+
+                return value > 1000 ? value / 1000.0 : value;
+            }
+
+            return 0;
         }
 
         /// <summary>
