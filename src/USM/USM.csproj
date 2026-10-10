@@ -25,6 +25,9 @@
   <ItemGroup>
     <Resource Include="assets\icon.png" />
     <Resource Include="assets\icon.ico" />
+    <Resource Include="assets\fonts\Glory-Regular.ttf" />
+    <Resource Include="assets\fonts\Glory-Bold.ttf" />
+    <Resource Include="assets\fonts\OFL.txt" />
   </ItemGroup>
 
   <ItemGroup>

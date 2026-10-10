@@ -20,10 +20,10 @@
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
                     <Setter Property="Background" Value="{StaticResource BrushBgCardHover}" />
-                    <Setter Property="BorderBrush" Value="#3E4256" />
+                    <Setter Property="BorderBrush" Value="{StaticResource BrushBorder}" />
                 </Trigger>
                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                    <Setter Property="Background" Value="#251624" />
+                    <Setter Property="Background" Value="{StaticResource BrushBgCardHover}" />
                     <Setter Property="BorderBrush" Value="{StaticResource BrushAccentPink}" />
                     <Setter Property="BorderThickness" Value="1.5" />
                 </DataTrigger>
@@ -294,7 +294,7 @@
                                                 Padding="6,2"
                                                 Margin="6,0,0,0"
                                                 VerticalAlignment="Center"
-                                                Background="#203B2B"
+                                                Background="{StaticResource BrushSuccessSubtle}"
                                                 Visibility="{Binding IsIdealForUnplugged, Converter={StaticResource BoolToVis}}"
                                                 ToolTip="{DynamicResource Loc_Library_IdealTooltip}">
                                             <TextBlock Text="{DynamicResource Loc_Library_IdealBadge}"
@@ -320,13 +320,13 @@
                                                 Padding="6,2"
                                                 Margin="6,0,0,0"
                                                 VerticalAlignment="Center"
-                                                Background="#493319"
+                                                Background="{StaticResource BrushWarningSubtle}"
                                                 Visibility="{Binding HasChartCoverageWarning, Converter={StaticResource BoolToVis}}"
                                                 ToolTip="{DynamicResource Loc_Library_IncompleteTooltip}">
                                             <TextBlock Text="{Binding ChartCoverageWarningDisplay}"
                                                        FontSize="10"
                                                        FontWeight="Bold"
-                                                       Foreground="#FFC36B" />
+                                                       Foreground="{StaticResource BrushWarning}" />
                                         </Border>
                                     </StackPanel>
 

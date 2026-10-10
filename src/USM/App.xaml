@@ -4,20 +4,23 @@
              xmlns:local="clr-namespace:USM">
     <Application.Resources>
         <!-- Colors -->
-        <Color x:Key="ColorBgMain">#202020</Color>
-        <Color x:Key="ColorBgCard">#292929</Color>
-        <Color x:Key="ColorBgCardHover">#353535</Color>
-        <Color x:Key="ColorBgInput">#303030</Color>
-        <Color x:Key="ColorBorder">#454545</Color>
-        <Color x:Key="ColorAccentPink">#60CDFF</Color>
-        <Color x:Key="ColorAccentPurple">#8A84FF</Color>
-        <Color x:Key="ColorAccentGreen">#6CCB5F</Color>
-        <Color x:Key="ColorAccentBlue">#60CDFF</Color>
+        <Color x:Key="ColorBgMain">#031524</Color>
+        <Color x:Key="ColorBgCard">#082235</Color>
+        <Color x:Key="ColorBgCardHover">#10314A</Color>
+        <Color x:Key="ColorBgInput">#061D2E</Color>
+        <Color x:Key="ColorBorder">#1B4057</Color>
+        <Color x:Key="ColorAccentPink">#EF37D8</Color>
+        <Color x:Key="ColorAccentPurple">#700D9D</Color>
+        <Color x:Key="ColorAccentGreen">#6CCB8A</Color>
+        <Color x:Key="ColorAccentBlue">#85C1F5</Color>
         <Color x:Key="ColorAccentYellow">#FCE100</Color>
-        <Color x:Key="ColorTextPrimary">#FFFFFF</Color>
-        <Color x:Key="ColorTextSecondary">#C5C5C5</Color>
-        <Color x:Key="ColorTextMuted">#969696</Color>
-        <Color x:Key="ColorTextOnAccent">#00344A</Color>
+        <Color x:Key="ColorTextPrimary">#E6F2FD</Color>
+        <Color x:Key="ColorTextSecondary">#AFC4D6</Color>
+        <Color x:Key="ColorTextMuted">#718BA0</Color>
+        <Color x:Key="ColorTextOnAccent">#031524</Color>
+        <Color x:Key="ColorSuccessSubtle">#123729</Color>
+        <Color x:Key="ColorWarningSubtle">#3C2D17</Color>
+        <Color x:Key="ColorWarning">#FFC36B</Color>
 
         <!-- SolidColorBrushes -->
         <SolidColorBrush x:Key="BrushBgMain" Color="{StaticResource ColorBgMain}" />
@@ -34,12 +37,15 @@
         <SolidColorBrush x:Key="BrushTextSecondary" Color="{StaticResource ColorTextSecondary}" />
         <SolidColorBrush x:Key="BrushTextMuted" Color="{StaticResource ColorTextMuted}" />
         <SolidColorBrush x:Key="BrushTextOnAccent" Color="{StaticResource ColorTextOnAccent}" />
+        <SolidColorBrush x:Key="BrushSuccessSubtle" Color="{StaticResource ColorSuccessSubtle}" />
+        <SolidColorBrush x:Key="BrushWarningSubtle" Color="{StaticResource ColorWarningSubtle}" />
+        <SolidColorBrush x:Key="BrushWarning" Color="{StaticResource ColorWarning}" />
 
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
 
         <!-- Modern Button Style -->
         <Style TargetType="Button">
-            <Setter Property="Background" Value="{StaticResource BrushAccentPink}" />
+            <Setter Property="Background" Value="{StaticResource BrushAccentBlue}" />
             <Setter Property="Foreground" Value="{StaticResource BrushTextOnAccent}" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="FontSize" Value="13" />
@@ -109,7 +115,7 @@
         <!-- Purple Button Style -->
         <Style x:Key="PurpleButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Background" Value="{StaticResource BrushAccentPurple}" />
-            <Setter Property="Foreground" Value="{StaticResource BrushTextOnAccent}" />
+            <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
         </Style>
 
         <!-- Square Icon Button Style (No padding so icons are never clipped) -->
@@ -385,7 +391,7 @@
                                 <Setter Property="Foreground" Value="{StaticResource BrushAccentPink}" />
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="itemBorder" Property="Background" Value="#3360CDFF" />
+                                <Setter TargetName="itemBorder" Property="Background" Value="#3385C1F5" />
                                 <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
                                 <Setter Property="FontWeight" Value="SemiBold" />
                             </Trigger>

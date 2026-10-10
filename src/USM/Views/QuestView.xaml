@@ -332,7 +332,7 @@
                                 FontSize="11" />
                     </Grid>
 
-                    <Border Background="#0A0B10"
+                    <Border Background="{StaticResource BrushBgCard}"
                             BorderBrush="{StaticResource BrushBorder}"
                             BorderThickness="1"
                             CornerRadius="8"
@@ -341,7 +341,7 @@
                         <TextBox x:Name="LogTextBox"
                                  Text="{Binding LogText, Mode=OneWay}"
                                  Background="Transparent"
-                                 Foreground="#22C55E"
+                                 Foreground="{StaticResource BrushAccentGreen}"
                                  FontFamily="Consolas, Cascadia Code, Courier New"
                                  FontSize="12"
                                  BorderThickness="0"
