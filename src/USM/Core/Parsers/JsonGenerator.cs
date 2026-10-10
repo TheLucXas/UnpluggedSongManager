@@ -15,7 +15,7 @@ namespace USM.Core.Parsers
     {
         // Bump when chart parsing or generated note semantics change. Stored in
         // meta.json so the PC library can selectively regenerate outdated charts.
-        public const int ParserVersion = 3;
+        public const int ParserVersion = 4;
 
         private static readonly Dictionary<int, (int Tier, string[] Fingers)> FingerMap = new()
         {
@@ -91,7 +91,12 @@ namespace USM.Core.Parsers
 
                 long tick = tickEntry.Key;
                 double noteTime = tickToSec(tick);
-                var lanes = tickEntry.Value.Select(note => note.Lane).Distinct().OrderBy(lane => lane).ToList();
+                var lanes = tickEntry.Value
+                    .Select(note => note.Lane)
+                    .Where(ChartParser.IsPlayableGuitarLane)
+                    .Distinct()
+                    .OrderBy(lane => lane)
+                    .ToList();
                 if (lanes.Count == 0)
                     continue;
 

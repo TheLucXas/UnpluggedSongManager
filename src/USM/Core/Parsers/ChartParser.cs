@@ -24,10 +24,16 @@ namespace USM.Core.Parsers
         public class ParsedChart
         {
             public int Resolution { get; set; } = 192;
+            public int IgnoredNonPlayableNoteEvents { get; set; }
             public List<BpmEvent> BpmGrid { get; set; } = new();
             public Func<long, double> TickToSec { get; set; } = _ => 0.0;
             public Dictionary<string, SortedDictionary<long, List<NoteEvent>>> Difficulties { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         }
+
+        // Clone Hero guitar N events 5 and 6 are HOPO/tap markers, not fretted
+        // notes. Lane 7 is the valid open-note lane and is mapped to a normal
+        // low-tier Unplugged note by the generators.
+        public static bool IsPlayableGuitarLane(int lane) => (lane >= 0 && lane <= 4) || lane == 7;
 
         public static ParsedChart Parse(string chartPath)
         {
@@ -136,6 +142,15 @@ namespace USM.Core.Parsers
                             long tick = long.Parse(match.Groups[1].Value);
                             int lane = int.Parse(match.Groups[2].Value);
                             long dur = long.Parse(match.Groups[3].Value);
+
+                            // Do not create gameplay notes from HOPO/tap markers or
+                            // unknown lanes. A marker on its own used to become a
+                            // ControllerNote with Buttons=[false,false].
+                            if (!IsPlayableGuitarLane(lane))
+                            {
+                                result.IgnoredNonPlayableNoteEvents++;
+                                continue;
+                            }
 
                             if (!noteDict.ContainsKey(tick))
                                 noteDict[tick] = new List<NoteEvent>();

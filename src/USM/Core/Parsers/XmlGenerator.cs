@@ -102,7 +102,13 @@ namespace USM.Core.Parsers
                 var entries = kvp.Value;
                 double noteTime = tickToSec(tick);
 
-                var lanes = entries.Select(e => e.Lane).Distinct().OrderBy(l => l).ToList();
+                var lanes = entries
+                    .Select(e => e.Lane)
+                    .Where(ChartParser.IsPlayableGuitarLane)
+                    .Distinct()
+                    .OrderBy(l => l)
+                    .ToList();
+                if (lanes.Count == 0) continue;
                 long maxDurTicks = entries.Max(e => e.DurationTicks);
 
                 double durSec = 0.0;

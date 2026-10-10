@@ -96,6 +96,10 @@ namespace USM.Core.Services
             {
                 log?.Invoke("  [Chart] Detected notes.chart (Clone Hero text format).");
                 var chart = ChartParser.Parse(chartPath);
+                if (chart.IgnoredNonPlayableNoteEvents > 0)
+                {
+                    log?.Invoke($"  [Chart] Ignored {chart.IgnoredNonPlayableNoteEvents} non-playable note events (HOPO/tap markers or unsupported lanes).");
+                }
                 return JsonGenerator.GenerateAllDifficultiesJson(
                     chart.BpmGrid, chart.TickToSec, chart.Difficulties, chart.Resolution);
             }

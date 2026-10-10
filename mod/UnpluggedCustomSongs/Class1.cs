@@ -2059,7 +2059,8 @@ namespace UnpluggedCustomSongs
             int sampleLimit = ModMain.ConfigChartDiagnostics ? Math.Min(3, selectedNotes.Count) : 0;
             string trackLabel = useHandTrack ? "hand" : "controller";
             var tierCounts = new SortedDictionary<int, int>();
-            int openControllerNotes = 0;
+            int loadedSelectedNotes = 0;
+            int ignoredEmptyControllerNotes = 0;
             if (useHandTrack)
             {
 #if QUEST_IL2CPP
@@ -2101,6 +2102,7 @@ namespace UnpluggedCustomSongs
                         MelonLogger.Msg($"[ChartDiag] hand sample {i}: t={handNote.Time:F3}s d={handNote.Duration:F3}s tier={handNote.Tier} fingers={string.Join("+", fingerNames)} pullOff={noteNode["IsPullOff"].AsBool}");
                     }
                 }
+                loadedSelectedNotes = handGame.Notes.Count;
                 mapping.Keys.Add(handGame);
             }
             else
@@ -2117,6 +2119,20 @@ namespace UnpluggedCustomSongs
                     if (buttons.Count != 2)
                         throw new InvalidDataException($"Chart JSON '{chartName}' controller note {i} must contain exactly two button values.");
 
+                    bool hasTrigger = buttons[0].AsBool;
+                    bool hasGrip = buttons[1].AsBool;
+                    if (!hasTrigger && !hasGrip)
+                    {
+                        // Vanilla controller charts always require at least one fret
+                        // button. Empty entries are parser artifacts (typically CH
+                        // HOPO/tap markers), so ignore them rather than making an
+                        // unplayable note in old .usm files.
+                        ignoredEmptyControllerNotes++;
+                        if (ModMain.ConfigChartDiagnostics && ignoredEmptyControllerNotes <= 5)
+                            MelonLogger.Warning($"[ChartDiag] ignored empty controller note {i}: t={noteNode["Time"].AsFloat:F3}s tier={noteNode["Tier"].AsInt}; both fret buttons were false.");
+                        continue;
+                    }
+
                     var controllerNote = new ControllerGuitarNote
                     {
                         Time = noteNode["Time"].AsFloat,
@@ -2127,23 +2143,14 @@ namespace UnpluggedCustomSongs
                         ChordRotation = noteNode["ChordRotation"].AsInt,
                         Intensity = noteNode["Intensity"].AsInt
                     };
-                    tierCounts[controllerNote.Tier] = tierCounts.TryGetValue(controllerNote.Tier, out int controllerTierCount) ? controllerTierCount + 1 : 1;
 #if QUEST_IL2CPP
                     controllerNote.Buttons = new Il2CppSystem.Collections.Generic.List<bool>();
 #else
                     controllerNote.Buttons = new List<bool>();
 #endif
-                    controllerNote.Buttons.Add(buttons[0].AsBool);
-                    controllerNote.Buttons.Add(buttons[1].AsBool);
-                    if (!controllerNote.Buttons[0] && !controllerNote.Buttons[1])
-                    {
-                        // Both buttons being false represents a valid open note in some charts.
-                        // The ControllerGuitarNote HasTrigger/HasGrip patches map it to the
-                        // input implied by its tier, so rejecting it here discards the whole chart.
-                        openControllerNotes++;
-                        if (ModMain.ConfigChartDiagnostics && openControllerNotes <= 5)
-                            MelonLogger.Msg($"[ChartDiag] open controller note {i}: t={controllerNote.Time:F3}s tier={controllerNote.Tier}; no explicit fret buttons, using tier-based input.");
-                    }
+                    controllerNote.Buttons.Add(hasTrigger);
+                    controllerNote.Buttons.Add(hasGrip);
+                    tierCounts[controllerNote.Tier] = tierCounts.TryGetValue(controllerNote.Tier, out int controllerTierCount) ? controllerTierCount + 1 : 1;
                     controllerGame.Notes.Add(controllerNote);
 
                     if (i < sampleLimit)
@@ -2151,12 +2158,13 @@ namespace UnpluggedCustomSongs
                         MelonLogger.Msg($"[ChartDiag] controller sample {i}: t={controllerNote.Time:F3}s d={controllerNote.Duration:F3}s tier={controllerNote.Tier} trigger={controllerNote.Buttons[0]} grip={controllerNote.Buttons[1]} rotation={controllerNote.ChordRotation}");
                     }
                 }
+                loadedSelectedNotes = controllerGame.Notes.Count;
                 mapping.Keys.Add(controllerGame);
             }
 
             string tierSummary = string.Join(",", tierCounts.Select(pair => $"{pair.Key}:{pair.Value}"));
-            MelonLogger.Msg($"[ChartDiag] Loaded {Path.GetFileName(usmPath)}!{chartName}: schema={schemaVersion}, mode={trackLabel}, selectedNotes={selectedNotes.Count}, handNotes={handNotes.Count}, controllerNotes={controllerNotes.Count}, tiers=[{tierSummary}], openControllerNotes={openControllerNotes}, bpmChanges={mapping.BPMGrid.Count}, duration={chartDuration:F2}s");
-            if (selectedNotes.Count == 0)
+            MelonLogger.Msg($"[ChartDiag] Loaded {Path.GetFileName(usmPath)}!{chartName}: schema={schemaVersion}, mode={trackLabel}, selectedNotes={selectedNotes.Count}, loadedNotes={loadedSelectedNotes}, handNotes={handNotes.Count}, controllerNotes={controllerNotes.Count}, ignoredEmptyControllerNotes={ignoredEmptyControllerNotes}, tiers=[{tierSummary}], bpmChanges={mapping.BPMGrid.Count}, duration={chartDuration:F2}s");
+            if (loadedSelectedNotes == 0)
                 MelonLogger.Warning($"[ChartDiag] The selected {trackLabel} track in {chartName} has no notes.");
 
             return mapping;
