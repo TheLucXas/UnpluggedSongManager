@@ -349,6 +349,7 @@ namespace USM.Core.Services
                     SourceChartNoteCount = sourceNoteCount,
                     ChartCoverageRatio = chartCoverageRatio,
                     SongDurationSeconds = iniInfo.DurationSeconds,
+                    CompatibilityProfileVersion = UsmPacker.CompatibilityProfileVersion,
                     IsIdealForUnplugged = isIdealForUnplugged,
                     LevelAuthorName = Regex.Replace(iniInfo.Charter ?? string.Empty, @"<[^>]*>", "").Trim(),
                     SongID = $"CUSTOM_{folderName}",

@@ -459,8 +459,7 @@ namespace USM.ViewModels
             ApplyFilter();
             foreach (InstalledSong song in _allSongs.Where(song =>
                          !song.HasCompatibilityProfile &&
-                         song.IsMultiTrack &&
-                         !song.IsHalfTrack &&
+                         !song.IsIdealForUnplugged &&
                          !string.IsNullOrWhiteSpace(song.ChorusChartMd5)))
             {
                 song.IsCheckingCompatibility = true;
@@ -488,6 +487,11 @@ namespace USM.ViewModels
                     {
                         song.IsCheckingCompatibility = false;
                         song.IsIdealForUnplugged = profile.IsIdealForUnplugged;
+                        if (profile.TrackLayout != AudioTrackLayout.Unknown)
+                        {
+                            song.IsHalfTrack = profile.TrackLayout == AudioTrackLayout.HalfTrack;
+                            song.IsMultiTrack = profile.TrackLayout is AudioTrackLayout.HalfTrack or AudioTrackLayout.MultiTrack;
+                        }
                         song.AudioStemCount = profile.AudioStemCount;
                         song.SourceDifficultyCount = profile.SourceDifficultyCount;
                         song.ChartCoverageRatio = profile.ChartCoverageRatio;
@@ -769,6 +773,7 @@ namespace USM.ViewModels
             bool hasCompatibilityProfile = false;
             int audioStemCount = 0;
             int sourceDifficultyCount = 0;
+            int compatibilityProfileVersion = 0;
             double chartCoverageRatio = 0;
             bool hasKnownAudioLayout = false;
             string? chorusChartId = null;
@@ -791,6 +796,7 @@ namespace USM.ViewModels
                     chorusChartId = ReadMetaValue(meta, "ChorusChartId", "SourceChartId");
                     chorusChartMd5 = ReadMetaValue(meta, "ChorusChartMd5", "SourceChartMd5");
                     chartParserVersion = ReadMetaInt(meta, "ChartParserVersion", "ParserVersion");
+                    compatibilityProfileVersion = ReadMetaInt(meta, "CompatibilityProfileVersion");
                     audioStemCount = ReadMetaInt(meta, "AudioStemCount");
                     sourceDifficultyCount = ReadMetaInt(meta, "SourceDifficultyCount");
                     if (meta.TryGetProperty("ChartCoverageRatio", out var coverageValue))
@@ -804,8 +810,8 @@ namespace USM.ViewModels
                     {
                         isIdealForUnplugged = idealValue.ValueKind == JsonValueKind.True ||
                             (idealValue.ValueKind == JsonValueKind.String && bool.TryParse(idealValue.GetString(), out var parsedIdeal) && parsedIdeal);
-                        hasCompatibilityProfile = true;
                     }
+                    hasCompatibilityProfile = compatibilityProfileVersion >= UsmPacker.CompatibilityProfileVersion;
                     if (meta.TryGetProperty("AudioLayout", out var audioLayout) && audioLayout.ValueKind == JsonValueKind.String)
                     {
                         string layout = audioLayout.GetString() ?? string.Empty;

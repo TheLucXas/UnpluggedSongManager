@@ -10,6 +10,8 @@ namespace USM.Core.Services
 {
     public class UsmPacker
     {
+        public const int CompatibilityProfileVersion = 1;
+
         public static void Pack(string inputDir, string outputFile, string metaJsonContent)
         {
             if (File.Exists(outputFile)) File.Delete(outputFile);
@@ -96,6 +98,7 @@ namespace USM.Core.Services
                             meta["ChartCoverageRatio"] = Math.Clamp(chartCoverageRatio, 0, 1);
                             meta["SongDurationSeconds"] = Math.Max(0, songDurationSeconds);
                             meta["AudioStemCount"] = audioProfile.StemCount;
+                            meta["CompatibilityProfileVersion"] = CompatibilityProfileVersion;
                             meta["IsIdealForUnplugged"] = isIdealForUnplugged;
                             if (meta["AudioLayout"] == null)
                             {
@@ -131,6 +134,7 @@ namespace USM.Core.Services
                             ["ChartCoverageRatio"] = Math.Clamp(chartCoverageRatio, 0, 1),
                             ["SongDurationSeconds"] = Math.Max(0, songDurationSeconds),
                             ["AudioStemCount"] = audioProfile.StemCount,
+                            ["CompatibilityProfileVersion"] = CompatibilityProfileVersion,
                             ["IsIdealForUnplugged"] = isIdealForUnplugged,
                             ["AudioLayout"] = audioProfile.Layout switch
                             {
