@@ -2182,8 +2182,51 @@ namespace UnpluggedCustomSongs
                 input = $"noteType=hand tier={handNote.Tier} fingers={fingers}";
             }
 
+            string runtimeType = "unknown";
+            string actualState = "actualState=unavailable";
+            try
+            {
+                runtimeType = note.GetType().FullName ?? note.GetType().Name;
+                if (note is TierNoteBase tierNote)
+                    input += $" expectedTier={tierNote.Tier}";
+
+                var interaction = InteractionSystem.I;
+                var primaryHand = interaction != null ? interaction.PrimaryHand : null;
+                if (primaryHand != null)
+                {
+                    var controller = primaryHand.Controller;
+                    string actualPose = "unavailable";
+                    var guitarManager = UnityEngine.Object.FindObjectOfType<GuitarGameManager>();
+                    if (guitarManager != null && guitarManager.HandPoseRecognition != null)
+                    {
+                        var pose = guitarManager.HandPoseRecognition.GetCurrentHandPose();
+                        if (pose != null)
+                        {
+                            var poseNames = new List<string>();
+                            for (int i = 0; i < pose.Count; i++)
+                                poseNames.Add(pose[i].ToString());
+                            actualPose = string.Join("+", poseNames);
+                        }
+                    }
+
+                    string controllerState = controller != null
+                        ? $"trigger={controller.CurrentTriggerState},grip={controller.CurrentGripState}"
+                        : "controller=unavailable";
+                    bool rotationUp = ControllerRotationIndicatorController.RotationIsUp;
+                    bool rotationEnabled = GuitarGameManager.IsControllerRotationEnabled;
+                    string selectedTier = guitarManager != null && guitarManager.SelectedFret != null
+                        ? guitarManager.SelectedFret.Tier.ToString()
+                        : "none";
+                    actualState = $"actualState={controllerState},rotationUp={rotationUp},rotationEnabled={rotationEnabled},selectedTier={selectedTier},handTracked={primaryHand.IsTracked},handPose={actualPose},handPos={primaryHand.transform.position},grabPos={primaryHand.GrabPivot.position}";
+                }
+            }
+            catch (Exception ex)
+            {
+                actualState = $"actualStateError={ex.GetType().Name}";
+            }
+
             string mode = GameManager.CurrentSong != null && GameManager.CurrentSong.IsHandTrackingMapping ? "hand" : "controller";
-            MelonLogger.Msg($"[ChartDiag] {(succeeded ? "HIT" : "MISS")} #{eventIndex + 1} mode={mode} eventTime={timeStamp:F3}s noteTime={note.Time:F3}s duration={note.Duration:F3}s {input}");
+            MelonLogger.Msg($"[ChartDiag] {(succeeded ? "HIT" : "MISS")} #{eventIndex + 1} mode={mode} eventTime={timeStamp:F3}s noteTime={note.Time:F3}s duration={note.Duration:F3}s {input} runtimeType={runtimeType} {actualState}");
         }
 
         public static void LoadCustomAudio(Mp3Player player, SongMappingMetaData data, bool loadSample)
@@ -3003,40 +3046,6 @@ namespace UnpluggedCustomSongs
             }
             __result = __instance.Buttons[1];
             return false;
-        }
-    }
-
-    [HarmonyPatch(typeof(GuitarHandPoseRecognitionManager), "CheckHandPoseControllerMethod")]
-    public static class Patch_GuitarHandPoseRecognitionManager_CheckHandPoseControllerMethod
-    {
-        public static void Prefix(GuitarHandPoseRecognitionManager __instance, ControllerGuitarNote controllerGuitarNote)
-        {
-            if (controllerGuitarNote == null) return;
-            try
-            {
-                // The chart JSON already stores the controller input for each note.
-                // Replacing that list on every recognition check discards the chart's
-                // trigger/grip mapping and makes valid custom notes impossible to hit.
-                var existingButtons = controllerGuitarNote.Buttons;
-                if (existingButtons != null && existingButtons.Count >= 2 &&
-                    (existingButtons[0] || existingButtons[1]))
-                    return;
-
-                bool hasPartialButtons = existingButtons != null && existingButtons.Count > 0 && existingButtons[0];
-                bool trigger = hasPartialButtons || (!hasPartialButtons && controllerGuitarNote.Tier < 2);
-                bool grip = existingButtons != null && existingButtons.Count > 1 && existingButtons[1];
-                if (!hasPartialButtons && (existingButtons == null || existingButtons.Count < 2 || (!trigger && !grip)))
-                    grip = controllerGuitarNote.Tier >= 2;
-
-#if QUEST_IL2CPP
-                controllerGuitarNote.Buttons = new Il2CppSystem.Collections.Generic.List<bool>();
-#else
-                controllerGuitarNote.Buttons = new List<bool>();
-#endif
-                controllerGuitarNote.Buttons.Add(trigger);
-                controllerGuitarNote.Buttons.Add(grip);
-            }
-            catch { }
         }
     }
 
