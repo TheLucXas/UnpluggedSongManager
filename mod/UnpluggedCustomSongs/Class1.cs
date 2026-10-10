@@ -1430,6 +1430,8 @@ namespace UnpluggedCustomSongs
                         var root = JSON.Parse(reader.ReadToEnd());
                         string layout = root?["AudioLayout"]?.Value ?? string.Empty;
                         bool ideal = root?["IsIdealForUnplugged"]?.AsBool ?? false;
+                        int chartParserVersion = root?["ChartParserVersion"]?.AsInt ?? 0;
+                        float chartCoverage = root?["ChartCoverageRatio"]?.AsFloat ?? 0f;
                         string label = layout switch
                         {
                             "single-track" => "<color=#69B9F2>Single Track</color>",
@@ -1440,6 +1442,12 @@ namespace UnpluggedCustomSongs
 
                         if (ideal)
                             label += (label.Length > 0 ? "  ·  " : string.Empty) + "<color=#A7E87A>Ideal for Unplugged</color>";
+                        if (chartParserVersion >= 6 && chartCoverage < 0.50f)
+                        {
+                            int coveragePercent = Mathf.RoundToInt(Mathf.Clamp01(chartCoverage) * 100f);
+                            label += (label.Length > 0 ? "  ·  " : string.Empty)
+                                + $"<color=#FFC36B>Incomplete Chart ({coveragePercent}%)</color>";
+                        }
                         return label;
                     }
                 }
