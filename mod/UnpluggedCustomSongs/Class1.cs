@@ -2335,6 +2335,9 @@ namespace UnpluggedCustomSongs
 
         private static SongMapping LoadSongMappingJson(string jsonContent, string chartName, string usmPath, bool isHandTracking)
         {
+#if QUEST_IL2CPP
+            return LoadSongMappingJsonQuest(jsonContent, chartName, usmPath, isHandTracking);
+#else
             if (string.IsNullOrWhiteSpace(jsonContent))
                 throw new InvalidDataException($"Chart JSON '{chartName}' in '{Path.GetFileName(usmPath)}' is empty.");
 
@@ -2501,7 +2504,213 @@ namespace UnpluggedCustomSongs
                 MelonLogger.Warning($"[ChartDiag] The selected {trackLabel} track in {chartName} has no notes.");
 
             return mapping;
+#endif
         }
+
+#if QUEST_IL2CPP
+        private static SongMapping LoadSongMappingJsonQuest(string jsonContent, string chartName, string usmPath, bool isHandTracking)
+        {
+            if (string.IsNullOrWhiteSpace(jsonContent))
+                throw new InvalidDataException($"Chart JSON '{chartName}' in '{Path.GetFileName(usmPath)}' is empty.");
+
+            System.Text.Json.JsonDocument document;
+            try
+            {
+                document = System.Text.Json.JsonDocument.Parse(jsonContent, new System.Text.Json.JsonDocumentOptions { MaxDepth = 64 });
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidDataException($"Chart JSON '{chartName}' in '{Path.GetFileName(usmPath)}' is invalid: {ex.Message}", ex);
+            }
+
+            using (document)
+            {
+                var root = document.RootElement;
+                int schemaVersion = ReadJsonInt(root, "SchemaVersion");
+                if (root.ValueKind != System.Text.Json.JsonValueKind.Object || (schemaVersion != 2 && schemaVersion != 3))
+                    throw new InvalidDataException($"Chart JSON '{chartName}' uses unsupported schema version {schemaVersion}; expected version 2 or 3.");
+
+                var handNotes = RequireJsonArray(root, "HandNotes", chartName);
+                var controllerNotes = RequireJsonArray(root, "ControllerNotes", chartName);
+                var bpmChanges = RequireJsonArray(root, "BPMGrid", chartName);
+                var selectedNotes = isHandTracking ? handNotes : controllerNotes;
+                float chartDuration = ReadJsonFloat(root, "Duration");
+                int initialBpm = ReadJsonInt(root, "BPM");
+
+                var mapping = new SongMapping
+                {
+                    BPM = initialBpm > 0 ? initialBpm : 120,
+                    IsHandTrackingMapping = isHandTracking,
+                    BPMGrid = new Il2CppSystem.Collections.Generic.List<BPMKey>(),
+                    Keys = new Il2CppSystem.Collections.Generic.List<KeyTime>()
+                };
+
+                foreach (var bpmNode in bpmChanges.EnumerateArray())
+                {
+                    mapping.BPMGrid.Add(new BPMKey
+                    {
+                        Time = ReadJsonFloat(bpmNode, "Time"),
+                        Duration = 0f,
+                        BPM = ReadJsonFloat(bpmNode, "BPM")
+                    });
+                }
+                if (mapping.BPMGrid.Count == 0)
+                    mapping.BPMGrid.Add(new BPMKey { Time = 0f, Duration = 0f, BPM = mapping.BPM });
+
+                int sampleLimit = ModMain.ConfigChartDiagnostics ? Math.Min(3, selectedNotes.GetArrayLength()) : 0;
+                string trackLabel = isHandTracking ? "hand" : "controller";
+                var tierCounts = new SortedDictionary<int, int>();
+                int loadedSelectedNotes = 0;
+                int ignoredEmptyControllerNotes = 0;
+
+                if (isHandTracking)
+                {
+                    var handGame = new GuitarGame
+                    {
+                        Time = 0f,
+                        Duration = chartDuration,
+                        PrewarmTime = 4f,
+                        Notes = new Il2CppSystem.Collections.Generic.List<GuitarNote>()
+                    };
+
+                    int index = 0;
+                    foreach (var noteNode in handNotes.EnumerateArray())
+                    {
+                        HandGuitarNote handNote = ReadJsonBool(noteNode, "IsPullOff")
+                            ? (HandGuitarNote)new PullOffHandGuitarNote()
+                            : new HandGuitarNote();
+                        handNote.Time = ReadJsonFloat(noteNode, "Time");
+                        handNote.Duration = ReadJsonFloat(noteNode, "Duration");
+                        SetGameplayStringLane(handNote, ReadJsonStringLane(noteNode, chartName));
+                        tierCounts[handNote.Tier] = tierCounts.TryGetValue(handNote.Tier, out int handTierCount) ? handTierCount + 1 : 1;
+                        handNote.CursableProbability = 0f;
+                        handNote.IsBlind = false;
+
+                        var fingers = RequireJsonArray(noteNode, "Fingers", chartName);
+                        handNote.Fingers = new Il2CppSystem.Collections.Generic.List<TierFinger>();
+                        foreach (var finger in fingers.EnumerateArray())
+                        {
+                            string fingerName = finger.ValueKind == System.Text.Json.JsonValueKind.String ? finger.GetString() : string.Empty;
+                            handNote.Fingers.Add(ParseTierFinger(fingerName, chartName));
+                        }
+                        if (handNote.Fingers.Count == 0)
+                            throw new InvalidDataException($"Chart JSON '{chartName}' has a hand note without fingers (note {index}).");
+                        handGame.Notes.Add(handNote);
+
+                        if (index < sampleLimit)
+                        {
+                            var fingerNames = new List<string>();
+                            for (int fingerIndex = 0; fingerIndex < handNote.Fingers.Count; fingerIndex++)
+                                fingerNames.Add(handNote.Fingers[fingerIndex].ToString());
+                            MelonLogger.Msg($"[ChartDiag] hand sample {index}: t={handNote.Time:F3}s d={handNote.Duration:F3}s stringLane={handNote.Tier} fingers={string.Join("+", fingerNames)} pullOff={ReadJsonBool(noteNode, "IsPullOff")}");
+                        }
+                        index++;
+                    }
+                    loadedSelectedNotes = handGame.Notes.Count;
+                    mapping.Keys.Add(handGame);
+                }
+                else
+                {
+                    var controllerGame = new GuitarControllerGame
+                    {
+                        Time = 0f,
+                        Duration = chartDuration,
+                        PrewarmTime = 4f,
+                        Notes = new Il2CppSystem.Collections.Generic.List<ControllerGuitarNote>()
+                    };
+
+                    int index = 0;
+                    foreach (var noteNode in controllerNotes.EnumerateArray())
+                    {
+                        var buttons = RequireJsonArray(noteNode, "Buttons", chartName);
+                        if (buttons.GetArrayLength() != 2)
+                            throw new InvalidDataException($"Chart JSON '{chartName}' controller note {index} must contain exactly two button values.");
+
+                        var buttonEnumerator = buttons.EnumerateArray();
+                        buttonEnumerator.MoveNext();
+                        bool hasTrigger = buttonEnumerator.Current.ValueKind == System.Text.Json.JsonValueKind.True;
+                        buttonEnumerator.MoveNext();
+                        bool hasGrip = buttonEnumerator.Current.ValueKind == System.Text.Json.JsonValueKind.True;
+                        int stringLane = ReadJsonStringLane(noteNode, chartName);
+                        if (!hasTrigger && !hasGrip)
+                        {
+                            ignoredEmptyControllerNotes++;
+                            if (ModMain.ConfigChartDiagnostics && ignoredEmptyControllerNotes <= 5)
+                                MelonLogger.Warning($"[ChartDiag] ignored empty controller note {index}: t={ReadJsonFloat(noteNode, "Time"):F3}s stringLane={stringLane}; both fret buttons were false.");
+                            index++;
+                            continue;
+                        }
+
+                        var controllerNote = new ControllerGuitarNote
+                        {
+                            Time = ReadJsonFloat(noteNode, "Time"),
+                            Duration = ReadJsonFloat(noteNode, "Duration"),
+                            CursableProbability = 0f,
+                            IsBlind = false,
+                            ChordRotation = ReadJsonInt(noteNode, "ChordRotation"),
+                            Intensity = ReadJsonInt(noteNode, "Intensity"),
+                            Buttons = new Il2CppSystem.Collections.Generic.List<bool>()
+                        };
+                        SetGameplayStringLane(controllerNote, stringLane);
+                        controllerNote.Buttons.Add(hasTrigger);
+                        controllerNote.Buttons.Add(hasGrip);
+                        tierCounts[controllerNote.Tier] = tierCounts.TryGetValue(controllerNote.Tier, out int controllerTierCount) ? controllerTierCount + 1 : 1;
+                        controllerGame.Notes.Add(controllerNote);
+
+                        if (index < sampleLimit)
+                            MelonLogger.Msg($"[ChartDiag] controller sample {index}: t={controllerNote.Time:F3}s d={controllerNote.Duration:F3}s stringLane={controllerNote.Tier} trigger={hasTrigger} grip={hasGrip} rotation={controllerNote.ChordRotation}");
+                        index++;
+                    }
+                    loadedSelectedNotes = controllerGame.Notes.Count;
+                    mapping.Keys.Add(controllerGame);
+                }
+
+                string tierSummary = string.Join(",", tierCounts.Select(pair => $"{pair.Key}:{pair.Value}"));
+                MelonLogger.Msg($"[ChartDiag] Loaded {Path.GetFileName(usmPath)}!{chartName}: schema={schemaVersion}, mode={trackLabel}, selectedNotes={selectedNotes.GetArrayLength()}, loadedNotes={loadedSelectedNotes}, handNotes={handNotes.GetArrayLength()}, controllerNotes={controllerNotes.GetArrayLength()}, ignoredEmptyControllerNotes={ignoredEmptyControllerNotes}, stringLanes=[{tierSummary}], bpmChanges={mapping.BPMGrid.Count}, duration={chartDuration:F2}s");
+                if (loadedSelectedNotes == 0)
+                    MelonLogger.Warning($"[ChartDiag] The selected {trackLabel} track in {chartName} has no notes.");
+
+                return mapping;
+            }
+        }
+
+        private static System.Text.Json.JsonElement RequireJsonArray(System.Text.Json.JsonElement parent, string propertyName, string archiveName)
+        {
+            if (parent.ValueKind != System.Text.Json.JsonValueKind.Object ||
+                !parent.TryGetProperty(propertyName, out var value) ||
+                value.ValueKind != System.Text.Json.JsonValueKind.Array)
+                throw new InvalidDataException($"Chart JSON '{archiveName}' is missing the '{propertyName}' array.");
+            return value;
+        }
+
+        private static int ReadJsonInt(System.Text.Json.JsonElement parent, string propertyName)
+        {
+            return parent.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                parent.TryGetProperty(propertyName, out var value) && value.TryGetInt32(out int number) ? number : 0;
+        }
+
+        private static float ReadJsonFloat(System.Text.Json.JsonElement parent, string propertyName)
+        {
+            return parent.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                parent.TryGetProperty(propertyName, out var value) && value.TryGetSingle(out float number) ? number : 0f;
+        }
+
+        private static bool ReadJsonBool(System.Text.Json.JsonElement parent, string propertyName)
+        {
+            return parent.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                parent.TryGetProperty(propertyName, out var value) && value.ValueKind == System.Text.Json.JsonValueKind.True;
+        }
+
+        private static int ReadJsonStringLane(System.Text.Json.JsonElement noteNode, string chartName)
+        {
+            int lane = noteNode.TryGetProperty("StringLane", out var explicitLane) && explicitLane.TryGetInt32(out int parsedLane)
+                ? parsedLane
+                : ReadJsonInt(noteNode, "Tier");
+            if (lane < 0 || lane > 3)
+                throw new InvalidDataException($"Chart JSON '{chartName}' contains string lane {lane}; expected 0-3.");
+            return lane;
+        }
+#endif
 
         private static void SetGameplayStringLane(GuitarNote note, int lane)
         {
