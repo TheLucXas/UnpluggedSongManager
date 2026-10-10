@@ -331,6 +331,7 @@ namespace USM.Core.Models
         }
         public int AudioStemCount { get; set; }
         public int SourceDifficultyCount { get; set; }
+        public int CompatibilityProfileVersion { get; set; }
         private double _chartCoverageRatio;
         public double ChartCoverageRatio
         {
@@ -347,7 +348,8 @@ namespace USM.Core.Models
         public string? ChorusChartId { get; set; }
         public string? ChorusChartMd5 { get; set; }
         public int ChartParserVersion { get; set; }
-        public bool NeedsChartResync => ChartParserVersion < USM.Core.Parsers.JsonGenerator.ParserVersion;
+        public bool NeedsChartResync => ChartParserVersion < USM.Core.Parsers.JsonGenerator.ParserVersion
+            || CompatibilityProfileVersion < UsmPacker.CompatibilityProfileVersion;
         public bool HasChartCoverageWarning => (HasCompatibilityProfile
             || ChartParserVersion >= USM.Core.Parsers.JsonGenerator.ParserVersion)
             && ChartCoverageRatio < 0.50;

@@ -557,6 +557,14 @@ namespace USM.ViewModels
                     try
                     {
                         _notifyCallback(LocalizationService.T("Library_ResyncingChart", song.Artist, song.Title));
+                        if (song.ChartParserVersion >= JsonGenerator.ParserVersion &&
+                            song.CompatibilityProfileVersion < UsmPacker.CompatibilityProfileVersion)
+                        {
+                            await Task.Run(() => UsmPacker.RefreshAudioMetadata(song.FolderPath));
+                            updated++;
+                            continue;
+                        }
+
                         var (sourceChart, resolutionMessage) = await ResolveChorusChartAsync(song);
                         if (sourceChart == null)
                         {
@@ -885,6 +893,7 @@ namespace USM.ViewModels
                 IsHalfTrack = isHalfTrack,
                 IsIdealForUnplugged = isIdealForUnplugged,
                 HasCompatibilityProfile = hasCompatibilityProfile,
+                CompatibilityProfileVersion = compatibilityProfileVersion,
                 AudioStemCount = audioStemCount,
                 SourceDifficultyCount = sourceDifficultyCount,
                 ChartCoverageRatio = chartCoverageRatio,

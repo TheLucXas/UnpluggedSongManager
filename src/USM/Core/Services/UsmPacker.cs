@@ -10,7 +10,7 @@ namespace USM.Core.Services
 {
     public class UsmPacker
     {
-        public const int CompatibilityProfileVersion = 1;
+        public const int CompatibilityProfileVersion = 2;
 
         public static void Pack(string inputDir, string outputFile, string metaJsonContent)
         {
@@ -156,6 +156,105 @@ namespace USM.Core.Services
             string fileName = Path.GetFileName(entryName);
             return fileName.StartsWith("songdata-", StringComparison.OrdinalIgnoreCase) &&
                 fileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
+        }
+
+        public static void RefreshAudioMetadata(string usmPath)
+        {
+            if (!File.Exists(usmPath)) throw new FileNotFoundException("USM archive not found.", usmPath);
+
+            string tempPath = usmPath + ".profile.tmp";
+            try
+            {
+                if (File.Exists(tempPath)) File.Delete(tempPath);
+
+                using (var source = ZipFile.OpenRead(usmPath))
+                using (var destination = ZipFile.Open(tempPath, ZipArchiveMode.Create))
+                {
+                    var audioProfile = AudioLayoutDetector.Analyze(source.Entries.Select(entry => entry.Name));
+                    var metaEntry = source.Entries.FirstOrDefault(entry =>
+                        string.Equals(entry.Name, "meta.json", StringComparison.OrdinalIgnoreCase));
+                    JsonObject meta;
+                    int sourceDifficultyCount = 0;
+                    int sourceNoteCount = 0;
+                    double chartCoverageRatio = 0;
+
+                    if (metaEntry != null)
+                    {
+                        using var reader = new StreamReader(metaEntry.Open());
+                        meta = JsonNode.Parse(reader.ReadToEnd()) as JsonObject ?? new JsonObject();
+                        sourceDifficultyCount = ReadMetaInt(meta, "SourceDifficultyCount");
+                        sourceNoteCount = ReadMetaInt(meta, "SourceChartNoteCount");
+                        chartCoverageRatio = ReadMetaDouble(meta, "ChartCoverageRatio");
+                    }
+                    else
+                    {
+                        meta = new JsonObject();
+                    }
+
+                    bool isIdealForUnplugged = audioProfile.Layout == AudioTrackLayout.MultiTrack
+                        && new[] { "guitar", "bass", "drums", "vocals" }.All(audioProfile.StemGroups.Contains)
+                        && sourceDifficultyCount >= 4
+                        && sourceNoteCount > 0
+                        && chartCoverageRatio >= 0.90;
+                    string audioLayout = GetAudioLayoutName(audioProfile.Layout);
+                    bool hasMultipleTracks = audioProfile.Layout is AudioTrackLayout.HalfTrack or AudioTrackLayout.MultiTrack;
+                    bool wroteMeta = false;
+
+                    foreach (var sourceEntry in source.Entries)
+                    {
+                        if (string.Equals(sourceEntry.Name, "meta.json", StringComparison.OrdinalIgnoreCase))
+                        {
+                            meta["AudioStemCount"] = audioProfile.StemCount;
+                            meta["CompatibilityProfileVersion"] = CompatibilityProfileVersion;
+                            meta["IsIdealForUnplugged"] = isIdealForUnplugged;
+                            meta["AudioLayout"] = audioLayout;
+                            meta["IsMultiTrack"] = hasMultipleTracks;
+                            WriteEntry(destination, sourceEntry.FullName, meta.ToJsonString(), CompressionLevel.Fastest, sourceEntry.LastWriteTime);
+                            wroteMeta = true;
+                            continue;
+                        }
+
+                        var copied = destination.CreateEntry(sourceEntry.FullName, GetCompressionLevel(sourceEntry.Name));
+                        copied.LastWriteTime = sourceEntry.LastWriteTime;
+                        using var input = sourceEntry.Open();
+                        using var output = copied.Open();
+                        input.CopyTo(output);
+                    }
+
+                    if (!wroteMeta)
+                    {
+                        meta["AudioStemCount"] = audioProfile.StemCount;
+                        meta["CompatibilityProfileVersion"] = CompatibilityProfileVersion;
+                        meta["IsIdealForUnplugged"] = isIdealForUnplugged;
+                        meta["AudioLayout"] = audioLayout;
+                        meta["IsMultiTrack"] = hasMultipleTracks;
+                        WriteEntry(destination, "meta.json", meta.ToJsonString(), CompressionLevel.Fastest, DateTimeOffset.UtcNow);
+                    }
+                }
+
+                File.Move(tempPath, usmPath, overwrite: true);
+            }
+            catch
+            {
+                try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+                throw;
+            }
+        }
+
+        private static int ReadMetaInt(JsonObject meta, string propertyName)
+        {
+            if (!meta.TryGetPropertyValue(propertyName, out JsonNode? value) || value == null)
+                return 0;
+            return int.TryParse(value.ToString(), System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture, out int parsed) ? parsed : 0;
+        }
+
+        private static double ReadMetaDouble(JsonObject meta, string propertyName)
+        {
+            if (!meta.TryGetPropertyValue(propertyName, out JsonNode? value) || value == null)
+                return 0;
+            return double.TryParse(value.ToString(), System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out double parsed) ? Math.Clamp(parsed, 0, 1) : 0;
         }
 
         private static string GetAudioLayoutName(AudioTrackLayout layout)
