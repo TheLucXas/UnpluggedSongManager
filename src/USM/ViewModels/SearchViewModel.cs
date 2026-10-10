@@ -16,6 +16,7 @@ namespace USM.ViewModels
     {
         private readonly GameDetector _gameDetector;
         private readonly Action<string> _notifyCallback;
+        private const int SearchPageSize = 60;
 
         private string _searchQuery = string.Empty;
         private bool _isSearching;
@@ -26,6 +27,14 @@ namespace USM.ViewModels
         private readonly object _queueLock = new();
         private readonly List<ChorusChart> _rawCharts = new();
         private bool _searchPending;
+        private int _nextApiPage = 1;
+        private int _totalCharts;
+        private bool _hasMoreApiPages;
+        private int _currentPage = 1;
+        private string _activeQuery = "*";
+        private string? _activeSortType;
+        private string? _activeSortDirection;
+        private CancellationTokenSource? _searchCancellation;
         private static readonly SemaphoreSlim AudioLayoutProbeLimit = new(3);
         private static readonly ConcurrentDictionary<string, AudioTrackLayout> AudioLayoutCache = new(StringComparer.OrdinalIgnoreCase);
 
@@ -38,7 +47,14 @@ namespace USM.ViewModels
         public bool IsSearching
         {
             get => _isSearching;
-            set => SetProperty(ref _isSearching, value);
+            set
+            {
+                if (SetProperty(ref _isSearching, value))
+                {
+                    OnPropertyChanged(nameof(CanGoToPreviousPage));
+                    OnPropertyChanged(nameof(CanGoToNextPage));
+                }
+            }
         }
 
         public string StatusText
@@ -46,6 +62,11 @@ namespace USM.ViewModels
             get => _statusText;
             set => SetProperty(ref _statusText, value);
         }
+
+        public string PageInfoText => $"Page {_currentPage}";
+        public bool CanGoToPreviousPage => !IsSearching && _currentPage > 1;
+        public bool CanGoToNextPage => !IsSearching &&
+            (GetFilteredCharts().Count > _currentPage * SearchPageSize || _hasMoreApiPages);
 
         private int _selectedSortIndex = 0;
         public int SelectedSortIndex
@@ -84,7 +105,7 @@ namespace USM.ViewModels
             {
                 if (SetProperty(ref _selectedDifficultyFilterIndex, value))
                 {
-                    ApplyFilterAndSort();
+                    RequestSearch();
                 }
             }
         }
@@ -97,7 +118,7 @@ namespace USM.ViewModels
             {
                 if (SetProperty(ref _selectedStatusFilterIndex, value))
                 {
-                    ApplyFilterAndSort();
+                    RequestSearch();
                 }
             }
         }
@@ -110,7 +131,7 @@ namespace USM.ViewModels
             {
                 if (SetProperty(ref _selectedAudioLayoutFilterIndex, value))
                 {
-                    ApplyFilterAndSort();
+                    RequestSearch();
                 }
             }
         }
@@ -120,14 +141,18 @@ namespace USM.ViewModels
         public ICommand SearchCommand { get; }
         public ICommand DownloadCommand { get; }
         public ICommand ResetFiltersCommand { get; }
+        public ICommand PreviousPageCommand { get; }
+        public ICommand NextPageCommand { get; }
 
         public SearchViewModel(GameDetector gameDetector, Action<string> notifyCallback)
         {
             _gameDetector = gameDetector;
             _notifyCallback = notifyCallback;
 
-            SearchCommand = new AsyncRelayCommand(PerformSearchAsync);
+            SearchCommand = new AsyncRelayCommand(SearchNowAsync);
             DownloadCommand = new RelayCommand(EnqueueDownload);
+            PreviousPageCommand = new RelayCommand(_ => MoveToPreviousPage());
+            NextPageCommand = new AsyncRelayCommand(LoadNextPageAsync);
             ResetFiltersCommand = new RelayCommand(_ =>
             {
                 _selectedSortIndex = 0;
@@ -151,58 +176,38 @@ namespace USM.ViewModels
         {
             if (IsSearching) return;
 
-            string query = string.IsNullOrWhiteSpace(SearchQuery) ? "*" : SearchQuery.Trim();
-            string apiQuery = query;
-
+            _activeQuery = string.IsNullOrWhiteSpace(SearchQuery) ? "*" : SearchQuery.Trim();
+            (_activeSortType, _activeSortDirection) = GetSortRequest();
             IsSearching = true;
-            StatusText = query == "*"
+            var cancellation = new CancellationTokenSource();
+            _searchCancellation = cancellation;
+            _rawCharts.Clear();
+            Results.Clear();
+            _currentPage = 1;
+            _nextApiPage = 1;
+            _totalCharts = 0;
+            _hasMoreApiPages = true;
+            OnPropertyChanged(nameof(PageInfoText));
+            StatusText = _activeQuery == "*"
                 ? "Browsing charts on Chorus Encore..."
-                : $"Searching Chorus Encore for '{query}'...";
-
-            var (sortType, sortDirection) = GetSortRequest();
+                : $"Searching Chorus Encore for '{_activeQuery}'...";
+            OnPropertyChanged(nameof(CanGoToNextPage));
 
             try
             {
-                var (total, charts) = await ChorusClient.SearchAsync(apiQuery, 1, 60, "guitar", sortType, sortDirection);
-
-                _rawCharts.Clear();
-                string? customSongsDir = _gameDetector.GetCustomSongsDir();
-                foreach (var chart in charts)
-                {
-                    if (!string.IsNullOrEmpty(customSongsDir))
-                    {
-                        string folderGuess = SongConverter.SanitizeFolderName($"{chart.Artist} - {chart.Title}");
-                        if (Directory.Exists(Path.Combine(customSongsDir, folderGuess)))
-                        {
-                            chart.IsInstalled = true;
-                            chart.StatusText = "✓ Installed";
-                        }
-                        else
-                        {
-                            chart.StatusText = "📥 Download";
-                        }
-                    }
-                    else
-                    {
-                        chart.StatusText = "📥 Download";
-                    }
-                    _rawCharts.Add(chart);
-                }
-
-                StartAudioLayoutProbes(charts);
-                ApplyFilterAndSort();
-
-                if (_rawCharts.Count == 0)
-                {
-                    StatusText = "No charts found. Try another search term or change filters.";
-                }
+                await FillUntilMatchCountAsync(SearchPageSize, cancellation.Token);
+                ShowCurrentPage();
             }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
             catch (Exception ex)
             {
                 StatusText = $"Search error: {ex.Message}";
             }
             finally
             {
+                if (ReferenceEquals(_searchCancellation, cancellation))
+                    _searchCancellation = null;
+                cancellation.Dispose();
                 IsSearching = false;
                 if (_searchPending)
                 {
@@ -212,8 +217,21 @@ namespace USM.ViewModels
             }
         }
 
-        private void StartAudioLayoutProbes(IEnumerable<ChorusChart> charts)
+        private Task SearchNowAsync()
         {
+            if (IsSearching)
+            {
+                _searchPending = true;
+                _searchCancellation?.Cancel();
+                return Task.CompletedTask;
+            }
+
+            return PerformSearchAsync();
+        }
+
+        private List<Task> StartAudioLayoutProbes(IEnumerable<ChorusChart> charts, CancellationToken cancellationToken)
+        {
+            var probeTasks = new List<Task>();
             foreach (ChorusChart chart in charts)
             {
                 if (string.IsNullOrWhiteSpace(chart.Md5) || string.IsNullOrWhiteSpace(chart.DownloadUrl))
@@ -229,29 +247,28 @@ namespace USM.ViewModels
                 }
 
                 chart.TrackLayout = AudioTrackLayout.Checking;
-                _ = ProbeAudioLayoutAsync(chart);
+                probeTasks.Add(ProbeAudioLayoutAsync(chart, cancellationToken));
             }
+            return probeTasks;
         }
 
-        private async Task ProbeAudioLayoutAsync(ChorusChart chart)
+        private async Task ProbeAudioLayoutAsync(ChorusChart chart, CancellationToken cancellationToken)
         {
             try
             {
-                await AudioLayoutProbeLimit.WaitAsync();
+                await AudioLayoutProbeLimit.WaitAsync(cancellationToken);
                 try
                 {
                     if (AudioLayoutCache.TryGetValue(chart.Md5, out AudioTrackLayout cachedLayout))
                     {
                         chart.TrackLayout = cachedLayout;
-                        RefreshAudioLayoutFilter();
                         return;
                     }
 
-                    AudioTrackLayout layout = await SngDecoder.ProbeRemoteAudioLayoutAsync(chart.DownloadUrl!);
+                    AudioTrackLayout layout = await SngDecoder.ProbeRemoteAudioLayoutAsync(chart.DownloadUrl!, cancellationToken);
                     if (layout != AudioTrackLayout.Unknown)
                         AudioLayoutCache[chart.Md5] = layout;
                     chart.TrackLayout = layout;
-                    RefreshAudioLayoutFilter();
                 }
                 finally
                 {
@@ -261,15 +278,6 @@ namespace USM.ViewModels
             catch
             {
                 chart.TrackLayout = AudioTrackLayout.Unknown;
-                RefreshAudioLayoutFilter();
-            }
-        }
-
-        private void RefreshAudioLayoutFilter()
-        {
-            if (SelectedAudioLayoutFilterIndex != 0)
-            {
-                ApplyFilterAndSort();
             }
         }
 
@@ -278,39 +286,100 @@ namespace USM.ViewModels
             if (IsSearching)
             {
                 _searchPending = true;
+                _searchCancellation?.Cancel();
                 return;
             }
 
             _ = PerformSearchAsync();
         }
 
-        private void ApplyFilterAndSort()
+        private async Task FillUntilMatchCountAsync(int requiredMatchCount, CancellationToken cancellationToken)
         {
-            Results.Clear();
-            var filtered = System.Linq.Enumerable.AsEnumerable(_rawCharts);
+            while (GetFilteredCharts().Count < requiredMatchCount && _hasMoreApiPages)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                StatusText = $"Searching Chorus page {_nextApiPage} for matching charts... " +
+                             $"{GetFilteredCharts().Count} matches found so far.";
+                await FetchNextApiPageAsync(cancellationToken);
+            }
+        }
+
+        private async Task FetchNextApiPageAsync(CancellationToken cancellationToken)
+        {
+            if (!_hasMoreApiPages) return;
+
+            int page = _nextApiPage;
+            var (total, charts) = await ChorusClient.SearchAsync(
+                _activeQuery, page, SearchPageSize, "guitar", _activeSortType, _activeSortDirection, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            _totalCharts = total;
+            string? customSongsDir = _gameDetector.GetCustomSongsDir();
+            foreach (var chart in charts)
+            {
+                if (!string.IsNullOrEmpty(customSongsDir))
+                {
+                    string folderGuess = SongConverter.SanitizeFolderName($"{chart.Artist} - {chart.Title}");
+                    if (Directory.Exists(Path.Combine(customSongsDir, folderGuess)))
+                    {
+                        chart.IsInstalled = true;
+                        chart.StatusText = "✓ Installed";
+                    }
+                    else
+                    {
+                        chart.StatusText = "📥 Download";
+                    }
+                }
+                else
+                {
+                    chart.StatusText = "📥 Download";
+                }
+                _rawCharts.Add(chart);
+            }
+
+            _nextApiPage = page + 1;
+            int reportedPageCount = _totalCharts > 0
+                ? (int)Math.Ceiling(_totalCharts / (double)SearchPageSize)
+                : int.MaxValue;
+            _hasMoreApiPages = charts.Count == SearchPageSize && _nextApiPage <= reportedPageCount;
+
+            bool filterByAudioLayout = SelectedAudioLayoutFilterIndex != 0;
+            List<Task> probeTasks = StartAudioLayoutProbes(
+                charts,
+                filterByAudioLayout ? cancellationToken : CancellationToken.None);
+            if (filterByAudioLayout)
+                await Task.WhenAll(probeTasks);
+
+            cancellationToken.ThrowIfCancellationRequested();
+            OnPropertyChanged(nameof(CanGoToNextPage));
+        }
+
+        private List<ChorusChart> GetFilteredCharts()
+        {
+            IEnumerable<ChorusChart> filtered = _rawCharts;
 
             // Difficulty filter
             if (SelectedDifficultyFilterIndex == 1) // Beginner Tier 0-1
             {
-                filtered = System.Linq.Enumerable.Where(filtered, c => c.DiffGuitar >= 0 && c.DiffGuitar <= 1);
+                filtered = filtered.Where(c => c.DiffGuitar >= 0 && c.DiffGuitar <= 1);
             }
             else if (SelectedDifficultyFilterIndex == 2) // Intermediate Tier 2-3
             {
-                filtered = System.Linq.Enumerable.Where(filtered, c => c.DiffGuitar >= 2 && c.DiffGuitar <= 3);
+                filtered = filtered.Where(c => c.DiffGuitar >= 2 && c.DiffGuitar <= 3);
             }
             else if (SelectedDifficultyFilterIndex == 3) // Expert Tier 4+
             {
-                filtered = System.Linq.Enumerable.Where(filtered, c => c.DiffGuitar >= 4);
+                filtered = filtered.Where(c => c.DiffGuitar >= 4);
             }
 
             // Installation status filter
             if (SelectedStatusFilterIndex == 1) // Not Installed Only
             {
-                filtered = System.Linq.Enumerable.Where(filtered, c => !c.IsInstalled);
+                filtered = filtered.Where(c => !c.IsInstalled);
             }
             else if (SelectedStatusFilterIndex == 2) // Installed Only
             {
-                filtered = System.Linq.Enumerable.Where(filtered, c => c.IsInstalled);
+                filtered = filtered.Where(c => c.IsInstalled);
             }
 
             AudioTrackLayout? selectedLayout = SelectedAudioLayoutFilterIndex switch
@@ -322,18 +391,78 @@ namespace USM.ViewModels
             };
             if (selectedLayout.HasValue)
             {
-                filtered = System.Linq.Enumerable.Where(filtered, c => c.TrackLayout == selectedLayout.Value);
+                filtered = filtered.Where(c => c.TrackLayout == selectedLayout.Value);
             }
 
-            // Chorus returns the selected server-side ordering; filtering preserves that order.
-            foreach (var chart in filtered)
+            return filtered.ToList();
+        }
+
+        private void ShowCurrentPage()
+        {
+            List<ChorusChart> filtered = GetFilteredCharts();
+            int startIndex = (_currentPage - 1) * SearchPageSize;
+            Results.Clear();
+            foreach (ChorusChart chart in filtered.Skip(startIndex).Take(SearchPageSize))
             {
                 Results.Add(chart);
             }
 
-            if (_rawCharts.Count > 0)
+            OnPropertyChanged(nameof(PageInfoText));
+            OnPropertyChanged(nameof(CanGoToPreviousPage));
+            OnPropertyChanged(nameof(CanGoToNextPage));
+
+            if (filtered.Count == 0)
             {
-                StatusText = $"Showing {Results.Count} of {_rawCharts.Count} charts found:";
+                StatusText = _rawCharts.Count == 0
+                    ? "No charts found on Chorus."
+                    : $"No matching charts in {_rawCharts.Count} scanned; Chorus has {_totalCharts} charts for this search.";
+                return;
+            }
+
+            int first = startIndex + 1;
+            int last = startIndex + Results.Count;
+            string matchCount = _hasMoreApiPages ? $"at least {filtered.Count}" : filtered.Count.ToString();
+            StatusText = $"Showing {first}–{last} of {matchCount} matching charts · scanned {_rawCharts.Count} of {_totalCharts}.";
+        }
+
+        private void MoveToPreviousPage()
+        {
+            if (!CanGoToPreviousPage) return;
+            _currentPage--;
+            ShowCurrentPage();
+        }
+
+        private async Task LoadNextPageAsync()
+        {
+            if (!CanGoToNextPage) return;
+
+            IsSearching = true;
+            var cancellation = new CancellationTokenSource();
+            _searchCancellation = cancellation;
+            try
+            {
+                int requiredMatchCount = (_currentPage + 1) * SearchPageSize;
+                await FillUntilMatchCountAsync(requiredMatchCount, cancellation.Token);
+                if (GetFilteredCharts().Count > _currentPage * SearchPageSize)
+                    _currentPage++;
+                ShowCurrentPage();
+            }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+            catch (Exception ex)
+            {
+                StatusText = $"Search error: {ex.Message}";
+            }
+            finally
+            {
+                if (ReferenceEquals(_searchCancellation, cancellation))
+                    _searchCancellation = null;
+                cancellation.Dispose();
+                IsSearching = false;
+                if (_searchPending)
+                {
+                    _searchPending = false;
+                    RequestSearch();
+                }
             }
         }
 

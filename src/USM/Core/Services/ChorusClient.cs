@@ -148,6 +148,10 @@ namespace USM.Core.Services
 
                 return (total, charts);
             }
+            catch (TaskCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (TaskCanceledException)
             {
                 throw new TimeoutException("Connection to Chorus timed out. Check your firewall or antivirus settings.");
