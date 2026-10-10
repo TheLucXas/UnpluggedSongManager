@@ -2070,8 +2070,8 @@ namespace UnpluggedCustomSongs
             }
 
             int schemaVersion = root != null ? root["SchemaVersion"].AsInt : 0;
-            if (root == null || !root.IsObject || schemaVersion != 2)
-                throw new InvalidDataException($"Chart JSON '{chartName}' uses unsupported schema version {schemaVersion}; expected version 2.");
+            if (root == null || !root.IsObject || (schemaVersion != 2 && schemaVersion != 3))
+                throw new InvalidDataException($"Chart JSON '{chartName}' uses unsupported schema version {schemaVersion}; expected version 2 or 3.");
 
             JSONArray handNotes = RequireJsonArray(root, "HandNotes", chartName);
             JSONArray controllerNotes = RequireJsonArray(root, "ControllerNotes", chartName);
@@ -2129,7 +2129,7 @@ namespace UnpluggedCustomSongs
                         : new HandGuitarNote();
                     handNote.Time = noteNode["Time"].AsFloat;
                     handNote.Duration = noteNode["Duration"].AsFloat;
-                    handNote.Tier = noteNode["Tier"].AsInt;
+                    handNote.Tier = ReadStringLane(noteNode, chartName);
                     tierCounts[handNote.Tier] = tierCounts.TryGetValue(handNote.Tier, out int handTierCount) ? handTierCount + 1 : 1;
                     handNote.CursableProbability = 0f;
                     handNote.IsBlind = false;
@@ -2152,7 +2152,7 @@ namespace UnpluggedCustomSongs
                         var fingerNames = new List<string>();
                         for (int fingerIndex = 0; fingerIndex < handNote.Fingers.Count; fingerIndex++)
                             fingerNames.Add(handNote.Fingers[fingerIndex].ToString());
-                        MelonLogger.Msg($"[ChartDiag] hand sample {i}: t={handNote.Time:F3}s d={handNote.Duration:F3}s tier={handNote.Tier} fingers={string.Join("+", fingerNames)} pullOff={noteNode["IsPullOff"].AsBool}");
+                        MelonLogger.Msg($"[ChartDiag] hand sample {i}: t={handNote.Time:F3}s d={handNote.Duration:F3}s stringLane={handNote.Tier} fingers={string.Join("+", fingerNames)} pullOff={noteNode["IsPullOff"].AsBool}");
                     }
                 }
                 loadedSelectedNotes = handGame.Notes.Count;
@@ -2182,7 +2182,7 @@ namespace UnpluggedCustomSongs
                         // unplayable note in old .usm files.
                         ignoredEmptyControllerNotes++;
                         if (ModMain.ConfigChartDiagnostics && ignoredEmptyControllerNotes <= 5)
-                            MelonLogger.Warning($"[ChartDiag] ignored empty controller note {i}: t={noteNode["Time"].AsFloat:F3}s tier={noteNode["Tier"].AsInt}; both fret buttons were false.");
+                            MelonLogger.Warning($"[ChartDiag] ignored empty controller note {i}: t={noteNode["Time"].AsFloat:F3}s stringLane={ReadStringLane(noteNode, chartName)}; both fret buttons were false.");
                         continue;
                     }
 
@@ -2190,7 +2190,7 @@ namespace UnpluggedCustomSongs
                     {
                         Time = noteNode["Time"].AsFloat,
                         Duration = noteNode["Duration"].AsFloat,
-                        Tier = noteNode["Tier"].AsInt,
+                        Tier = ReadStringLane(noteNode, chartName),
                         CursableProbability = 0f,
                         IsBlind = false,
                         ChordRotation = noteNode["ChordRotation"].AsInt,
@@ -2208,7 +2208,7 @@ namespace UnpluggedCustomSongs
 
                     if (i < sampleLimit)
                     {
-                        MelonLogger.Msg($"[ChartDiag] controller sample {i}: t={controllerNote.Time:F3}s d={controllerNote.Duration:F3}s tier={controllerNote.Tier} trigger={controllerNote.Buttons[0]} grip={controllerNote.Buttons[1]} rotation={controllerNote.ChordRotation}");
+                        MelonLogger.Msg($"[ChartDiag] controller sample {i}: t={controllerNote.Time:F3}s d={controllerNote.Duration:F3}s stringLane={controllerNote.Tier} trigger={controllerNote.Buttons[0]} grip={controllerNote.Buttons[1]} rotation={controllerNote.ChordRotation}");
                     }
                 }
                 loadedSelectedNotes = controllerGame.Notes.Count;
@@ -2216,11 +2216,22 @@ namespace UnpluggedCustomSongs
             }
 
             string tierSummary = string.Join(",", tierCounts.Select(pair => $"{pair.Key}:{pair.Value}"));
-            MelonLogger.Msg($"[ChartDiag] Loaded {Path.GetFileName(usmPath)}!{chartName}: schema={schemaVersion}, mode={trackLabel}, selectedNotes={selectedNotes.Count}, loadedNotes={loadedSelectedNotes}, handNotes={handNotes.Count}, controllerNotes={controllerNotes.Count}, ignoredEmptyControllerNotes={ignoredEmptyControllerNotes}, tiers=[{tierSummary}], bpmChanges={mapping.BPMGrid.Count}, duration={chartDuration:F2}s");
+            MelonLogger.Msg($"[ChartDiag] Loaded {Path.GetFileName(usmPath)}!{chartName}: schema={schemaVersion}, mode={trackLabel}, selectedNotes={selectedNotes.Count}, loadedNotes={loadedSelectedNotes}, handNotes={handNotes.Count}, controllerNotes={controllerNotes.Count}, ignoredEmptyControllerNotes={ignoredEmptyControllerNotes}, stringLanes=[{tierSummary}], bpmChanges={mapping.BPMGrid.Count}, duration={chartDuration:F2}s");
             if (loadedSelectedNotes == 0)
                 MelonLogger.Warning($"[ChartDiag] The selected {trackLabel} track in {chartName} has no notes.");
 
             return mapping;
+        }
+
+        private static int ReadStringLane(JSONNode noteNode, string chartName)
+        {
+            // Schema 3 names the gameplay path explicitly. Schema 2 used Tier;
+            // retain it as a backwards-compatible alias for existing .usm files.
+            bool hasStringLane = noteNode != null && noteNode.IsObject && noteNode.HasKey("StringLane");
+            int lane = hasStringLane ? noteNode["StringLane"].AsInt : noteNode["Tier"].AsInt;
+            if (lane < 0 || lane > 3)
+                throw new InvalidDataException($"Chart JSON '{chartName}' contains string lane {lane}; expected 0-3.");
+            return lane;
         }
 
         public static void LogChartOutcome(KeyTime note, float timeStamp, bool succeeded)
