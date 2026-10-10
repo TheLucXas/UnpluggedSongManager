@@ -15,7 +15,7 @@ namespace USM.Core.Parsers
     {
         // Bump when chart parsing or generated note semantics change. Stored in
         // meta.json so the PC library can selectively regenerate outdated charts.
-        public const int ParserVersion = 6;
+        public const int ParserVersion = 7;
 
         // These are spatial string lanes (the four white paths in the game),
         // independent of difficulty and source fret/button colors. Every output
@@ -23,6 +23,19 @@ namespace USM.Core.Parsers
         // distribution across all 57 official PC charts and four difficulties.
         private static readonly double[] OfficialStringLaneWeights =
             { 0.14574, 0.38999, 0.36986, 0.09441 };
+
+        // Median controller-note NPS measured from the 57 official PC song
+        // archives available to the catalog scan (base game and installed DLC).
+        // They are used as a ceiling when a custom chart has to supply an easier
+        // difficulty. The parser never invents extra notes when a source is too
+        // sparse to reach one of these targets.
+        private static readonly double[] OfficialDifficultyMedianNps =
+            { 2.55799, 2.59365, 3.30484, 3.57935 };
+
+        // Vanilla SuperEasy uses at most two distinct controller input
+        // combinations. This is independent of StringLane, which still uses all
+        // four spatial paths in every generated difficulty.
+        private const int SuperEasyControllerPatternLimit = 2;
 
         private static readonly Dictionary<int, string[]> FingerMap = new()
         {
@@ -88,7 +101,17 @@ namespace USM.Core.Parsers
             controllerNotes.Append("],\"ControllerNotes\":[");
             var tierCounts = new SortedDictionary<int, int>();
             var controllerButtonCounts = new SortedDictionary<string, int>(StringComparer.Ordinal);
+            var controllerPatternRemap = BuildControllerPatternRemap(notesByTick, outputDifficulty);
+            if (controllerPatternRemap.Any(pair => pair.Key != pair.Value))
+            {
+                string remapDetails = string.Join(",", controllerPatternRemap
+                    .Where(pair => pair.Key != pair.Value)
+                    .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+                    .Select(pair => $"{pair.Key}->{pair.Value}"));
+                log?.Invoke($"  [ChartDiag] {outputDifficulty}: SuperEasy controller input combinations simplified to at most {SuperEasyControllerPatternLimit} ({remapDetails}); spatial string lanes remain independent.");
+            }
             int[] laneAssignedCounts = new int[4];
+            int[] laneTargets = BuildStringLaneTargets(notesByTick);
             int generatedNoteIndex = 0;
 
             double previousTime = -999.0;
@@ -133,7 +156,7 @@ namespace USM.Core.Parsers
                 // Tier selects the spatial string/path in Unplugged. It must
                 // not be inferred from Clone Hero's fret lane: those frets map
                 // independently to Fingers and controller Buttons.
-                int tier = SelectStringLane(generatedNoteIndex++, laneAssignedCounts, OfficialStringLaneWeights);
+                int tier = SelectStringLane(generatedNoteIndex++, laneAssignedCounts, laneTargets);
                 tierCounts[tier] = tierCounts.TryGetValue(tier, out int tierCount) ? tierCount + 1 : 1;
 
                 string fingerShape = string.Join("+", fingers);
@@ -155,7 +178,12 @@ namespace USM.Core.Parsers
                 firstHand = false;
 
                 GetControllerButtons(lanes, out bool trigger, out bool grip);
-                string buttonsKey = $"{(trigger ? 1 : 0)}{(grip ? 1 : 0)}";
+                string sourceButtonsKey = $"{(trigger ? 1 : 0)}{(grip ? 1 : 0)}";
+                string buttonsKey = controllerPatternRemap.TryGetValue(sourceButtonsKey, out string? mappedButtonsKey)
+                    ? mappedButtonsKey
+                    : sourceButtonsKey;
+                trigger = buttonsKey[0] == '1';
+                grip = buttonsKey[1] == '1';
                 controllerButtonCounts[buttonsKey] = controllerButtonCounts.TryGetValue(buttonsKey, out int buttonCount)
                     ? buttonCount + 1
                     : 1;
@@ -181,18 +209,54 @@ namespace USM.Core.Parsers
             return sb.ToString();
         }
 
-        private static int SelectStringLane(int noteIndex, int[] assignedCounts, double[] weights)
+        private static int[] BuildStringLaneTargets(
+            SortedDictionary<long, List<ChartParser.NoteEvent>> notesByTick)
         {
-            // Largest-deficit scheduling keeps lane counts near the vanilla
-            // proportions while spreading short passages over the available
-            // lanes. The tie offset prevents the same opening lane in every song.
+            int noteGroupCount = notesByTick.Count(entry => entry.Value != null
+                && entry.Value.Any(note => ChartParser.IsPlayableGuitarLane(note.Lane)));
+            var targets = new int[OfficialStringLaneWeights.Length];
+            if (noteGroupCount <= 0)
+                return targets;
+
+            int minimumPerLane = noteGroupCount >= targets.Length ? 1 : 0;
+            int remaining = noteGroupCount - minimumPerLane * targets.Length;
+            var fractionalRemainders = new double[targets.Length];
+            int assigned = minimumPerLane * targets.Length;
+            for (int lane = 0; lane < targets.Length; lane++)
+            {
+                double exactShare = remaining * OfficialStringLaneWeights[lane];
+                targets[lane] = minimumPerLane + (int)Math.Floor(exactShare);
+                fractionalRemainders[lane] = exactShare - Math.Floor(exactShare);
+                assigned += targets[lane];
+            }
+
+            // Keep the final counts on the official distribution while ensuring
+            // a short chart still reaches every spatial lane whenever it has at
+            // least four note groups. Without this floor, rare outer lanes could
+            // disappear from an entire difficulty.
+            while (assigned < noteGroupCount)
+            {
+                int lane = Enumerable.Range(0, targets.Length)
+                    .OrderByDescending(candidate => fractionalRemainders[candidate])
+                    .First();
+                targets[lane]++;
+                fractionalRemainders[lane] = -1.0;
+                assigned++;
+            }
+            return targets;
+        }
+
+        private static int SelectStringLane(int noteIndex, int[] assignedCounts, int[] targetCounts)
+        {
+            // Largest-deficit scheduling spreads each lane through the song and
+            // reaches the precomputed totals exactly by the final note group.
             double bestDeficit = double.NegativeInfinity;
             int selected = 0;
             int tieOffset = noteIndex % assignedCounts.Length;
             for (int offset = 0; offset < assignedCounts.Length; offset++)
             {
                 int lane = (offset + tieOffset) % assignedCounts.Length;
-                double expected = (noteIndex + 1) * weights[lane];
+                double expected = (noteIndex + 1) * targetCounts[lane] / Math.Max(1.0, targetCounts.Sum());
                 double deficit = expected - assignedCounts[lane];
                 if (deficit > bestDeficit)
                 {
@@ -202,6 +266,72 @@ namespace USM.Core.Parsers
             }
             assignedCounts[selected]++;
             return selected;
+        }
+
+        private static Dictionary<string, string> BuildControllerPatternRemap(
+            SortedDictionary<long, List<ChartParser.NoteEvent>> notesByTick,
+            string outputDifficulty)
+        {
+            int patternLimit = GetDifficultyRank(outputDifficulty) == 0
+                ? SuperEasyControllerPatternLimit
+                : int.MaxValue;
+            var frequencies = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var entry in notesByTick)
+            {
+                var lanes = entry.Value
+                    .Select(note => note.Lane)
+                    .Where(ChartParser.IsPlayableGuitarLane)
+                    .Distinct()
+                    .ToList();
+                if (lanes.Count == 0)
+                    continue;
+                GetControllerButtons(lanes, out bool trigger, out bool grip);
+                string pattern = $"{(trigger ? 1 : 0)}{(grip ? 1 : 0)}";
+                frequencies[pattern] = frequencies.TryGetValue(pattern, out int count) ? count + 1 : 1;
+            }
+
+            if (frequencies.Count <= patternLimit)
+                return new Dictionary<string, string>(StringComparer.Ordinal);
+
+            var retained = frequencies
+                .OrderByDescending(pair => pair.Value)
+                .ThenBy(pair => pair.Key, StringComparer.Ordinal)
+                .Take(patternLimit)
+                .ToList();
+            var remap = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var source in frequencies.Keys)
+            {
+                if (retained.Any(pattern => pattern.Key == source))
+                {
+                    remap[source] = source;
+                    continue;
+                }
+
+                // A SuperEasy chart may use no more than two input combinations.
+                // Map excluded patterns to the closest common retained pattern;
+                // this does not change the four spatial string lanes.
+                string target = retained
+                    .OrderBy(pattern => ButtonPatternDistance(source, pattern.Key))
+                    .ThenByDescending(pattern => pattern.Value)
+                    .ThenBy(pattern => pattern.Key, StringComparer.Ordinal)
+                    .First().Key;
+                remap[source] = target;
+            }
+            return remap;
+        }
+
+        private static int ButtonPatternDistance(string first, string second) =>
+            (first[0] == second[0] ? 0 : 1) + (first[1] == second[1] ? 0 : 1);
+
+        private static int GetDifficultyRank(string difficultyName)
+        {
+            if (difficultyName.IndexOf("SuperEasy", StringComparison.OrdinalIgnoreCase) >= 0)
+                return 0;
+            if (difficultyName.IndexOf("Easy", StringComparison.OrdinalIgnoreCase) >= 0)
+                return 1;
+            if (difficultyName.IndexOf("Normal", StringComparison.OrdinalIgnoreCase) >= 0)
+                return 2;
+            return 3;
         }
 
         private static void GetControllerButtons(List<int> lanes, out bool trigger, out bool grip)
@@ -240,14 +370,12 @@ namespace USM.Core.Parsers
                 "songdata-Normal.json",
                 "songdata-Hard.json"
             };
+            difficulties ??= new Dictionary<string, SortedDictionary<long, List<ChartParser.NoteEvent>>>(StringComparer.OrdinalIgnoreCase);
             bool hasNativeSuperEasy = difficulties.TryGetValue("SuperEasySingle", out var nativeSuperEasyNotes)
                 && HasNotes(nativeSuperEasyNotes);
             string[] sourceDifficulties = hasNativeSuperEasy
                 ? new[] { "SuperEasySingle", "EasySingle", "MediumSingle", "HardSingle" }
                 : new[] { "EasySingle", "MediumSingle", "HardSingle", "ExpertSingle" };
-            double[] singleSourceKeepRatios = { 0.60, 0.75, 0.90, 1.0 };
-
-            difficulties ??= new Dictionary<string, SortedDictionary<long, List<ChartParser.NoteEvent>>>(StringComparer.OrdinalIgnoreCase);
             var availableSources = sourceDifficulties
                 .Select((name, rank) =>
                 {
@@ -277,8 +405,10 @@ namespace USM.Core.Parsers
                 }
                 else if (availableSources.Count == 1)
                 {
-                    selectedNotes = ThinNotes(availableSources[0].Notes!, singleSourceKeepRatios[targetRank]);
-                    origin = $"adapted from {availableSources[0].Name} at {singleSourceKeepRatios[targetRank]:P0} density";
+                    double keepRatio = GetVanillaCalibratedKeepRatio(
+                        availableSources[0].Notes!, tickToSec, targetRank, songDurationSeconds);
+                    selectedNotes = ThinNotes(availableSources[0].Notes!, keepRatio);
+                    origin = $"adapted from {availableSources[0].Name} at {keepRatio:P0} density (vanilla NPS target {OfficialDifficultyMedianNps[targetRank]:F2})";
                 }
                 else
                 {
@@ -296,21 +426,29 @@ namespace USM.Core.Parsers
 
                         if (lower.Notes != null && upper.Notes != null)
                         {
-                            double fraction = (targetRank - lower.TargetRank) / (double)(upper.TargetRank - lower.TargetRank);
+                            double lowerNps = OfficialDifficultyMedianNps[lower.TargetRank];
+                            double upperNps = OfficialDifficultyMedianNps[upper.TargetRank];
+                            double fraction = upperNps > lowerNps
+                                ? (OfficialDifficultyMedianNps[targetRank] - lowerNps) / (upperNps - lowerNps)
+                                : (targetRank - lower.TargetRank) / (double)(upper.TargetRank - lower.TargetRank);
+                            fraction = Math.Clamp(fraction, 0.0, 1.0);
                             selectedNotes = BlendNotes(lower.Notes, upper.Notes, fraction);
-                            origin = $"interpolated between {lower.SourceName} and {upper.SourceName} ({fraction:P0})";
+                            origin = $"interpolated between {lower.SourceName} and {upper.SourceName} by vanilla NPS profile ({fraction:P0})";
                         }
                         else if (lower.Notes != null)
                         {
-                            double keepRatio = singleSourceKeepRatios[targetRank];
-                            selectedNotes = ThinNotes(lower.Notes, keepRatio);
-                            origin = $"adapted from {lower.SourceName} at {keepRatio:P0} density";
+                            // A lower source tier cannot tell us which extra
+                            // notes belong in a harder tier. Preserve its notes
+                            // rather than inventing timing or fret events.
+                            selectedNotes = CloneNotes(lower.Notes);
+                            origin = $"kept {lower.SourceName}; no harder source tier was available to infer extra notes";
                         }
                         else if (upper.Notes != null)
                         {
-                            double keepRatio = singleSourceKeepRatios[targetRank];
+                            double keepRatio = GetVanillaCalibratedKeepRatio(
+                                upper.Notes, tickToSec, targetRank, songDurationSeconds);
                             selectedNotes = ThinNotes(upper.Notes, keepRatio);
-                            origin = $"adapted from {upper.SourceName} at {keepRatio:P0} density";
+                            origin = $"adapted from {upper.SourceName} at {keepRatio:P0} density (vanilla NPS target {OfficialDifficultyMedianNps[targetRank]:F2})";
                         }
                         else
                         {
@@ -326,6 +464,31 @@ namespace USM.Core.Parsers
             }
 
             return results;
+        }
+
+        private static double GetVanillaCalibratedKeepRatio(
+            SortedDictionary<long, List<ChartParser.NoteEvent>> source,
+            Func<long, double> tickToSec,
+            int targetRank,
+            double songDurationSeconds)
+        {
+            if (!HasNotes(source))
+                return 1.0;
+
+            double firstNoteTime = tickToSec(source.First(entry => entry.Value != null && entry.Value.Count > 0).Key);
+            double lastNoteTime = tickToSec(source.Last(entry => entry.Value != null && entry.Value.Count > 0).Key);
+            double activeChartDuration = Math.Max(0.0, lastNoteTime - firstNoteTime);
+            double measuredDuration = songDurationSeconds > 1.0
+                ? songDurationSeconds
+                : Math.Max(1.0, activeChartDuration);
+            double sourceNps = CountNotes(source) / measuredDuration;
+            if (sourceNps <= 0.0)
+                return 1.0;
+
+            // A target NPS is a ceiling: if the only source chart is already
+            // easier than the vanilla profile, keep it intact rather than
+            // generating fake notes to make a higher tier appear harder.
+            return Math.Clamp(OfficialDifficultyMedianNps[targetRank] / sourceNps, 0.0, 1.0);
         }
 
         private static bool HasNotes(SortedDictionary<long, List<ChartParser.NoteEvent>>? notes) =>
