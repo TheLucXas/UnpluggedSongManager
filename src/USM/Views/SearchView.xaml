@@ -218,6 +218,19 @@
                                                        TextTrimming="CharacterEllipsis"
                                                        MaxWidth="400"
                                                        VerticalAlignment="Center" />
+
+                                            <Border Background="#203B2B"
+                                                    CornerRadius="8"
+                                                    Padding="8,3"
+                                                    Margin="8,0,0,0"
+                                                    VerticalAlignment="Center"
+                                                    Visibility="{Binding IsIdealForUnplugged, Converter={StaticResource BoolToVis}}"
+                                                    ToolTip="Full multitrack audio, vocals, four populated guitar difficulties, and broad chart coverage.">
+                                                <TextBlock Text="Ideal for Unplugged"
+                                                           FontSize="10"
+                                                           FontWeight="Bold"
+                                                           Foreground="{StaticResource BrushAccentGreen}" />
+                                            </Border>
                                         </StackPanel>
 
                                         <TextBlock Text="{Binding SubtitleDisplay}"
@@ -249,19 +262,6 @@
                                                        FontSize="10"
                                                        FontWeight="SemiBold"
                                                        Foreground="{StaticResource BrushAccentBlue}" />
-                                        </Border>
-
-                                        <Border Background="#203B2B"
-                                                CornerRadius="8"
-                                                Padding="8,3"
-                                                Margin="0,4,0,0"
-                                                HorizontalAlignment="Left"
-                                                Visibility="{Binding IsIdealForUnplugged, Converter={StaticResource BoolToVis}}"
-                                                ToolTip="Four populated guitar difficulty levels and at least four separate audio stems, including vocals.">
-                                            <TextBlock Text="Ideal for Unplugged"
-                                                       FontSize="10"
-                                                       FontWeight="Bold"
-                                                       Foreground="{StaticResource BrushAccentGreen}" />
                                         </Border>
 
                                         <Border Background="#493319"

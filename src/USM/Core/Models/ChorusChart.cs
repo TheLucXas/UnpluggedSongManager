@@ -178,9 +178,43 @@ namespace USM.Core.Models
         public System.Windows.Media.ImageSource? CoverImage { get; set; }
         public string? AudioPath { get; set; }
         public bool HasCover => CoverImage != null || (!string.IsNullOrEmpty(CoverPath) && System.IO.File.Exists(CoverPath));
-        public bool IsMultiTrack { get; set; } = false;
-        public bool IsHalfTrack { get; set; } = false;
-        public bool IsIdealForUnplugged { get; set; }
+        private bool _isMultiTrack;
+        public bool IsMultiTrack
+        {
+            get => _isMultiTrack;
+            set
+            {
+                if (SetProperty(ref _isMultiTrack, value))
+                    OnPropertyChanged(nameof(TrackTypeDisplay));
+            }
+        }
+
+        private bool _isHalfTrack;
+        public bool IsHalfTrack
+        {
+            get => _isHalfTrack;
+            set
+            {
+                if (SetProperty(ref _isHalfTrack, value))
+                    OnPropertyChanged(nameof(TrackTypeDisplay));
+            }
+        }
+
+        private bool _isIdealForUnplugged;
+        public bool IsIdealForUnplugged
+        {
+            get => _isIdealForUnplugged;
+            set => SetProperty(ref _isIdealForUnplugged, value);
+        }
+
+        private bool _isCheckingCompatibility;
+        public bool IsCheckingCompatibility
+        {
+            get => _isCheckingCompatibility;
+            set => SetProperty(ref _isCheckingCompatibility, value);
+        }
+
+        public bool HasCompatibilityProfile { get; set; }
         public int AudioStemCount { get; set; }
         public int SourceDifficultyCount { get; set; }
         public double ChartCoverageRatio { get; set; }

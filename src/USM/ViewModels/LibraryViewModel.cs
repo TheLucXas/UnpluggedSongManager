@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -49,6 +50,8 @@ namespace USM.ViewModels
         private readonly Action<string> _notifyCallback;
         private readonly QuestViewModel _questViewModel;
         private readonly SemaphoreSlim _questSongsRefreshGate = new(1, 1);
+        private readonly ConcurrentDictionary<string, Task<SngDecoder.RemoteSongProfile>> _compatibilityProfileTasks = new(StringComparer.OrdinalIgnoreCase);
+        private static readonly SemaphoreSlim CompatibilityProfileProbeLimit = new(2);
 
         private string _filterQuery = string.Empty;
         private int _selectedTrackTypeFilterIndex;
@@ -423,10 +426,78 @@ namespace USM.ViewModels
 
             _allSongs.Sort((a, b) => string.Compare(a.Title, b.Title, StringComparison.OrdinalIgnoreCase));
             ApplyFilter();
+            foreach (InstalledSong song in _allSongs.Where(song =>
+                         !song.HasCompatibilityProfile &&
+                         song.IsMultiTrack &&
+                         !song.IsHalfTrack &&
+                         !string.IsNullOrWhiteSpace(song.ChorusChartMd5)))
+            {
+                song.IsCheckingCompatibility = true;
+                _ = RefreshCompatibilityProfileAsync(song.ChorusChartMd5!);
+            }
             OnPropertyChanged(nameof(OutdatedChartCount));
             OnPropertyChanged(nameof(HasOutdatedCharts));
             OnPropertyChanged(nameof(ResyncChartsText));
             CommandManager.InvalidateRequerySuggested();
+        }
+
+        private async Task RefreshCompatibilityProfileAsync(string chartMd5)
+        {
+            try
+            {
+                Task<SngDecoder.RemoteSongProfile> profileTask = _compatibilityProfileTasks.GetOrAdd(
+                    chartMd5,
+                    md5 => ProbeCompatibilityProfileAsync(md5));
+                SngDecoder.RemoteSongProfile profile = await profileTask;
+
+                Action applyProfile = () =>
+                {
+                    foreach (InstalledSong song in _allSongs.Where(song =>
+                                 string.Equals(song.ChorusChartMd5, chartMd5, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        song.IsCheckingCompatibility = false;
+                        song.IsIdealForUnplugged = profile.IsIdealForUnplugged;
+                        song.AudioStemCount = profile.AudioStemCount;
+                        song.SourceDifficultyCount = profile.SourceDifficultyCount;
+                        song.ChartCoverageRatio = profile.ChartCoverageRatio;
+                        song.HasCompatibilityProfile = profile.TrackLayout != AudioTrackLayout.Unknown
+                            && profile.AudioStemCount > 0;
+                    }
+                };
+
+                if (Application.Current?.Dispatcher is { } dispatcher && !dispatcher.CheckAccess())
+                    await dispatcher.InvokeAsync(applyProfile).Task;
+                else
+                    applyProfile();
+            }
+            catch
+            {
+                _compatibilityProfileTasks.TryRemove(chartMd5, out _);
+                Action clearChecking = () =>
+                {
+                    foreach (InstalledSong song in _allSongs.Where(song =>
+                                 string.Equals(song.ChorusChartMd5, chartMd5, StringComparison.OrdinalIgnoreCase)))
+                        song.IsCheckingCompatibility = false;
+                };
+                if (Application.Current?.Dispatcher is { } dispatcher && !dispatcher.CheckAccess())
+                    await dispatcher.InvokeAsync(clearChecking).Task;
+                else
+                    clearChecking();
+            }
+        }
+
+        private static async Task<SngDecoder.RemoteSongProfile> ProbeCompatibilityProfileAsync(string chartMd5)
+        {
+            await CompatibilityProfileProbeLimit.WaitAsync();
+            try
+            {
+                string url = $"https://files.enchor.us/{Uri.EscapeDataString(chartMd5)}.sng";
+                return await SngDecoder.ProbeRemoteSongProfileAsync(url);
+            }
+            finally
+            {
+                CompatibilityProfileProbeLimit.Release();
+            }
         }
 
         private async Task ResyncOutdatedChartsAsync()
@@ -663,6 +734,7 @@ namespace USM.ViewModels
             bool isMulti = false;
             bool isHalfTrack = false;
             bool isIdealForUnplugged = false;
+            bool hasCompatibilityProfile = false;
             int audioStemCount = 0;
             int sourceDifficultyCount = 0;
             double chartCoverageRatio = 0;
@@ -700,6 +772,7 @@ namespace USM.ViewModels
                     {
                         isIdealForUnplugged = idealValue.ValueKind == JsonValueKind.True ||
                             (idealValue.ValueKind == JsonValueKind.String && bool.TryParse(idealValue.GetString(), out var parsedIdeal) && parsedIdeal);
+                        hasCompatibilityProfile = true;
                     }
                     if (meta.TryGetProperty("AudioLayout", out var audioLayout) && audioLayout.ValueKind == JsonValueKind.String)
                     {
@@ -773,6 +846,7 @@ namespace USM.ViewModels
                 IsMultiTrack = isMulti,
                 IsHalfTrack = isHalfTrack,
                 IsIdealForUnplugged = isIdealForUnplugged,
+                HasCompatibilityProfile = hasCompatibilityProfile,
                 AudioStemCount = audioStemCount,
                 SourceDifficultyCount = sourceDifficultyCount,
                 ChartCoverageRatio = chartCoverageRatio,

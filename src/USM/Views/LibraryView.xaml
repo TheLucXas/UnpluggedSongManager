@@ -307,6 +307,19 @@
                                                 Padding="6,2"
                                                 Margin="6,0,0,0"
                                                 VerticalAlignment="Center"
+                                                Background="{StaticResource BrushBgInput}"
+                                                Visibility="{Binding IsCheckingCompatibility, Converter={StaticResource BoolToVis}}"
+                                                ToolTip="USM is checking the chart and audio layout. Audio and video files are not downloaded.">
+                                            <TextBlock Text="Checking compatibility…"
+                                                       FontSize="10"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{StaticResource BrushTextSecondary}" />
+                                        </Border>
+
+                                        <Border CornerRadius="4"
+                                                Padding="6,2"
+                                                Margin="6,0,0,0"
+                                                VerticalAlignment="Center"
                                                 Background="#493319"
                                                 Visibility="{Binding HasChartCoverageWarning, Converter={StaticResource BoolToVis}}"
                                                 ToolTip="The available guitar chart has notes in less than half of the song.">
