@@ -302,6 +302,19 @@
                                                        FontWeight="Bold"
                                                        Foreground="{StaticResource BrushAccentGreen}" />
                                         </Border>
+
+                                        <Border CornerRadius="4"
+                                                Padding="6,2"
+                                                Margin="6,0,0,0"
+                                                VerticalAlignment="Center"
+                                                Background="#493319"
+                                                Visibility="{Binding HasChartCoverageWarning, Converter={StaticResource BoolToVis}}"
+                                                ToolTip="The available guitar chart has notes in less than half of the song.">
+                                            <TextBlock Text="{Binding ChartCoverageWarningDisplay}"
+                                                       FontSize="10"
+                                                       FontWeight="Bold"
+                                                       Foreground="#FFC36B" />
+                                        </Border>
                                     </StackPanel>
 
                                     <TextBlock Text="{Binding Artist}"

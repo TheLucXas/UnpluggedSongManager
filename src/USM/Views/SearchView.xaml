@@ -263,6 +263,19 @@
                                                        FontWeight="Bold"
                                                        Foreground="{StaticResource BrushAccentGreen}" />
                                         </Border>
+
+                                        <Border Background="#493319"
+                                                CornerRadius="8"
+                                                Padding="8,3"
+                                                Margin="0,4,0,0"
+                                                HorizontalAlignment="Left"
+                                                Visibility="{Binding HasChartCoverageWarning, Converter={StaticResource BoolToVis}}"
+                                                ToolTip="The available guitar chart has notes in less than half of the song. This is a source-chart limitation, not a song-audio issue.">
+                                            <TextBlock Text="{Binding ChartCoverageWarningDisplay}"
+                                                       FontSize="10"
+                                                       FontWeight="Bold"
+                                                       Foreground="#FFC36B" />
+                                        </Border>
                                     </StackPanel>
 
                                     <!-- Actions & Progress -->

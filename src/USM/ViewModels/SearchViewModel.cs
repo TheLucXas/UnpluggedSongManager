@@ -292,6 +292,7 @@ namespace USM.ViewModels
             chart.TrackLayout = profile.TrackLayout;
             chart.AudioStemCount = profile.AudioStemCount;
             chart.SourceDifficultyCount = profile.SourceDifficultyCount;
+            chart.ChartNoteCount = profile.ChartNoteCount;
             chart.ChartCoverageRatio = profile.ChartCoverageRatio;
             chart.IsIdealForUnplugged = profile.IsIdealForUnplugged;
             chart.IsCheckingQuality = false;

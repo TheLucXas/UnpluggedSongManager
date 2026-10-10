@@ -48,7 +48,33 @@ namespace USM.Core.Models
 
         public int AudioStemCount { get; set; }
         public int SourceDifficultyCount { get; set; }
-        public double ChartCoverageRatio { get; set; }
+        private int _chartNoteCount;
+        public int ChartNoteCount
+        {
+            get => _chartNoteCount;
+            set
+            {
+                if (SetProperty(ref _chartNoteCount, value))
+                    OnPropertyChanged(nameof(HasChartCoverageWarning));
+            }
+        }
+
+        private double _chartCoverageRatio;
+        public double ChartCoverageRatio
+        {
+            get => _chartCoverageRatio;
+            set
+            {
+                if (SetProperty(ref _chartCoverageRatio, value))
+                {
+                    OnPropertyChanged(nameof(HasChartCoverageWarning));
+                    OnPropertyChanged(nameof(ChartCoverageWarningDisplay));
+                }
+            }
+        }
+
+        public bool HasChartCoverageWarning => !IsCheckingQuality && ChartNoteCount > 0 && ChartCoverageRatio < 0.50;
+        public string ChartCoverageWarningDisplay => $"Incomplete chart · {ChartCoverageRatio:P0}";
 
         private bool _isIdealForUnplugged;
         public bool IsIdealForUnplugged
@@ -61,7 +87,11 @@ namespace USM.Core.Models
         public bool IsCheckingQuality
         {
             get => _isCheckingQuality;
-            set => SetProperty(ref _isCheckingQuality, value);
+            set
+            {
+                if (SetProperty(ref _isCheckingQuality, value))
+                    OnPropertyChanged(nameof(HasChartCoverageWarning));
+            }
         }
 
         public string SubtitleDisplay => string.IsNullOrEmpty(Album)
@@ -158,6 +188,11 @@ namespace USM.Core.Models
         public string? ChorusChartMd5 { get; set; }
         public int ChartParserVersion { get; set; }
         public bool NeedsChartResync => ChartParserVersion < USM.Core.Parsers.JsonGenerator.ParserVersion;
+        public bool HasChartCoverageWarning => ChartParserVersion >= USM.Core.Parsers.JsonGenerator.ParserVersion
+            && ChartCoverageRatio < 0.50;
+        public string ChartCoverageWarningDisplay => ChartCoverageRatio > 0
+            ? $"Incomplete chart · {ChartCoverageRatio:P0}"
+            : "Chart has no playable notes";
         public string TrackTypeDisplay => IsHalfTrack
             ? "Half-Track · Instrumental + Vocals"
             : IsMultiTrack ? "Multi Track" : "Single Track";
