@@ -3990,6 +3990,44 @@ namespace UnpluggedCustomSongs
         }
     }
 
+    // The vanilla menu already rotates with the index finger and varies the
+    // rotation with swipe speed. Add a short release impulse in hand mode so a
+    // quick flick can travel through several songs like a physical turntable.
+    [HarmonyPatch(typeof(SongMenu), "TouchArea_Untouched")]
+    public static class Patch_SongMenu_HandFlick
+    {
+        public static void Prefix(SongMenu __instance)
+        {
+            if (__instance == null || VRPlatformBase.I == null ||
+                !VRPlatformBase.I.IsHandTrackingEnabled ||
+                !__instance.gameObject.activeInHierarchy || GameManager.IsPlaying ||
+                AlbumsManager.SelectedAlbum?.AlbumID != "CustomSongsAlbum") return;
+            try
+            {
+                float angle = GameFieldAccess.Get<float>(__instance, "touchSpinAngle");
+                Vector3 velocity = GameFieldAccess.Get<Vector3>(__instance, "touchFingerVelocity");
+                float speed = velocity.magnitude;
+                if (Mathf.Abs(angle) < 0.002f || speed < 7f) return;
+#if QUEST_IL2CPP
+                int itemCount = GameFieldAccess.Get<Il2CppSystem.Collections.Generic.List<SongMenuItem>>(__instance, "virtualizedItemList")?.Count ?? 0;
+#else
+                int itemCount = GameFieldAccess.Get<List<SongMenuItem>>(__instance, "virtualizedItemList")?.Count ?? 0;
+#endif
+                if (itemCount < 2) return;
+                int extraSongs = Mathf.Clamp(1 + Mathf.FloorToInt((speed - 7f) / 5f), 1, 3);
+                float offset = GameFieldAccess.Get<float>(__instance, "Offset");
+                GameFieldAccess.Set(__instance, "Offset", offset + Mathf.Sign(angle) * extraSongs / itemCount);
+                if (ModMain.ConfigVerbose)
+                    MelonLogger.Msg($"[CustomSongs][HandFlick] speed={speed:F1}, direction={Mathf.Sign(angle)}, impulse={extraSongs} song(s).");
+            }
+            catch (Exception ex)
+            {
+                if (ModMain.ConfigVerbose)
+                    MelonLogger.Warning($"[CustomSongs][HandFlick] Could not add release impulse: {ex.Message}");
+            }
+        }
+    }
+
 #if !QUEST_IL2CPP
     [HarmonyPatch(typeof(VRPlatformSteam), "IsHandTrackingEnabled", MethodType.Getter)]
     public static class Patch_VRPlatformSteam_IsHandTrackingEnabled
@@ -4504,6 +4542,63 @@ namespace UnpluggedCustomSongs
         public static bool HasSkipped = false;
         public static float FirstNoteTime = 0f;
         public static float SkipTargetTime = 0f;
+        private static GameObject _handButtonTemplate;
+        private static PressableButton _handButton;
+
+        public static void CacheHandButton(StartSpace menu)
+        {
+            if (_handButtonTemplate != null || menu?.StartButton == null) return;
+            try
+            {
+                _handButtonTemplate = UnityEngine.Object.Instantiate(menu.StartButton.gameObject);
+                _handButtonTemplate.name = "USM_SkipIntroButtonTemplate";
+                _handButtonTemplate.SetActive(false);
+                UnityEngine.Object.DontDestroyOnLoad(_handButtonTemplate);
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[IntroSkip] Could not cache the game's physical button: {ex.Message}");
+                _handButtonTemplate = null;
+            }
+        }
+
+        private static void ShowHandButton(PressableButton pause)
+        {
+            if (_handButton == null && _handButtonTemplate != null && pause != null)
+            {
+                var obj = UnityEngine.Object.Instantiate(_handButtonTemplate);
+                obj.name = "USM_SkipIntroButton";
+                obj.transform.SetParent(pause.transform.parent, false);
+                _handButton = obj.GetComponent<PressableButton>();
+                if (_handButton == null)
+                {
+                    UnityEngine.Object.Destroy(obj);
+                    return;
+                }
+                _handButton.IgnoreLocalization = true;
+                _handButton.Text = "SKIP INTRO";
+                _handButton.OnPressed = null;
+#if QUEST_IL2CPP
+                _handButton.add_Pressed(new Action(PerformSkip));
+#else
+                _handButton.Pressed += PerformSkip;
+#endif
+                _handButton.SetText("SKIP INTRO");
+                MelonLogger.Msg("[IntroSkip] Physical hand button created from the game's Start button.");
+            }
+
+            if (_handButton == null || pause == null) return;
+            _handButton.transform.position = pause.transform.position + Vector3.up * 0.19f;
+            _handButton.transform.rotation = pause.transform.rotation;
+            _handButton.transform.localScale = pause.transform.localScale * 0.8f;
+            if (!_handButton.gameObject.activeSelf) _handButton.gameObject.SetActive(true);
+        }
+
+        private static void HideHandButton()
+        {
+            if (_handButton != null && _handButton.gameObject.activeSelf)
+                _handButton.gameObject.SetActive(false);
+        }
         private static GameObject _promptObj = null;
         private static TextMeshPro _promptText = null;
         private static float _nextInputDiagnosticTime = 0f;
@@ -4752,6 +4847,10 @@ namespace UnpluggedCustomSongs
         {
             try
             {
+                bool handMode = VRPlatformBase.I != null && VRPlatformBase.I.IsHandTrackingEnabled;
+                var pause = PlaterSpaceController.I?.PauseButton;
+                if (handMode && pause != null) ShowHandButton(pause);
+                else HideHandButton();
                 if (_promptObj == null)
                 {
                     _promptObj = new GameObject("SkipIntroPrompt");
@@ -4797,14 +4896,13 @@ namespace UnpluggedCustomSongs
 
                 if (_promptText != null)
                 {
-                    _promptText.text = "A + X\nSKIP INTRO";
+                    _promptText.text = handMode ? (_handButton != null ? "" : "SKIP INTRO") : "A + X\nSKIP INTRO";
                 }
 
                 Camera cam = CameraManager.Main != null ? CameraManager.Main : Camera.main;
                 if (cam != null && !_promptPlaced)
                 {
                     Transform ct = cam.transform;
-                    var pause = PlaterSpaceController.I?.PauseButton;
                     if (pause != null)
                     {
                         var anchor = PlaterSpaceController.I.ButtonsAnchor ?? pause.transform;
@@ -4827,6 +4925,7 @@ namespace UnpluggedCustomSongs
 
         public static void HidePrompt()
         {
+            HideHandButton();
             if (_promptObj != null && _promptObj.activeSelf)
             {
                 _promptObj.SetActive(false);
@@ -4910,6 +5009,7 @@ namespace UnpluggedCustomSongs
         {
             try
             {
+                IntroSkipManager.CacheHandButton(__instance);
                 DiscordRpcManager.UpdateMenu();
 
                 if (!_eventSubscribed)
