@@ -2513,6 +2513,8 @@ namespace UnpluggedCustomSongs
                 for (int i = 0; i < handNotes.Count; i++)
                 {
                     JSONNode noteNode = handNotes[i];
+                    if (i == 0 && ModMain.ConfigChartDiagnostics)
+                        MelonLogger.Msg("[ChartDiag] Building first hand note (PC).");
                     var handNote = noteNode["IsPullOff"].AsBool
                         ? (HandGuitarNote)new PullOffHandGuitarNote()
                         : new HandGuitarNote();
@@ -2523,16 +2525,16 @@ namespace UnpluggedCustomSongs
                     handNote.CursableProbability = 0f;
                     handNote.IsBlind = false;
                     JSONArray fingers = RequireJsonArray(noteNode, "Fingers", chartName);
-#if QUEST_IL2CPP
-                    handNote.Fingers = new Il2CppSystem.Collections.Generic.List<TierFinger>();
-#else
-                    handNote.Fingers = new List<TierFinger>();
-#endif
+                    // The game constructor initializes Fingers. Replacing its list is
+                    // unnecessary and can cross an unsafe IL2CPP generic marshaling path.
+                    var noteFingers = handNote.Fingers;
+                    if (noteFingers == null)
+                        throw new InvalidDataException($"Hand note {i} in '{chartName}' has no Fingers list.");
                     for (int fingerIndex = 0; fingerIndex < fingers.Count; fingerIndex++)
                     {
-                        handNote.Fingers.Add(ParseTierFinger(fingers[fingerIndex].Value, chartName));
+                        noteFingers.Add(ParseTierFinger(fingers[fingerIndex].Value, chartName));
                     }
-                    if (handNote.Fingers.Count == 0)
+                    if (noteFingers.Count == 0)
                         throw new InvalidDataException($"Chart JSON '{chartName}' has a hand note without fingers (note {i}).");
                     handGame.Notes.Add(handNote);
 
@@ -2685,24 +2687,36 @@ namespace UnpluggedCustomSongs
                     int index = 0;
                     foreach (var noteNode in handNotes.EnumerateArray())
                     {
+                        if (index == 0 && ModMain.ConfigChartDiagnostics)
+                            MelonLogger.Msg("[ChartDiag] Building first hand note (Quest).");
                         HandGuitarNote handNote = ReadJsonBool(noteNode, "IsPullOff")
                             ? (HandGuitarNote)new PullOffHandGuitarNote()
                             : new HandGuitarNote();
+                        if (index == 0 && ModMain.ConfigChartDiagnostics)
+                            MelonLogger.Msg("[ChartDiag] First hand note constructed.");
                         handNote.Time = ReadJsonFloat(noteNode, "Time");
                         handNote.Duration = ReadJsonFloat(noteNode, "Duration");
                         SetGameplayStringLane(handNote, ReadJsonStringLane(noteNode, chartName));
+                        if (index == 0 && ModMain.ConfigChartDiagnostics)
+                            MelonLogger.Msg("[ChartDiag] First hand note lane set.");
                         tierCounts[handNote.Tier] = tierCounts.TryGetValue(handNote.Tier, out int handTierCount) ? handTierCount + 1 : 1;
                         handNote.CursableProbability = 0f;
                         handNote.IsBlind = false;
 
                         var fingers = RequireJsonArray(noteNode, "Fingers", chartName);
-                        handNote.Fingers = new Il2CppSystem.Collections.Generic.List<TierFinger>();
+                        // Use the game's constructor-owned IL2CPP list. Constructing and
+                        // assigning a second generic enum list can abort the native runtime.
+                        var noteFingers = handNote.Fingers;
+                        if (noteFingers == null)
+                            throw new InvalidDataException($"Hand note {index} in '{chartName}' has no Fingers list.");
                         foreach (var finger in fingers.EnumerateArray())
                         {
                             string fingerName = finger.ValueKind == System.Text.Json.JsonValueKind.String ? finger.GetString() : string.Empty;
-                            handNote.Fingers.Add(ParseTierFinger(fingerName, chartName));
+                            noteFingers.Add(ParseTierFinger(fingerName, chartName));
                         }
-                        if (handNote.Fingers.Count == 0)
+                        if (index == 0 && ModMain.ConfigChartDiagnostics)
+                            MelonLogger.Msg("[ChartDiag] First hand note fingers set.");
+                        if (noteFingers.Count == 0)
                             throw new InvalidDataException($"Chart JSON '{chartName}' has a hand note without fingers (note {index}).");
                         handGame.Notes.Add(handNote);
 
