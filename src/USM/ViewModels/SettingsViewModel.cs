@@ -18,7 +18,6 @@ namespace USM.ViewModels
         private readonly QuestViewModel? _questViewModel;
         private GitHubAssetInfo? _modAsset;
         private GitHubAssetInfo? _questModAsset;
-        private string? _installedPcHash;
         private bool _packagedPcUpdateAvailable;
         private bool _isUpdatingMod;
         public bool IsUpdatingMod
@@ -363,12 +362,9 @@ namespace USM.ViewModels
             IsMelonInstalled = _gameDetector.IsMelonInstalled();
             IsModInstalled = _gameDetector.IsModInstalled();
             InstalledModVersion = _gameDetector.GetInstalledModVersion() ?? "N/A";
-            _installedPcHash = ModAssemblyMetadata.GetHash(string.IsNullOrEmpty(GamePath) ? null : Path.Combine(GamePath, "Mods", "UnpluggedCustomSongs.dll"));
             string? packagedPc = PackagedModAssemblyProvider.ExtractPcModAssembly();
-            string? packagedHash = ModAssemblyMetadata.GetHash(packagedPc);
-            _packagedPcUpdateAvailable = IsModInstalled && packagedHash != null && _installedPcHash != null
-                && !packagedHash.Equals(_installedPcHash, StringComparison.OrdinalIgnoreCase)
-                && ModAssemblyMetadata.CanInstallPackagedVersion(ModAssemblyMetadata.GetVersion(packagedPc ?? ""), InstalledModVersion);
+            string? packagedVersion = ModAssemblyMetadata.GetVersion(packagedPc ?? "");
+            _packagedPcUpdateAvailable = IsModInstalled && ModAssemblyMetadata.IsNewPackagedVersion(packagedVersion, InstalledModVersion);
             RefreshUpdateNotices();
             IsCustomSongsReady = Directory.Exists(_gameDetector.GetCustomSongsDir() ?? "");
 

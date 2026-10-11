@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
@@ -14,6 +15,12 @@ internal static class ModAssemblyMetadata
     public static bool CanInstallPackagedVersion(string? target, string? installed) =>
         UpdateService.CompareVersions(target ?? "0", installed ?? "0") >= 0
         || IsDevelopmentVersionReset(target, installed);
+
+    public static bool IsNewPackagedVersion(string? target, string? installed) =>
+        !string.IsNullOrWhiteSpace(target) && !string.IsNullOrWhiteSpace(installed)
+        && Version.TryParse(UpdateService.CleanVersionString(target), out _)
+        && Version.TryParse(UpdateService.CleanVersionString(installed), out _)
+        && (UpdateService.CompareVersions(target, installed) > 0 || IsDevelopmentVersionReset(target, installed));
 
     public static string? GetHash(string? path)
     {

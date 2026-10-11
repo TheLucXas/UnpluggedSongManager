@@ -457,7 +457,13 @@ namespace USM.Core.Services
 
             if (Version.TryParse(cleanA, out var parsedA) && Version.TryParse(cleanB, out var parsedB))
             {
-                return parsedA.CompareTo(parsedB);
+                // A mod can report "1.0" while its project reports "1.0.0".
+                // Treat omitted trailing components as zero for update notices.
+                var normalizedA = new Version(parsedA.Major, parsedA.Minor,
+                    Math.Max(parsedA.Build, 0), Math.Max(parsedA.Revision, 0));
+                var normalizedB = new Version(parsedB.Major, parsedB.Minor,
+                    Math.Max(parsedB.Build, 0), Math.Max(parsedB.Revision, 0));
+                return normalizedA.CompareTo(normalizedB);
             }
 
             // Fallback string compare

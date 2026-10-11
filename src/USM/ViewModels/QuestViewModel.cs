@@ -194,8 +194,7 @@ namespace USM.ViewModels
             RefreshModUpdateProperties();
         }
         public bool IsModUpdateAvailable => IsModdedInstalled && InstalledModInfo != null &&
-            ((!InstalledModInfo.MatchesPackagedBuild
-            && ModAssemblyMetadata.CanInstallPackagedVersion(ModAssemblyMetadata.GetVersion(PackagedModAssemblyProvider.ExtractQuestModAssembly() ?? ""), InstalledModInfo.Version))
+            (ModAssemblyMetadata.IsNewPackagedVersion(ModAssemblyMetadata.GetVersion(PackagedModAssemblyProvider.ExtractQuestModAssembly() ?? ""), InstalledModInfo.Version)
             || (AvailableModRelease?.ModVersion != null && UpdateService.CompareVersions(AvailableModRelease.ModVersion, InstalledModInfo.Version) > 0));
         public string ModActionText => LocalizationService.T(InstalledModInfo == null
             ? "Quest_ModInstall" : IsModUpdateAvailable ? "Quest_ModUpdate" : "Quest_ModReinstall");
