@@ -845,6 +845,35 @@ namespace USM.ViewModels
             }
 
             IsBusy = true;
+            ProgressStatus = "Preparing Quest hand charts...";
+            _notifyCallback("Preparing songs for Quest hand mode...");
+
+            // An older .usm may have the same filename on both devices but lack the
+            // native hand mapping required by the current Quest mod. Prepare the
+            // local archive before deciding which songs need transferring.
+            var upgradedSongNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string songPath in allSongDirs)
+            {
+                try
+                {
+                    int added = await Task.Run(() => UsmPacker.EnsureQuestHandCharts(songPath));
+                    if (added > 0)
+                    {
+                        upgradedSongNames.Add(Path.GetFileName(songPath));
+                        AppendLog($"Prepared {added} Quest hand chart(s) for {Path.GetFileName(songPath)}.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AppendLog($"Could not prepare Quest hand charts for {Path.GetFileName(songPath)}: {ex.Message}");
+                    MessageBox.Show($"Could not prepare {Path.GetFileName(songPath)} for Quest hand mode: {ex.Message}",
+                        LocalizationService.T("Quest_CustomSongsSyncTitle"), MessageBoxButton.OK, MessageBoxImage.Error);
+                    IsBusy = false;
+                    ProgressStatus = "Ready";
+                    return;
+                }
+            }
+
             ProgressStatus = "Checking Quest songs...";
             _notifyCallback("Checking installed songs on Quest...");
 
@@ -852,8 +881,14 @@ namespace USM.ViewModels
             try
             {
                 var existingOnQuest = await _questService.GetQuestInstalledSongsAsync(SelectedDevice.Serial);
+                var remoteSizes = existingOnQuest.Count == 0
+                    ? new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
+                    : await _questService.GetQuestInstalledSongSizesAsync(SelectedDevice.Serial);
                 songsToSync = allSongDirs
-                    .Where(dir => !existingOnQuest.Contains(Path.GetFileName(dir)))
+                    .Where(dir => !existingOnQuest.Contains(Path.GetFileName(dir)) ||
+                        upgradedSongNames.Contains(Path.GetFileName(dir)) ||
+                        !remoteSizes.TryGetValue(Path.GetFileName(dir), out long remoteSize) ||
+                        remoteSize != new FileInfo(dir).Length)
                     .ToList();
 
                 if (songsToSync.Count == 0)

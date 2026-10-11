@@ -1608,6 +1608,31 @@ namespace USM.Core.Services.Quest
             return installed;
         }
 
+        public async Task<Dictionary<string, long>> GetQuestInstalledSongSizesAsync(string serial)
+        {
+            var sizes = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+            var (code, stdout, stderr) = await RunAdbShellAsync(serial,
+                $"stat -c '%s|%n' {ModdedSongsPath}/*.usm", 15000);
+            if (code != 0)
+            {
+                if (stdout.Contains("No such file", StringComparison.OrdinalIgnoreCase) ||
+                    stderr.Contains("No such file", StringComparison.OrdinalIgnoreCase))
+                    return sizes;
+                throw new IOException($"Could not inspect Quest songs: {(stdout + " " + stderr).Trim()}");
+            }
+
+            foreach (string line in stdout.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                int separator = line.IndexOf('|');
+                if (separator <= 0 || !long.TryParse(line[..separator], out long size))
+                    continue;
+                string remotePath = line[(separator + 1)..];
+                string name = remotePath[(remotePath.LastIndexOf('/') + 1)..];
+                sizes[name] = size;
+            }
+            return sizes;
+        }
+
         public async Task<(bool DirectoryExists, List<string> SongFiles, string Message)> ListQuestSongsAsync(string serial)
         {
             var (directoryCode, _, directoryError) = await RunProcessAsync(
