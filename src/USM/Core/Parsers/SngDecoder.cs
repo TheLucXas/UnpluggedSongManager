@@ -160,7 +160,8 @@ namespace USM.Core.Parsers
                         if (extension.Equals(".chart", StringComparison.OrdinalIgnoreCase))
                         {
                             var parsed = ChartParser.Parse(path);
-                            difficultyCount = parsed.Difficulties.Count(pair => pair.Value.Values.Any(group => group.Count > 0));
+                            difficultyCount = JsonGenerator.GetUsableSourceDifficultyNames(
+                                parsed.Difficulties, parsed.TickToSec).Count;
                             noteCount = parsed.Difficulties.Values.Sum(notes => notes.Values.Sum(group => group.Count));
                             noteTimes = parsed.Difficulties.Values.SelectMany(notes => notes.Keys)
                                 .Select(parsed.TickToSec).Where(time => double.IsFinite(time) && time >= 0).ToList();
@@ -168,7 +169,8 @@ namespace USM.Core.Parsers
                         else
                         {
                             var parsed = MidiParser.Parse(path);
-                            difficultyCount = parsed.Difficulties.Count(pair => pair.Value.Values.Any(group => group.Count > 0));
+                            difficultyCount = JsonGenerator.GetUsableSourceDifficultyNames(
+                                parsed.Difficulties, parsed.TickToSec).Count;
                             noteCount = parsed.Difficulties.Values.Sum(notes => notes.Values.Sum(group => group.Count));
                             noteTimes = parsed.Difficulties.Values.SelectMany(notes => notes.Keys)
                                 .Select(parsed.TickToSec).Where(time => double.IsFinite(time) && time >= 0).ToList();

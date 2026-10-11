@@ -182,13 +182,14 @@ namespace USM.Core.Services
             if (selected == null)
                 throw new FileNotFoundException("No playable guitar notes were found in notes.chart, song.chart, or notes.mid.");
 
-            sourceDifficultyCount = Math.Min(4, selected.DifficultyCount);
+            sourceDifficultyCount = Math.Min(4, JsonGenerator.GetUsableSourceDifficultyNames(
+                selected.Candidate.Difficulties, selected.Candidate.TickToSec).Count);
             sourceNoteCount = selected.NoteCount;
             double firstNoteTime = selected.FirstNoteTime;
             double lastNoteTime = selected.LastNoteTime;
             chartCoverageRatio = selected.Coverage;
 
-            log?.Invoke($"  [Chart] Using {selected.Candidate.Name}: {selected.DifficultyCount} populated source difficulties, {selected.NoteCount} note events; range {firstNoteTime:F1}-{lastNoteTime:F1}s of {songDurationSeconds:F1}s ({chartCoverageRatio:P0} coverage).");
+            log?.Invoke($"  [Chart] Using {selected.Candidate.Name}: {sourceDifficultyCount} usable source difficulties ({selected.DifficultyCount} populated), {selected.NoteCount} note events; range {firstNoteTime:F1}-{lastNoteTime:F1}s of {songDurationSeconds:F1}s ({chartCoverageRatio:P0} coverage).");
             if (songDurationSeconds > 0 && (chartCoverageRatio < 0.50 || firstNoteTime > songDurationSeconds * 0.25))
                 log?.Invoke("  [ChartWarning] The best available chart has suspiciously low song coverage or a late first note. The source chart may be incomplete; check the generated first-note time before playing.");
             return JsonGenerator.GenerateAllDifficultiesJson(

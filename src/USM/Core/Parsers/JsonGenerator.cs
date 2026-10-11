@@ -15,7 +15,7 @@ namespace USM.Core.Parsers
     {
         // Bump when chart parsing or generated note semantics change. Stored in
         // meta.json so the PC library can selectively regenerate outdated charts.
-        public const int ParserVersion = 8;
+        public const int ParserVersion = 9;
 
         // These are spatial string lanes (the four white paths in the game),
         // independent of difficulty and source fret/button colors. Every output
@@ -380,8 +380,8 @@ namespace USM.Core.Parsers
                 "songdata-Hard.json"
             };
             difficulties ??= new Dictionary<string, SortedDictionary<long, List<ChartParser.NoteEvent>>>(StringComparer.OrdinalIgnoreCase);
-            bool hasNativeSuperEasy = difficulties.TryGetValue("SuperEasySingle", out var nativeSuperEasyNotes)
-                && HasNotes(nativeSuperEasyNotes);
+            var usableSourceNames = GetUsableSourceDifficultyNames(difficulties, tickToSec);
+            bool hasNativeSuperEasy = usableSourceNames.Contains("SuperEasySingle");
             string[] sourceDifficulties = hasNativeSuperEasy
                 ? new[] { "SuperEasySingle", "EasySingle", "MediumSingle", "HardSingle" }
                 : new[] { "EasySingle", "MediumSingle", "HardSingle", "ExpertSingle" };
@@ -391,8 +391,12 @@ namespace USM.Core.Parsers
                     difficulties.TryGetValue(name, out var notes);
                     return (Name: name, Rank: rank, Notes: notes);
                 })
-                .Where(source => HasNotes(source.Notes))
+                .Where(source => usableSourceNames.Contains(source.Name))
                 .ToList();
+
+            foreach (string omitted in difficulties.Keys.Where(name => HasNotes(difficulties[name])
+                && !usableSourceNames.Contains(name)))
+                log?.Invoke($"  [ChartWarning] Ignoring truncated {omitted}: its note count and time span are both tiny compared with the longest source tier.");
 
             log?.Invoke(availableSources.Count == 0
                 ? "  [Chart] No playable guitar difficulty sections were found."
@@ -502,6 +506,34 @@ namespace USM.Core.Parsers
 
         private static bool HasNotes(SortedDictionary<long, List<ChartParser.NoteEvent>>? notes) =>
             notes != null && notes.Values.Any(group => group != null && group.Count > 0);
+
+        public static IReadOnlyList<string> GetUsableSourceDifficultyNames(
+            Dictionary<string, SortedDictionary<long, List<ChartParser.NoteEvent>>> difficulties,
+            Func<long, double> tickToSec)
+        {
+            string[] names = { "SuperEasySingle", "EasySingle", "MediumSingle", "HardSingle", "ExpertSingle" };
+            var sources = names
+                .Where(name => difficulties.TryGetValue(name, out var notes) && HasNotes(notes))
+                .Select(name =>
+                {
+                    var notes = difficulties[name];
+                    var populated = notes.Where(entry => entry.Value != null && entry.Value.Count > 0).ToList();
+                    double first = tickToSec(populated[0].Key);
+                    double last = tickToSec(populated[^1].Key);
+                    return (Name: name, Groups: populated.Count, Span: Math.Max(0, last - first));
+                })
+                .ToList();
+            if (sources.Count < 2)
+                return sources.Select(source => source.Name).ToList();
+
+            int mostGroups = sources.Max(source => source.Groups);
+            double longestSpan = sources.Max(source => source.Span);
+            return sources
+                .Where(source => !(source.Groups < mostGroups * 0.05
+                    && source.Span < longestSpan * 0.25))
+                .Select(source => source.Name)
+                .ToList();
+        }
 
         private static int CountNotes(SortedDictionary<long, List<ChartParser.NoteEvent>>? notes) =>
             notes?.Values.Where(group => group != null).Sum(group => group.Count) ?? 0;
