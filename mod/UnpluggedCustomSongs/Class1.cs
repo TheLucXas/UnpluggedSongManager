@@ -426,6 +426,7 @@ namespace UnpluggedCustomSongs
             // VR Thumbstick & Keyboard song carousel navigation (with hold-acceleration)
             HandleSongMenuNavigation();
             UpdateCustomSongPreview();
+            HideBetaBadges();
 
 #if !QUEST_IL2CPP
             if (Input.GetKeyDown(KeyCode.F1))
@@ -477,13 +478,35 @@ namespace UnpluggedCustomSongs
         private static string _lastMenuPreviewSongKey = null;
         private static bool _hasCarouselOffset;
         private static float _lastCarouselOffset;
-        private static float _lastCarouselMotionAt;
+        private static float _nextBetaBadgeScan;
+        private static bool _arrowPositionLogged;
+        private static string _arrowPositionedSongKey;
         public static bool IsCustomCarouselSettled { get; private set; }
+
+        private static void HideBetaBadges()
+        {
+            var menu = StartSpace.I;
+            if (menu == null || !menu.gameObject.activeInHierarchy ||
+                Time.unscaledTime < _nextBetaBadgeScan) return;
+            _nextBetaBadgeScan = Time.unscaledTime + 0.75f;
+
+            foreach (var label in menu.GetComponentsInChildren<TextMeshPro>(true))
+            {
+                if (label != null && label.gameObject.activeSelf &&
+                    string.Equals(label.text?.Trim(), "BETA", StringComparison.OrdinalIgnoreCase))
+                    label.gameObject.SetActive(false);
+            }
+            foreach (var label in menu.GetComponentsInChildren<TextMeshProUGUI>(true))
+            {
+                if (label != null && label.gameObject.activeSelf &&
+                    string.Equals(label.text?.Trim(), "BETA", StringComparison.OrdinalIgnoreCase))
+                    label.gameObject.SetActive(false);
+            }
+        }
 
         public static void MarkCarouselChanging()
         {
             IsCustomCarouselSettled = false;
-            _lastCarouselMotionAt = Time.unscaledTime;
             CustomSongLoader.StopCustomAudioPreview();
         }
 
@@ -511,10 +534,9 @@ namespace UnpluggedCustomSongs
                 if (!_hasCarouselOffset)
                 {
                     _hasCarouselOffset = true;
-                    _lastCarouselMotionAt = Time.unscaledTime;
                 }
                 else if (Mathf.Abs(offset - _lastCarouselOffset) > 0.0001f ||
-                         Mathf.Abs(offset - smoothOffset) > 0.002f)
+                         Mathf.Abs(offset - smoothOffset) > 0.01f)
                 {
                     moving = true;
                 }
@@ -535,10 +557,6 @@ namespace UnpluggedCustomSongs
                 }
 
                 string selectionKey = (selectedSong.SongID ?? "") + "|" + selectedSong.FileName;
-                // The offset check above already waits for the actual movement
-                // to finish. Only a short quiet period is needed here.
-                const float settleDelay = 0.12f;
-                if (Time.unscaledTime - _lastCarouselMotionAt < settleDelay) return;
                 IsCustomCarouselSettled = true;
                 VinylCoverHelper.UpdateTurntableVinyl(selectedSong);
                 if (string.Equals(selectionKey, _lastMenuPreviewSongKey, StringComparison.Ordinal)) return;
@@ -685,9 +703,12 @@ namespace UnpluggedCustomSongs
                 _carouselLeftButton == null || _carouselRightButton == null)
             {
                 _configuredArrowMenuId = sm.GetInstanceID();
+                _arrowPositionLogged = false;
+                _arrowPositionedSongKey = null;
                 CreateCarouselArrows();
             }
-            SetCarouselArrowsVisible(true);
+            PositionCarouselArrows(sm);
+            SetCarouselArrowsVisible(_arrowPositionedSongKey != null);
 
             // The new buttons handle the first step through their Pressed event.
             // A deliberate hold repeats with the same acceleration as the sticks.
@@ -720,6 +741,7 @@ namespace UnpluggedCustomSongs
 
         private static void SetCarouselArrowsVisible(bool visible)
         {
+            if (!visible) _arrowPositionedSongKey = null;
             if (_carouselLeftButton != null && _carouselLeftButton.gameObject.activeSelf != visible)
                 _carouselLeftButton.gameObject.SetActive(visible);
             if (_carouselRightButton != null && _carouselRightButton.gameObject.activeSelf != visible)
@@ -732,6 +754,7 @@ namespace UnpluggedCustomSongs
             if (_carouselRightButton != null) UnityEngine.Object.Destroy(_carouselRightButton.gameObject);
             _carouselLeftButton = CreateCarouselArrow("USM_PreviousSong", "<", -1);
             _carouselRightButton = CreateCarouselArrow("USM_NextSong", ">", 1);
+            MelonLogger.Msg($"[CustomSongs][Arrows] Created: left={_carouselLeftButton != null}, right={_carouselRightButton != null}.");
         }
 
         private static PressableButton CreateCarouselArrow(string name, string label, int dir)
@@ -751,9 +774,7 @@ namespace UnpluggedCustomSongs
             button.OnPressed = null;
             button.Text = label;
             button.SetText(label);
-            button.transform.position = startButton.transform.position
-                + startButton.transform.right * (dir * 0.27f)
-                + startButton.transform.up * 0.16f;
+            button.transform.position = startButton.transform.position;
             button.transform.rotation = startButton.transform.rotation;
             button.transform.localScale = startButton.transform.localScale * 0.38f;
 #if QUEST_IL2CPP
@@ -763,6 +784,47 @@ namespace UnpluggedCustomSongs
 #endif
             obj.SetActive(true);
             return button;
+        }
+
+        private static void PositionCarouselArrows(SongMenu menu)
+        {
+            if (_carouselLeftButton == null || _carouselRightButton == null ||
+                !IsCustomCarouselSettled) return;
+            var camera = CameraManager.Main != null ? CameraManager.Main : Camera.main;
+            if (camera == null) return;
+
+            SongMenuItem selectedItem = null;
+            var selectedSong = menu.SelectedSong;
+            string songKey = selectedSong?.SongID;
+            if (songKey != null && string.Equals(songKey, _arrowPositionedSongKey, StringComparison.Ordinal))
+                return;
+            foreach (var item in menu.GetComponentsInChildren<SongMenuItem>(true))
+            {
+                if (item != null && item.CoverRenderer != null && item.SongData != null &&
+                    selectedSong != null &&
+                    string.Equals(item.SongData.SongID, selectedSong.SongID, StringComparison.Ordinal))
+                {
+                    selectedItem = item;
+                    break;
+                }
+            }
+            if (selectedItem == null) return;
+
+            Vector3 center = camera.WorldToViewportPoint(selectedItem.CoverRenderer.bounds.center);
+            if (center.z <= 0f) return;
+            for (int dir = -1; dir <= 1; dir += 2)
+            {
+                var button = dir < 0 ? _carouselLeftButton : _carouselRightButton;
+                float x = Mathf.Clamp(center.x + dir * 0.26f, 0.08f, 0.92f);
+                button.transform.position = camera.ViewportToWorldPoint(new Vector3(x, center.y, center.z))
+                    - camera.transform.forward * 0.06f;
+            }
+            _arrowPositionedSongKey = songKey;
+            if (!_arrowPositionLogged)
+            {
+                _arrowPositionLogged = true;
+                MelonLogger.Msg($"[CustomSongs][Arrows] Positioned beside selected cover: viewport=({center.x:F2}, {center.y:F2}), left={_carouselLeftButton.transform.position}, right={_carouselRightButton.transform.position}.");
+            }
         }
 
         private static void TriggerCurrentSongStep(int dir)
