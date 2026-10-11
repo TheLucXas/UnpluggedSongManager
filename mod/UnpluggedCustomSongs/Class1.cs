@@ -2603,15 +2603,15 @@ namespace UnpluggedCustomSongs
                     }
 
                     int stringLane = ReadStringLane(noteNode, chartName);
-                    var controllerNote = new ControllerGuitarNote
-                    {
-                        Time = noteNode["Time"].AsFloat,
-                        Duration = noteNode["Duration"].AsFloat,
-                        CursableProbability = 0f,
-                        IsBlind = false,
-                        ChordRotation = noteNode["ChordRotation"].AsInt,
-                        Intensity = noteNode["Intensity"].AsInt
-                    };
+                    ControllerGuitarNote controllerNote = noteNode["IsPullOff"].AsBool
+                        ? new PullOffControllerGuitarNote()
+                        : new ControllerGuitarNote();
+                    controllerNote.Time = noteNode["Time"].AsFloat;
+                    controllerNote.Duration = noteNode["Duration"].AsFloat;
+                    controllerNote.CursableProbability = 0f;
+                    controllerNote.IsBlind = false;
+                    controllerNote.ChordRotation = noteNode["ChordRotation"].AsInt;
+                    controllerNote.Intensity = noteNode["Intensity"].AsInt;
                     SetGameplayStringLane(controllerNote, stringLane);
 #if QUEST_IL2CPP
                     controllerNote.Buttons = new Il2CppSystem.Collections.Generic.List<bool>();
@@ -2798,16 +2798,16 @@ namespace UnpluggedCustomSongs
                             continue;
                         }
 
-                        var controllerNote = new ControllerGuitarNote
-                        {
-                            Time = ReadJsonFloat(noteNode, "Time"),
-                            Duration = ReadJsonFloat(noteNode, "Duration"),
-                            CursableProbability = 0f,
-                            IsBlind = false,
-                            ChordRotation = ReadJsonInt(noteNode, "ChordRotation"),
-                            Intensity = ReadJsonInt(noteNode, "Intensity"),
-                            Buttons = new Il2CppSystem.Collections.Generic.List<bool>()
-                        };
+                        ControllerGuitarNote controllerNote = ReadJsonBool(noteNode, "IsPullOff")
+                            ? new PullOffControllerGuitarNote()
+                            : new ControllerGuitarNote();
+                        controllerNote.Time = ReadJsonFloat(noteNode, "Time");
+                        controllerNote.Duration = ReadJsonFloat(noteNode, "Duration");
+                        controllerNote.CursableProbability = 0f;
+                        controllerNote.IsBlind = false;
+                        controllerNote.ChordRotation = ReadJsonInt(noteNode, "ChordRotation");
+                        controllerNote.Intensity = ReadJsonInt(noteNode, "Intensity");
+                        controllerNote.Buttons = new Il2CppSystem.Collections.Generic.List<bool>();
                         SetGameplayStringLane(controllerNote, stringLane);
                         controllerNote.Buttons.Add(hasTrigger);
                         controllerNote.Buttons.Add(hasGrip);
