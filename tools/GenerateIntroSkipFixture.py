@@ -1,4 +1,4 @@
-"""Build an original silent USM for testing L2+R2 intro skip.
+"""Build an original silent USM for testing A+X intro skip.
 
 Requires FFmpeg and Pillow. No downloaded chart/audio is used.
 Usage: python tools/GenerateIntroSkipFixture.py --output <path.usm>
@@ -30,7 +30,7 @@ cover = Image.new("RGB", (512, 512), "#031524")
 draw = ImageDraw.Draw(cover)
 draw.text((40, 120), "USM INTRO SKIP TEST", fill="#85c1f5", font_size=30)
 draw.text((40, 220), "First note: 30 seconds", fill="#e6f2fd", font_size=28)
-draw.text((40, 280), "L2 + R2 -> 27.5 seconds", fill="#ef37d8", font_size=26)
+draw.text((40, 280), "A + X -> 27.5 seconds", fill="#ef37d8", font_size=26)
 cover_bytes = io.BytesIO()
 cover.save(cover_bytes, format="JPEG", quality=85)
 meta = {
