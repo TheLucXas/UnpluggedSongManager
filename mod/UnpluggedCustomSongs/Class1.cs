@@ -423,10 +423,9 @@ namespace UnpluggedCustomSongs
             // SongMenu does not consistently request a preview when an album is opened
             // with a song already selected. Polling the selected custom song also covers
             // restoring the last album/song on startup, on both Mono and IL2CPP.
-            UpdateCustomSongPreview();
-
             // VR Thumbstick & Keyboard song carousel navigation (with hold-acceleration)
             HandleSongMenuNavigation();
+            UpdateCustomSongPreview();
 
 #if !QUEST_IL2CPP
             if (Input.GetKeyDown(KeyCode.F1))
@@ -469,9 +468,22 @@ namespace UnpluggedCustomSongs
         private static int _navHoldDir = 0;
         private static float _navHoldStartTime = 0f;
         private static float _navNextStepTime = 0f;
+        private static int _arrowHoldDir = 0;
+        private static float _arrowHoldStartTime = 0f;
+        private static float _arrowNextStepTime = 0f;
+        private static int _configuredArrowMenuId;
         private static string _lastMenuPreviewSongKey = null;
-        private static string _pendingMenuPreviewSongKey = null;
-        private static float _pendingMenuPreviewSince;
+        private static bool _hasCarouselOffset;
+        private static float _lastCarouselOffset;
+        private static float _lastCarouselMotionAt;
+        public static bool IsCustomCarouselSettled { get; private set; }
+
+        public static void MarkCarouselChanging()
+        {
+            IsCustomCarouselSettled = false;
+            _lastCarouselMotionAt = Time.unscaledTime;
+            CustomSongLoader.StopCustomAudioPreview();
+        }
 
         private void UpdateCustomSongPreview()
         {
@@ -485,34 +497,47 @@ namespace UnpluggedCustomSongs
                 {
                     CustomSongLoader.StopCustomAudioPreview();
                     _lastMenuPreviewSongKey = null;
-                    _pendingMenuPreviewSongKey = null;
+                    _hasCarouselOffset = false;
+                    IsCustomCarouselSettled = false;
                     return;
                 }
 
-                var selectedSong = startSpace.songMenu.SelectedSong;
+                var menu = startSpace.songMenu;
+                float offset = GameFieldAccess.Get<float>(menu, "Offset");
+                float smoothOffset = GameFieldAccess.Get<float>(menu, "smoothVirtualizedOffset");
+                bool moving = menu.touchArea != null && menu.touchArea.IsTouched;
+                if (!_hasCarouselOffset)
+                {
+                    _hasCarouselOffset = true;
+                    _lastCarouselMotionAt = Time.unscaledTime;
+                }
+                else if (Mathf.Abs(offset - _lastCarouselOffset) > 0.0001f ||
+                         Mathf.Abs(offset - smoothOffset) > 0.002f)
+                {
+                    moving = true;
+                }
+                _lastCarouselOffset = offset;
+                if (moving)
+                {
+                    MarkCarouselChanging();
+                    _lastMenuPreviewSongKey = null;
+                    return;
+                }
+
+                var selectedSong = menu.SelectedSong;
                 if (selectedSong == null || selectedSong.SongID == null ||
                     !selectedSong.SongID.StartsWith("CUSTOM_", StringComparison.Ordinal) ||
                     string.IsNullOrWhiteSpace(selectedSong.FileName))
                 {
-                    _pendingMenuPreviewSongKey = null;
                     return;
                 }
 
                 string selectionKey = (selectedSong.SongID ?? "") + "|" + selectedSong.FileName;
+                float settleDelay = Mathf.Max(menu.SamplePlayDelay, menu.CarouselSpinningDelay);
+                if (Time.unscaledTime - _lastCarouselMotionAt < settleDelay) return;
+                IsCustomCarouselSettled = true;
+                VinylCoverHelper.UpdateTurntableVinyl(selectedSong);
                 if (string.Equals(selectionKey, _lastMenuPreviewSongKey, StringComparison.Ordinal)) return;
-
-                // Match the native carousel's settling delay. Starting a decoder
-                // for every intermediate selection can stall the menu and play
-                // snippets of songs that the user never stopped on.
-                if (!string.Equals(selectionKey, _pendingMenuPreviewSongKey, StringComparison.Ordinal))
-                {
-                    _pendingMenuPreviewSongKey = selectionKey;
-                    _pendingMenuPreviewSince = Time.unscaledTime;
-                    return;
-                }
-                float settleDelay = Mathf.Max(startSpace.songMenu.SamplePlayDelay,
-                    startSpace.songMenu.CarouselSpinningDelay);
-                if (Time.unscaledTime - _pendingMenuPreviewSince < Mathf.Max(0f, settleDelay)) return;
 
                 var player = GameManager.I != null ? GameManager.I.musicPlayer : null;
                 if (player == null) player = UnityEngine.Object.FindObjectOfType<Mp3Player>();
@@ -525,7 +550,6 @@ namespace UnpluggedCustomSongs
             catch (Exception ex)
             {
                 _lastMenuPreviewSongKey = null;
-                _pendingMenuPreviewSongKey = null;
                 if (ConfigVerbose) MelonLogger.Warning($"[CustomSongs] Could not update selected-song preview: {ex.Message}");
             }
         }
@@ -535,6 +559,7 @@ namespace UnpluggedCustomSongs
             if (StartSpace.I == null || !StartSpace.I.gameObject.activeInHierarchy)
             {
                 _navHoldDir = 0;
+                _arrowHoldDir = 0;
                 return;
             }
 
@@ -542,14 +567,18 @@ namespace UnpluggedCustomSongs
             if (sm == null || !sm.gameObject.activeInHierarchy)
             {
                 _navHoldDir = 0;
+                _arrowHoldDir = 0;
                 return;
             }
 
             if (GameManager.IsPlaying)
             {
                 _navHoldDir = 0;
+                _arrowHoldDir = 0;
                 return;
             }
+
+            HandleCarouselArrows(sm);
 
             // Do not cast SongMenu.songList to List<T>: Quest exposes an
             // Il2CppSystem.Collections.Generic.List<T> and that cast silently
@@ -633,6 +662,60 @@ namespace UnpluggedCustomSongs
                 _navHoldStartTime = 0f;
                 _navNextStepTime = 0f;
             }
+        }
+
+        private static void HandleCarouselArrows(SongMenu sm)
+        {
+            if (AlbumsManager.SelectedAlbum?.AlbumID != "CustomSongsAlbum")
+            {
+                _arrowHoldDir = 0;
+                return;
+            }
+
+            if (_configuredArrowMenuId != sm.GetInstanceID())
+            {
+                _configuredArrowMenuId = sm.GetInstanceID();
+                ConfigureCarouselArrow(sm.Prev, "<");
+                ConfigureCarouselArrow(sm.Next, ">");
+            }
+
+            // SongMenu already handles the initial physical press. Repeat only
+            // after a deliberate hold, with the same acceleration as the sticks.
+            int dir = 0;
+            try
+            {
+                if (sm.Prev != null && sm.Prev.IsPressed) dir = 1;
+                else if (sm.Next != null && sm.Next.IsPressed) dir = -1;
+            }
+            catch { }
+
+            if (dir == 0)
+            {
+                _arrowHoldDir = 0;
+                return;
+            }
+            if (_arrowHoldDir != dir)
+            {
+                _arrowHoldDir = dir;
+                _arrowHoldStartTime = Time.unscaledTime;
+                _arrowNextStepTime = Time.unscaledTime + 0.55f;
+                return;
+            }
+            if (Time.unscaledTime < _arrowNextStepTime) return;
+
+            TriggerSongStep(sm, dir);
+            float factor = Mathf.Clamp01((Time.unscaledTime - _arrowHoldStartTime - 0.55f) / 2f);
+            _arrowNextStepTime = Time.unscaledTime + Mathf.Lerp(0.22f, 0.045f, factor);
+        }
+
+        private static void ConfigureCarouselArrow(PressableButton button, string label)
+        {
+            if (button == null) return;
+            button.gameObject.SetActive(true);
+            button.CanTouch = true;
+            button.Text = label;
+            foreach (var text in button.GetComponentsInChildren<TextMeshPro>(true))
+                text.text = label;
         }
 
         private static void TriggerSongStep(SongMenu sm, int dir)
@@ -1752,7 +1835,8 @@ namespace UnpluggedCustomSongs
 
                             var menu = StartSpace.I?.songMenu;
                             if (menu != null && AlbumsManager.SelectedAlbum?.AlbumID == "CustomSongsAlbum"
-                                && IsSameSong(menu.SelectedSong, currentSong))
+                                && IsSameSong(menu.SelectedSong, currentSong)
+                                && ModMain.IsCustomCarouselSettled)
                                 VinylCoverHelper.UpdateTurntableVinyl(currentSong, force: true);
 
                             MelonLogger.Msg($"[CoverDiag] Applied visible cover for '{currentSong.FileName}' without requiring gameplay.");
@@ -3296,7 +3380,8 @@ namespace UnpluggedCustomSongs
                         var menu = StartSpace.I?.songMenu;
                         string currentArchive = menu != null && menu.gameObject.activeInHierarchy
                             ? ResolveUsmPath(menu.SelectedSong?.FileName) : null;
-                        if (GameManager.IsPlaying || AlbumsManager.SelectedAlbum?.AlbumID != "CustomSongsAlbum" ||
+                        if (GameManager.IsPlaying || !ModMain.IsCustomCarouselSettled ||
+                            AlbumsManager.SelectedAlbum?.AlbumID != "CustomSongsAlbum" ||
                             !string.Equals(currentArchive, previewArchivePath, StringComparison.OrdinalIgnoreCase))
                         {
                             if (clip != null) UnityEngine.Object.Destroy(clip);
@@ -3316,65 +3401,6 @@ namespace UnpluggedCustomSongs
                             ActivePreviewArchivePath = previewArchivePath;
                             MelonLogger.Msg($"[CustomSongs] Turntable audio preview started for '{folderName}'");
 
-                            // Live update Turntable Vinyl Texture to this song's cover!
-                            try
-                            {
-                                Texture2D songCover = null;
-                                if (CustomAlbumInstance != null && CustomAlbumInstance.builtInSongsMetadata != null)
-                                {
-                                    SongMappingMetaData foundMeta = null;
-                                    foreach (var meta in CustomAlbumInstance.builtInSongsMetadata)
-                                    {
-                                        if (meta != null && meta.FileName == folderName)
-                                        {
-                                            foundMeta = meta;
-                                            break;
-                                        }
-                                    }
-                                    if (foundMeta != null && foundMeta.Thumbnail != null)
-                                    {
-                                        songCover = foundMeta.Thumbnail;
-                                    }
-                                }
-                                                            if (songCover == null)
-                                {
-                                    using (var archive2 = System.IO.Compression.ZipFile.OpenRead(usmPath))
-                                    {
-                                        var coverEntry = archive2.GetEntry("album.jpg") ?? archive2.GetEntry("cover.jpg") ?? archive2.GetEntry("album.png") ?? archive2.GetEntry("cover.png");
-                                        if (coverEntry != null)
-                                        {
-                                            using (var ms = new MemoryStream())
-                                            {
-                                                coverEntry.Open().CopyTo(ms);
-                                                songCover = new Texture2D(2, 2);
-                                                if (ImageConversion.LoadImage(songCover, ms.ToArray()))
-                                                {
-                                                    songCover.name = folderName;
-                                                }
-                                                else
-                                                {
-                                                    songCover = null;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                if (songCover != null)
-                                {
-                                    if (StartSpace.I != null)
-                                    {
-                                        var r1 = StartSpace.I.StartSpaceLp?.GetComponent<Renderer>();
-                                        if (r1 != null && r1.material != null) r1.material.SetTexture("_MainTex", songCover);
-                                        var r2 = StartSpace.I.StartSpaceAuxLp?.GetComponent<Renderer>();
-                                        if (r2 != null && r2.material != null) r2.material.SetTexture("_MainTex", songCover);
-                                    }
-                                    if (CustomAlbumInstance != null)
-                                    {
-                                        CustomAlbumInstance.VinylTexture = songCover;
-                                    }
-                                }
-                            }
-                            catch { }
                         }
                     }));
                 }
@@ -4187,6 +4213,16 @@ namespace UnpluggedCustomSongs
         }
     }
 
+    [HarmonyPatch(typeof(SongMenu), "PlaySelectedItemSample")]
+    public static class Patch_SongMenu_PlaySelectedItemSample
+    {
+        public static bool Prefix()
+        {
+            // The custom album starts its preview after the carousel has stopped.
+            return AlbumsManager.SelectedAlbum?.AlbumID != "CustomSongsAlbum";
+        }
+    }
+
     [HarmonyPatch(typeof(Mp3Player), "PlayAsync")]
     public static class Patch_Mp3Player_PlayAsync
     {
@@ -4202,7 +4238,10 @@ namespace UnpluggedCustomSongs
 
                 if (isCustom)
                 {
-                    CustomSongLoader.PlayCustomAudioSample(__instance, path);
+                    // SongMenu can request previews for cards crossed during a
+                    // swipe. The settled-selection updater owns custom previews.
+                    if (ModMain.IsCustomCarouselSettled)
+                        CustomSongLoader.PlayCustomAudioSample(__instance, path);
                     return false;
                 }
             }
@@ -4947,11 +4986,10 @@ namespace UnpluggedCustomSongs
                 {
                     return; // Already up-to-date, avoid redundant material texture sets and log spam
                 }
-                _lastCoverKey = songKey;
-
                 Texture2D tex = song.Thumbnail;
                 if (tex != null)
                 {
+                    _lastCoverKey = songKey;
                     if (StartSpace.I != null)
                     {
                         var r1 = StartSpace.I.StartSpaceLp?.GetComponent<Renderer>();
@@ -5020,7 +5058,7 @@ namespace UnpluggedCustomSongs
                     {
                         if (song != null && AlbumsManager.SelectedAlbum != null && AlbumsManager.SelectedAlbum.AlbumID == "CustomSongsAlbum")
                         {
-                            VinylCoverHelper.UpdateTurntableVinyl(song);
+                            ModMain.MarkCarouselChanging();
                         }
                     }));
 #else
@@ -5028,7 +5066,7 @@ namespace UnpluggedCustomSongs
                     {
                         if (song != null && AlbumsManager.SelectedAlbum != null && AlbumsManager.SelectedAlbum.AlbumID == "CustomSongsAlbum")
                         {
-                            VinylCoverHelper.UpdateTurntableVinyl(song);
+                            ModMain.MarkCarouselChanging();
                         }
                     };
 #endif
