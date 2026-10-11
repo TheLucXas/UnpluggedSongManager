@@ -3942,29 +3942,6 @@ namespace UnpluggedCustomSongs
         }
     }
 
-    [HarmonyPatch(typeof(VRPlatformOculus), "IsHandTrackingEnabled", MethodType.Getter)]
-    public static class Patch_VRPlatformOculus_IsHandTrackingEnabled
-    {
-        public static bool Prefix(ref bool __result)
-        {
-            bool indexHands = GamePreferences.Load(UnpluggedInfo.IndexHandsMode, defaultValue: false);
-            if (!indexHands)
-            {
-                __result = false;
-                return false;
-            }
-            try
-            {
-                __result = OVRPlugin.GetHandTrackingEnabled();
-            }
-            catch
-            {
-                __result = false;
-            }
-            return false;
-        }
-    }
-
 #if !QUEST_IL2CPP
     [HarmonyPatch(typeof(VRPlatformSteam), "IsHandTrackingEnabled", MethodType.Getter)]
     public static class Patch_VRPlatformSteam_IsHandTrackingEnabled
