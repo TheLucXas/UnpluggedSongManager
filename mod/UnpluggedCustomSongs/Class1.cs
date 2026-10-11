@@ -4026,6 +4026,31 @@ namespace UnpluggedCustomSongs
         }
     }
 
+    [HarmonyPatch(typeof(GameManager), "RestartGameParameters")]
+    public static class Patch_CustomSong_ReloadModeOnRestart
+    {
+        public static void Prefix()
+        {
+            var song = GameManager.CurrentSongData;
+            if (song == null || string.IsNullOrEmpty(song.SongID) ||
+                !song.SongID.StartsWith("CUSTOM_", StringComparison.Ordinal) || VRPlatformBase.I == null)
+                return;
+
+            bool handMode = VRPlatformBase.I.IsHandTrackingEnabled;
+            var mapping = GameManager.CurrentSong;
+            if (mapping != null && mapping.IsHandTrackingMapping == handMode)
+                return;
+
+            // Vanilla RestartSong reuses CurrentSong, then asks the timeline for
+            // the current input mode. A custom archive loads only that mode's
+            // chart, so changing between hands and controllers requires a reload.
+            MelonLogger.Msg($"[ChartDiag] Input mode changed before restart: cached={(mapping?.IsHandTrackingMapping == true ? "hand" : "controller")}, current={(handMode ? "hand" : "controller")}; reloading {song.FileName}.");
+            GameManager.SetCurrentSong(song);
+            if (ModMain.ConfigChartDiagnostics)
+                MelonLogger.Msg($"[ChartDiag] Restart chart reloaded: mode={(GameManager.CurrentSong?.IsHandTrackingMapping == true ? "hand" : "controller")}, keyGroups={GameManager.CurrentSong?.Keys?.Count ?? 0}.");
+        }
+    }
+
     public static class PlaybackDiagnostics
     {
         private static string DescribeSource(AudioSource source)
