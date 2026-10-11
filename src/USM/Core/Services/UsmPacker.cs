@@ -11,7 +11,7 @@ namespace USM.Core.Services
 {
     public class UsmPacker
     {
-        public const int CompatibilityProfileVersion = 2;
+        public const int CompatibilityProfileVersion = 3;
 
         public static void Pack(string inputDir, string outputFile, string metaJsonContent)
         {
@@ -58,7 +58,8 @@ namespace USM.Core.Services
             int sourceDifficultyCount,
             int sourceNoteCount,
             double chartCoverageRatio,
-            double songDurationSeconds)
+            double songDurationSeconds,
+            bool hasLeadGuitarChart)
         {
             if (!File.Exists(usmPath)) throw new FileNotFoundException("USM archive not found.", usmPath);
             if (jsonCharts == null || jsonCharts.Count == 0)
@@ -75,6 +76,7 @@ namespace USM.Core.Services
                     var audioProfile = AudioLayoutDetector.Analyze(source.Entries.Select(entry => entry.Name));
                     bool isIdealForUnplugged = audioProfile.Layout == AudioTrackLayout.MultiTrack
                         && new[] { "guitar", "bass", "drums", "vocals" }.All(audioProfile.StemGroups.Contains)
+                        && hasLeadGuitarChart
                         && sourceDifficultyCount >= 4
                         && sourceNoteCount > 0
                         && chartCoverageRatio >= 0.90;
@@ -103,6 +105,7 @@ namespace USM.Core.Services
                             meta["AudioStemCount"] = audioProfile.StemCount;
                             meta["CompatibilityProfileVersion"] = CompatibilityProfileVersion;
                             meta["IsIdealForUnplugged"] = isIdealForUnplugged;
+                            meta["HasLeadGuitarChart"] = hasLeadGuitarChart;
                             meta["AudioLayout"] = audioLayout;
                             meta["IsMultiTrack"] = hasMultipleTracks;
                             WriteEntry(destination, sourceEntry.FullName, meta.ToJsonString(), CompressionLevel.Fastest, sourceEntry.LastWriteTime);
@@ -131,6 +134,7 @@ namespace USM.Core.Services
                             ["AudioStemCount"] = audioProfile.StemCount,
                             ["CompatibilityProfileVersion"] = CompatibilityProfileVersion,
                             ["IsIdealForUnplugged"] = isIdealForUnplugged,
+                            ["HasLeadGuitarChart"] = hasLeadGuitarChart,
                             ["AudioLayout"] = audioLayout,
                             ["IsMultiTrack"] = hasMultipleTracks
                         };
@@ -242,6 +246,7 @@ namespace USM.Core.Services
 
                     bool isIdealForUnplugged = audioProfile.Layout == AudioTrackLayout.MultiTrack
                         && new[] { "guitar", "bass", "drums", "vocals" }.All(audioProfile.StemGroups.Contains)
+                        && ReadMetaBool(meta, "HasLeadGuitarChart")
                         && sourceDifficultyCount >= 4
                         && sourceNoteCount > 0
                         && chartCoverageRatio >= 0.90;
@@ -296,6 +301,12 @@ namespace USM.Core.Services
                 return 0;
             return int.TryParse(value.ToString(), System.Globalization.NumberStyles.Integer,
                 System.Globalization.CultureInfo.InvariantCulture, out int parsed) ? parsed : 0;
+        }
+
+        private static bool ReadMetaBool(JsonObject meta, string propertyName)
+        {
+            return meta.TryGetPropertyValue(propertyName, out JsonNode? value) &&
+                value != null && bool.TryParse(value.ToString(), out bool parsed) && parsed;
         }
 
         private static double ReadMetaDouble(JsonObject meta, string propertyName)

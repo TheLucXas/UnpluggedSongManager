@@ -31,6 +31,10 @@ namespace USM.Core.Parsers
             public int SelectedTrackPlayableNoteCount { get; set; }
         }
 
+        public static bool IsLeadGuitarTrack(string? trackName) =>
+            string.Equals(trackName?.Trim(), "PART GUITAR", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trackName?.Trim(), "GUITAR", StringComparison.OrdinalIgnoreCase);
+
         public static ParsedMidi Parse(string midiPath)
         {
             if (!File.Exists(midiPath))

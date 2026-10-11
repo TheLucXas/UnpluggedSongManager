@@ -84,7 +84,7 @@ namespace USM.Core.Services
 
         public static Dictionary<string, string> GenerateJsonCharts(string inputDir, Action<string>? log = null)
         {
-            return GenerateJsonCharts(inputDir, log, 0, out _, out _, out _);
+            return GenerateJsonCharts(inputDir, log, 0, out _, out _, out _, out _);
         }
 
         public static Dictionary<string, string> GenerateJsonCharts(
@@ -93,17 +93,19 @@ namespace USM.Core.Services
             double songDurationSeconds,
             out int sourceDifficultyCount,
             out int sourceNoteCount,
-            out double chartCoverageRatio)
+            out double chartCoverageRatio,
+            out bool hasLeadGuitarChart)
         {
             sourceDifficultyCount = 0;
             sourceNoteCount = 0;
             chartCoverageRatio = 0;
+            hasLeadGuitarChart = false;
             string midPath = Path.Combine(inputDir, "notes.mid");
             string chartPath = Path.Combine(inputDir, "notes.chart");
             if (!File.Exists(chartPath)) chartPath = Path.Combine(inputDir, "song.chart");
 
             var candidates = new List<(string Name, List<ChartParser.BpmEvent> BpmGrid, Func<long, double> TickToSec,
-                Dictionary<string, SortedDictionary<long, List<ChartParser.NoteEvent>>> Difficulties, int TicksPerBeat, int HopoThresholdTicks)>();
+                Dictionary<string, SortedDictionary<long, List<ChartParser.NoteEvent>>> Difficulties, int TicksPerBeat, int HopoThresholdTicks, bool HasLeadGuitarChart)>();
 
             if (File.Exists(midPath))
             {
@@ -112,7 +114,8 @@ namespace USM.Core.Services
                     log?.Invoke("  [Chart] Reading notes.mid (Standard MIDI format).");
                     var midi = MidiParser.Parse(midPath);
                     log?.Invoke($"  [Chart] MIDI guitar track '{midi.SelectedTrackName}' contains {midi.SelectedTrackPlayableNoteCount} notes in supported difficulty ranges.");
-                    candidates.Add(("notes.mid", midi.BpmGrid, midi.TickToSec, midi.Difficulties, midi.TicksPerBeat, midi.HopoThresholdTicks));
+                    candidates.Add(("notes.mid", midi.BpmGrid, midi.TickToSec, midi.Difficulties, midi.TicksPerBeat, midi.HopoThresholdTicks,
+                        MidiParser.IsLeadGuitarTrack(midi.SelectedTrackName)));
                 }
                 catch (Exception ex)
                 {
@@ -130,7 +133,8 @@ namespace USM.Core.Services
                     {
                         log?.Invoke($"  [Chart] Ignored {chart.IgnoredNonPlayableNoteEvents} non-playable note events (HOPO/tap markers or unsupported lanes).");
                     }
-                    candidates.Add((Path.GetFileName(chartPath), chart.BpmGrid, chart.TickToSec, chart.Difficulties, chart.Resolution, chart.HopoThresholdTicks));
+                    candidates.Add((Path.GetFileName(chartPath), chart.BpmGrid, chart.TickToSec, chart.Difficulties, chart.Resolution, chart.HopoThresholdTicks,
+                        chart.Difficulties.Count > 0));
                 }
                 catch (Exception ex)
                 {
@@ -185,6 +189,7 @@ namespace USM.Core.Services
             sourceDifficultyCount = Math.Min(4, JsonGenerator.GetUsableSourceDifficultyNames(
                 selected.Candidate.Difficulties, selected.Candidate.TickToSec).Count);
             sourceNoteCount = selected.NoteCount;
+            hasLeadGuitarChart = selected.Candidate.HasLeadGuitarChart;
             double firstNoteTime = selected.FirstNoteTime;
             double lastNoteTime = selected.LastNoteTime;
             chartCoverageRatio = selected.Coverage;
@@ -318,7 +323,8 @@ namespace USM.Core.Services
                 progress?.Report(new ConversionProgress(0.70, "Generating USM 2.0 chart notes..."));
 
                 Dictionary<string, string> jsonCharts = GenerateJsonCharts(inputDir, log, iniInfo.DurationSeconds,
-                    out int sourceDifficultyCount, out int sourceNoteCount, out double chartCoverageRatio);
+                    out int sourceDifficultyCount, out int sourceNoteCount, out double chartCoverageRatio,
+                    out bool hasLeadGuitarChart);
                 
                 if (jsonCharts != null)
                 {
@@ -335,6 +341,7 @@ namespace USM.Core.Services
                     .Select(path => Path.GetFileName(path) ?? string.Empty));
                 bool isIdealForUnplugged = outputAudio.Layout == AudioTrackLayout.MultiTrack
                     && new[] { "guitar", "bass", "drums", "vocals" }.All(outputAudio.StemGroups.Contains)
+                    && hasLeadGuitarChart
                     && sourceDifficultyCount >= 4
                     && sourceNoteCount > 0
                     && chartCoverageRatio >= 0.90;
@@ -364,6 +371,7 @@ namespace USM.Core.Services
                     SongDurationSeconds = iniInfo.DurationSeconds,
                     CompatibilityProfileVersion = UsmPacker.CompatibilityProfileVersion,
                     IsIdealForUnplugged = isIdealForUnplugged,
+                    HasLeadGuitarChart = hasLeadGuitarChart,
                     LevelAuthorName = Regex.Replace(iniInfo.Charter ?? string.Empty, @"<[^>]*>", "").Trim(),
                     SongID = $"CUSTOM_{folderName}",
                     SongName = Regex.Replace(iniInfo.Name ?? string.Empty, @"<[^>]*>", "").Trim(),

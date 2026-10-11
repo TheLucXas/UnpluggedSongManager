@@ -680,7 +680,8 @@ namespace USM.ViewModels
                             resyncIni.DurationSeconds,
                             out int sourceDifficultyCount,
                             out int sourceNoteCount,
-                            out double chartCoverageRatio);
+                            out double chartCoverageRatio,
+                            out bool hasLeadGuitarChart);
                         UsmPacker.ReplaceChartData(
                             song.FolderPath,
                             jsonCharts,
@@ -690,7 +691,8 @@ namespace USM.ViewModels
                             sourceDifficultyCount,
                             sourceNoteCount,
                             chartCoverageRatio,
-                            resyncIni.DurationSeconds);
+                            resyncIni.DurationSeconds,
+                            hasLeadGuitarChart);
                         updated++;
                     }
                     catch (Exception ex)
@@ -907,6 +909,8 @@ namespace USM.ViewModels
                             (idealValue.ValueKind == JsonValueKind.String && bool.TryParse(idealValue.GetString(), out var parsedIdeal) && parsedIdeal);
                     }
                     hasCompatibilityProfile = compatibilityProfileVersion >= UsmPacker.CompatibilityProfileVersion;
+                    if (!hasCompatibilityProfile)
+                        isIdealForUnplugged = false;
                     if (meta.TryGetProperty("AudioLayout", out var audioLayout) && audioLayout.ValueKind == JsonValueKind.String)
                     {
                         string layout = audioLayout.GetString() ?? string.Empty;

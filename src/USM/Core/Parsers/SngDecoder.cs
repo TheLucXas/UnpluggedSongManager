@@ -47,6 +47,7 @@ namespace USM.Core.Parsers
             public int AudioStemCount { get; init; }
             public bool HasVocalsStem { get; init; }
             public bool HasGuitarStem { get; init; }
+            public bool HasLeadGuitarChart { get; init; }
             public bool HasChartProfile { get; init; }
             public int SourceDifficultyCount { get; init; }
             public int ChartNoteCount { get; init; }
@@ -55,6 +56,7 @@ namespace USM.Core.Parsers
             public HashSet<string> StemGroups { get; init; } = new(StringComparer.OrdinalIgnoreCase);
             public bool IsIdealForUnplugged => TrackLayout == AudioTrackLayout.MultiTrack
                 && new[] { "guitar", "bass", "drums", "vocals" }.All(StemGroups.Contains)
+                && HasLeadGuitarChart
                 && SourceDifficultyCount >= 4
                 && ChartNoteCount > 0
                 && ChartCoverageRatio >= 0.90;
@@ -137,6 +139,7 @@ namespace USM.Core.Parsers
             {
                 int bestDifficultyCount = 0;
                 int bestNoteCount = 0;
+                bool bestHasLeadGuitarChart = false;
                 bool hasParsedChartProfile = false;
                 double bestFirstNoteTime = 0;
                 double bestLastNoteTime = 0;
@@ -155,6 +158,7 @@ namespace USM.Core.Parsers
                     {
                         int difficultyCount;
                         int noteCount;
+                        bool hasLeadGuitarChart;
                         List<double> noteTimes;
                         string extension = Path.GetExtension(name);
                         if (extension.Equals(".chart", StringComparison.OrdinalIgnoreCase))
@@ -163,6 +167,7 @@ namespace USM.Core.Parsers
                             difficultyCount = JsonGenerator.GetUsableSourceDifficultyNames(
                                 parsed.Difficulties, parsed.TickToSec).Count;
                             noteCount = parsed.Difficulties.Values.Sum(notes => notes.Values.Sum(group => group.Count));
+                            hasLeadGuitarChart = noteCount > 0;
                             noteTimes = parsed.Difficulties.Values.SelectMany(notes => notes.Keys)
                                 .Select(parsed.TickToSec).Where(time => double.IsFinite(time) && time >= 0).ToList();
                         }
@@ -172,6 +177,7 @@ namespace USM.Core.Parsers
                             difficultyCount = JsonGenerator.GetUsableSourceDifficultyNames(
                                 parsed.Difficulties, parsed.TickToSec).Count;
                             noteCount = parsed.Difficulties.Values.Sum(notes => notes.Values.Sum(group => group.Count));
+                            hasLeadGuitarChart = MidiParser.IsLeadGuitarTrack(parsed.SelectedTrackName);
                             noteTimes = parsed.Difficulties.Values.SelectMany(notes => notes.Keys)
                                 .Select(parsed.TickToSec).Where(time => double.IsFinite(time) && time >= 0).ToList();
                         }
@@ -195,6 +201,7 @@ namespace USM.Core.Parsers
                         {
                             bestDifficultyCount = difficultyCount;
                             bestNoteCount = noteCount;
+                            bestHasLeadGuitarChart = hasLeadGuitarChart;
                             bestFirstNoteTime = firstNoteTime;
                             bestLastNoteTime = lastNoteTime;
                             bestCoverageRatio = candidateCoverage;
@@ -217,6 +224,7 @@ namespace USM.Core.Parsers
                     AudioStemCount = profile.AudioStemCount,
                     HasVocalsStem = profile.HasVocalsStem,
                     HasGuitarStem = profile.HasGuitarStem,
+                    HasLeadGuitarChart = bestHasLeadGuitarChart,
                     HasChartProfile = hasParsedChartProfile,
                     StemGroups = profile.StemGroups,
                     SourceDifficultyCount = Math.Min(4, bestDifficultyCount),
