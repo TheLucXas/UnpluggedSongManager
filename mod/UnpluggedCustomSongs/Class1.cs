@@ -639,11 +639,11 @@ namespace UnpluggedCustomSongs
             {
                 if (dir > 0)
                 {
-                    Traverse.Create(sm).Method("Next_Pressed").GetValue();
+                    Traverse.Create(sm).Method("Prev_Pressed").GetValue();
                 }
                 else
                 {
-                    Traverse.Create(sm).Method("Prev_Pressed").GetValue();
+                    Traverse.Create(sm).Method("Next_Pressed").GetValue();
                 }
             }
             catch (Exception ex)
@@ -4392,7 +4392,21 @@ namespace UnpluggedCustomSongs
                 {
                     foreach (var key in GameManager.CurrentSong.Keys)
                     {
-                        if (key != null && !(key is BeatLineKey) && key.Time > 0.5f && key.Time < minTime)
+                        var controllerGame = key?.TryCast<GuitarControllerGame>();
+                        if (controllerGame?.Notes != null)
+                            foreach (var note in controllerGame.Notes)
+                                if (note != null && note.Time > 0.5f && note.Time < minTime)
+                                    minTime = note.Time;
+                        var handGame = key?.TryCast<GuitarGame>();
+                        if (handGame?.Notes != null)
+                            foreach (var note in handGame.Notes)
+                                if (note != null && note.Time > 0.5f && note.Time < minTime)
+                                    minTime = note.Time;
+                        // IL2CPP exposes base KeyTime wrappers: managed 'is' does
+                        // not identify native beat lines, which start at 0.5s.
+                        bool playable = key != null && (key.TryCast<ControllerGuitarNote>() != null
+                            || key.TryCast<HandGuitarNote>() != null);
+                        if (playable && key.Time > 0.5f && key.Time < minTime)
                             minTime = key.Time;
                     }
                 }
@@ -4828,22 +4842,36 @@ namespace UnpluggedCustomSongs
     [HarmonyPatch(typeof(SongMenuItem), "SetSong")]
     public static class Patch_SongMenuItem_SetSong
     {
+        private static readonly Dictionary<int, string> PresentedSongs = new Dictionary<int, string>();
+
         public static void Postfix(SongMenuItem __instance)
+        {
+            RefreshPresentation(__instance, true);
+        }
+
+        public static void RefreshPresentation(SongMenuItem item, bool force = false)
         {
             try
             {
-                if (__instance?.SongData != null)
+                if (item?.SongData != null)
                 {
-                    CustomSongLoader.QueueSongCoverLoad(__instance, __instance.SongData);
+                    int id = item.GetInstanceID();
+                    string songId = item.SongData.SongID ?? string.Empty;
+                    if (!force && PresentedSongs.TryGetValue(id, out string previous) && previous == songId)
+                        return;
+                    CustomSongLoader.QueueSongCoverLoad(item, item.SongData);
 
-                    SetTrackLabel(__instance, CustomSongLoader.GetTrackDisplayLabel(__instance.SongData));
+                    SetTrackLabel(item, CustomSongLoader.GetTrackDisplayLabel(item.SongData));
+                    PresentedSongs[id] = songId;
+                    if (ModMain.ConfigVerbose)
+                        MelonLogger.Msg($"[MenuDiag] Presented card={id}, song='{songId}', label='{CustomSongLoader.GetTrackDisplayLabel(item.SongData)}'.");
                 }
             }
             catch (Exception ex)
             {
                 MelonLogger.Warning($"[CustomSongs] Could not show the custom song track label: {ex.Message}");
             }
-            ApplyOutlines(__instance);
+            ApplyOutlines(item);
         }
 
         private static void SetTrackLabel(SongMenuItem item, string label)
@@ -4935,7 +4963,18 @@ namespace UnpluggedCustomSongs
     {
         public static void Postfix(SongMenuItem __instance)
         {
-            Patch_SongMenuItem_SetSong.ApplyOutlines(__instance);
+            Patch_SongMenuItem_SetSong.RefreshPresentation(__instance, true);
+        }
+    }
+
+    // Native IL2CPP may inline SetSong when recycling a carousel card. Offset
+    // updates still run for every displayed card; refresh only when its ID changes.
+    [HarmonyPatch(typeof(SongMenuItem), "SetOffSet")]
+    public static class Patch_SongMenuItem_SetOffSet
+    {
+        public static void Postfix(SongMenuItem __instance)
+        {
+            Patch_SongMenuItem_SetSong.RefreshPresentation(__instance);
         }
     }
 
