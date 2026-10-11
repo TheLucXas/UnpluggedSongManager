@@ -244,6 +244,7 @@ namespace USM.Core.Services
                         meta = new JsonObject();
                     }
 
+                    bool hasLeadGuitarMetadata = HasMetaBool(meta, "HasLeadGuitarChart");
                     bool isIdealForUnplugged = audioProfile.Layout == AudioTrackLayout.MultiTrack
                         && new[] { "guitar", "bass", "drums", "vocals" }.All(audioProfile.StemGroups.Contains)
                         && ReadMetaBool(meta, "HasLeadGuitarChart")
@@ -259,7 +260,8 @@ namespace USM.Core.Services
                         if (string.Equals(sourceEntry.Name, "meta.json", StringComparison.OrdinalIgnoreCase))
                         {
                             meta["AudioStemCount"] = audioProfile.StemCount;
-                            meta["CompatibilityProfileVersion"] = CompatibilityProfileVersion;
+                            if (hasLeadGuitarMetadata)
+                                meta["CompatibilityProfileVersion"] = CompatibilityProfileVersion;
                             meta["IsIdealForUnplugged"] = isIdealForUnplugged;
                             meta["AudioLayout"] = audioLayout;
                             meta["IsMultiTrack"] = hasMultipleTracks;
@@ -278,7 +280,8 @@ namespace USM.Core.Services
                     if (!wroteMeta)
                     {
                         meta["AudioStemCount"] = audioProfile.StemCount;
-                        meta["CompatibilityProfileVersion"] = CompatibilityProfileVersion;
+                        if (hasLeadGuitarMetadata)
+                            meta["CompatibilityProfileVersion"] = CompatibilityProfileVersion;
                         meta["IsIdealForUnplugged"] = isIdealForUnplugged;
                         meta["AudioLayout"] = audioLayout;
                         meta["IsMultiTrack"] = hasMultipleTracks;
@@ -307,6 +310,23 @@ namespace USM.Core.Services
         {
             return meta.TryGetPropertyValue(propertyName, out JsonNode? value) &&
                 value != null && bool.TryParse(value.ToString(), out bool parsed) && parsed;
+        }
+
+        public static bool HasLeadGuitarChartMetadata(string usmPath)
+        {
+            using var archive = ZipFile.OpenRead(usmPath);
+            var entry = archive.Entries.FirstOrDefault(item =>
+                string.Equals(item.Name, "meta.json", StringComparison.OrdinalIgnoreCase));
+            if (entry == null) return false;
+            using var reader = new StreamReader(entry.Open());
+            var meta = JsonNode.Parse(reader.ReadToEnd()) as JsonObject;
+            return meta != null && HasMetaBool(meta, "HasLeadGuitarChart");
+        }
+
+        private static bool HasMetaBool(JsonObject meta, string propertyName)
+        {
+            return meta.TryGetPropertyValue(propertyName, out JsonNode? value) &&
+                value != null && bool.TryParse(value.ToString(), out _);
         }
 
         private static double ReadMetaDouble(JsonObject meta, string propertyName)

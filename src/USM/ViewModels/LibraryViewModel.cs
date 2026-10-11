@@ -645,7 +645,8 @@ namespace USM.ViewModels
                     {
                         _notifyCallback(LocalizationService.T("Library_ResyncingChart", song.Artist, song.Title));
                         if (song.ChartParserVersion >= JsonGenerator.ParserVersion &&
-                            song.CompatibilityProfileVersion < UsmPacker.CompatibilityProfileVersion)
+                            song.CompatibilityProfileVersion < UsmPacker.CompatibilityProfileVersion &&
+                            UsmPacker.HasLeadGuitarChartMetadata(song.FolderPath))
                         {
                             await Task.Run(() => UsmPacker.RefreshAudioMetadata(song.FolderPath));
                             updated++;
@@ -908,9 +909,13 @@ namespace USM.ViewModels
                         isIdealForUnplugged = idealValue.ValueKind == JsonValueKind.True ||
                             (idealValue.ValueKind == JsonValueKind.String && bool.TryParse(idealValue.GetString(), out var parsedIdeal) && parsedIdeal);
                     }
-                    hasCompatibilityProfile = compatibilityProfileVersion >= UsmPacker.CompatibilityProfileVersion;
+                    hasCompatibilityProfile = compatibilityProfileVersion >= UsmPacker.CompatibilityProfileVersion &&
+                        meta.TryGetProperty("HasLeadGuitarChart", out var leadChartValue) &&
+                        leadChartValue.ValueKind is JsonValueKind.True or JsonValueKind.False;
                     if (!hasCompatibilityProfile)
                         isIdealForUnplugged = false;
+                    if (!hasCompatibilityProfile)
+                        compatibilityProfileVersion = 0;
                     if (meta.TryGetProperty("AudioLayout", out var audioLayout) && audioLayout.ValueKind == JsonValueKind.String)
                     {
                         string layout = audioLayout.GetString() ?? string.Empty;
