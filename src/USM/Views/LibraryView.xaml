@@ -111,6 +111,10 @@
             <StackPanel>
                 <!-- Top Row: Title, Badge, Open Folder, Refresh -->
                 <Grid Margin="0,0,0,12">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
@@ -139,27 +143,21 @@
                     </Border>
 
                     <!-- Top Right Buttons -->
-                    <StackPanel Grid.Column="3" Orientation="Horizontal">
-                        <Button Content="{DynamicResource Loc_Library_OpenCustomSongs}"
+                    <WrapPanel Grid.Row="1" Grid.ColumnSpan="4" Margin="0,8,0,0">
+                        <Button ContentTemplate="{StaticResource WrappingButtonContent}" Content="{DynamicResource Loc_Library_OpenCustomSongs}"
                                 Command="{Binding OpenCustomSongsCommand}"
                                 Style="{StaticResource SecondaryButton}"
-                                Margin="0,0,8,0"
-                                Padding="12,6"
-                                FontSize="12" />
+                                Margin="0,0,8,0" />
 
-                        <Button Content="{Binding ResyncChartsText}"
+                        <Button ContentTemplate="{StaticResource WrappingButtonContent}" Content="{Binding ResyncChartsText}"
                                 Command="{Binding ResyncChartsCommand}"
                                 Style="{StaticResource SecondaryButton}"
                                 Margin="0,0,8,0"
-                                Padding="12,6"
-                                FontSize="12"
                                 ToolTip="{DynamicResource Loc_Library_ResyncTooltip}" />
 
-                        <Button Content="{DynamicResource Loc_Library_Refresh}"
-                                Command="{Binding RefreshCommand}"
-                                Padding="14,6"
-                                FontSize="12" />
-                    </StackPanel>
+                        <Button ContentTemplate="{StaticResource WrappingButtonContent}" Content="{DynamicResource Loc_Library_Refresh}"
+                                Command="{Binding RefreshCommand}" />
+                    </WrapPanel>
                 </Grid>
 
                 <!-- Filter & Batch Action Row -->
@@ -190,21 +188,17 @@
                     </ComboBox>
 
                     <!-- Select All Button -->
-                    <Button Grid.Column="2"
+                    <Button ContentTemplate="{StaticResource WrappingButtonContent}" Grid.Column="2"
                             Content="{Binding SelectAllText}"
                             Command="{Binding ToggleSelectAllCommand}"
                             Style="{StaticResource SecondaryButton}"
-                            Margin="0,0,8,0"
-                            Padding="14,7"
-                            FontSize="12" />
+                            Margin="0,0,8,0" />
 
                     <!-- Delete Selected Button -->
-                    <Button Grid.Column="3"
+                    <Button ContentTemplate="{StaticResource WrappingButtonContent}" Grid.Column="3"
                             Content="{Binding DeleteSelectedText}"
                             Command="{Binding DeleteSelectedCommand}"
-                            Style="{StaticResource DangerButton}"
-                            Padding="14,7"
-                            FontSize="12" />
+                            Style="{StaticResource DangerButton}" />
                 </Grid>
             </StackPanel>
         </Border>
@@ -393,6 +387,10 @@
                         Padding="16,14"
                         Margin="0,0,0,10">
                     <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
@@ -425,26 +423,22 @@
                                    VerticalAlignment="Center"
                                    Margin="14,0,14,0"
                                    TextTrimming="CharacterEllipsis" />
-                        <Button Grid.Column="3"
+                        <WrapPanel Grid.Row="1" Grid.ColumnSpan="6" Margin="0,8,0,0">
+                        <Button ContentTemplate="{StaticResource WrappingButtonContent}"
                                 Content="{DynamicResource Loc_Library_RefreshQuestSongs}"
                                 Command="{Binding RefreshQuestSongsCommand}"
-                                Style="{StaticResource SecondaryButton}"
-                                Padding="12,6"
-                                FontSize="12" />
-                        <Button Grid.Column="4"
+                                Style="{StaticResource SecondaryButton}" />
+                        <Button ContentTemplate="{StaticResource WrappingButtonContent}"
                                 Content="{Binding SelectAllQuestSongsText}"
                                 Command="{Binding ToggleSelectAllQuestSongsCommand}"
                                 Style="{StaticResource SecondaryButton}"
-                                Margin="8,0,0,0"
-                                Padding="12,6"
-                                FontSize="12" />
-                        <Button Grid.Column="5"
+                                Margin="8,0,0,4" />
+                        <Button ContentTemplate="{StaticResource WrappingButtonContent}"
                                 Content="{Binding DeleteSelectedQuestSongsText}"
                                 Command="{Binding DeleteSelectedQuestSongsCommand}"
                                 Style="{StaticResource DangerButton}"
-                                Margin="8,0,0,0"
-                                Padding="12,6"
-                                FontSize="12" />
+                                Margin="8,0,0,4" />
+                        </WrapPanel>
                     </Grid>
                 </Border>
 

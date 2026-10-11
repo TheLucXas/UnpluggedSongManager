@@ -41,22 +41,19 @@
 
                 <!-- Action Buttons Row -->
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                    <Button Content="{DynamicResource Loc_Converter_SelectFiles}"
+                    <Button ContentTemplate="{StaticResource WrappingButtonContent}" Content="{DynamicResource Loc_Converter_SelectFiles}"
                             Command="{Binding BrowseFilesCommand}"
                             Style="{StaticResource PurpleButton}"
-                            Margin="0,0,10,0"
-                            Padding="16,9" />
+                            Margin="0,0,10,0" />
 
-                    <Button Content="{DynamicResource Loc_Converter_SelectFolder}"
+                    <Button ContentTemplate="{StaticResource WrappingButtonContent}" Content="{DynamicResource Loc_Converter_SelectFolder}"
                             Command="{Binding BrowseFolderCommand}"
                             Style="{StaticResource SecondaryButton}"
-                            Margin="0,0,10,0"
-                            Padding="16,9" />
+                            Margin="0,0,10,0" />
 
-                    <Button Content="{DynamicResource Loc_Converter_ClearQueue}"
+                    <Button ContentTemplate="{StaticResource WrappingButtonContent}" Content="{DynamicResource Loc_Converter_ClearQueue}"
                             Command="{Binding ClearQueueCommand}"
-                            Style="{StaticResource SecondaryButton}"
-                            Padding="14,9" />
+                            Style="{StaticResource SecondaryButton}" />
                 </StackPanel>
 
             </StackPanel>
@@ -83,13 +80,11 @@
                            Foreground="{StaticResource BrushAccentBlue}"
                            VerticalAlignment="Center" />
 
-                <Button Grid.Column="1"
+                <Button ContentTemplate="{StaticResource WrappingButtonContent}" Grid.Column="1"
                         Content="{DynamicResource Loc_Converter_StopCancel}"
                         Command="{Binding CancelCommand}"
                         Style="{StaticResource DangerButton}"
-                        IsEnabled="{Binding IsConverting}"
-                        Padding="16,7"
-                        FontSize="12" />
+                        IsEnabled="{Binding IsConverting}" />
             </Grid>
         </Border>
 

@@ -1,9 +1,11 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using USM.Core.Services;
+using USM.Core.Services.Localization;
 
 namespace USM.ViewModels
 {
@@ -42,11 +44,27 @@ namespace USM.ViewModels
 
         public ICommand LaunchGameCommand { get; }
         public ICommand ShowUpdatesCommand { get; }
+        public ICommand LaunchQuestGameCommand => QuestVM.LaunchGameCommand;
+        public bool CanLaunchQuestGame => QuestVM.CanLaunchGame;
+        private bool _isUpdatingMods;
+        public bool IsUpdatingMods
+        {
+            get => _isUpdatingMods;
+            private set
+            {
+                if (SetProperty(ref _isUpdatingMods, value))
+                {
+                    OnPropertyChanged(nameof(UpdateNoticeText));
+                    CommandManager.InvalidateRequerySuggested();
+                }
+            }
+        }
         public bool HasAvailableUpdates => SettingsVM.IsUpdateAvailable || SettingsVM.HasPcModUpdate || SettingsVM.HasQuestModUpdate;
         public string UpdateNoticeText
         {
             get
             {
+                if (IsUpdatingMods) return LocalizationService.T("Nav_UpdatingMods");
                 var components = new System.Collections.Generic.List<string>();
                 if (SettingsVM.IsUpdateAvailable) components.Add("USM");
                 if (SettingsVM.HasPcModUpdate) components.Add("PC");
@@ -79,7 +97,13 @@ namespace USM.ViewModels
                 if (e.PropertyName is nameof(SettingsViewModel.IsUpdateAvailable) or nameof(SettingsViewModel.HasPcModUpdate) or nameof(SettingsViewModel.HasQuestModUpdate))
                     RefreshUpdateNotice();
             };
-            ShowUpdatesCommand = new RelayCommand(() => SelectedTabIndex = SettingsVM.HasQuestModUpdate && !SettingsVM.IsUpdateAvailable && !SettingsVM.HasPcModUpdate ? 3 : 4);
+            ShowUpdatesCommand = new AsyncRelayCommand(_ => ShowUpdatesAsync(),
+                _ => !IsUpdatingMods && !QuestVM.IsBusy && !SettingsVM.IsUpdatingMod && !SettingsVM.IsUpdatingApp);
+            QuestVM.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName is nameof(QuestViewModel.CanLaunchGame) or nameof(QuestViewModel.IsDeviceConnected))
+                    OnPropertyChanged(nameof(CanLaunchQuestGame));
+            };
 
             USM.Core.Services.Localization.LocalizationService.Instance.LanguageChanged += _ =>
             {
@@ -89,6 +113,43 @@ namespace USM.ViewModels
             };
 
             LaunchGameCommand = new RelayCommand(LaunchGame);
+        }
+
+        private void NavigateToUpdates() => SelectedTabIndex = SettingsVM.HasQuestModUpdate
+            && !SettingsVM.IsUpdateAvailable && !SettingsVM.HasPcModUpdate ? 3 : 4;
+
+        private async Task ShowUpdatesAsync()
+        {
+            bool updatePc = SettingsVM.HasPcModUpdate;
+            bool updateQuest = SettingsVM.HasQuestModUpdate;
+            if (!updatePc && !updateQuest)
+            {
+                if (SettingsVM.CanUpdateApp) await SettingsVM.UpdateAppAsync();
+                else NavigateToUpdates();
+                return;
+            }
+            string targets = string.Join(" / ", new[] { updatePc ? "PC" : null, updateQuest ? "Quest" : null }
+                .Where(value => value != null));
+            if (MessageBox.Show(LocalizationService.T("Nav_UpdateModsConfirm", targets),
+                LocalizationService.T("Nav_UpdateModsTitle"), MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            {
+                NavigateToUpdates();
+                return;
+            }
+            IsUpdatingMods = true;
+            try
+            {
+                var results = new System.Collections.Generic.List<string>();
+                if (updatePc)
+                    results.Add("PC: " + LocalizationService.T(await SettingsVM.UpdatePcModAsync() ? "Nav_ModUpdateDone" : "Nav_ModUpdateFailed"));
+                if (updateQuest)
+                    results.Add("Quest: " + LocalizationService.T(await QuestVM.UpdateModAsync() ? "Nav_ModUpdateDone" : "Nav_ModUpdateFailed"));
+                string summary = string.Join(Environment.NewLine, results);
+                Notify(summary);
+                MessageBox.Show(summary, LocalizationService.T("Nav_UpdateModsTitle"), MessageBoxButton.OK,
+                    SettingsVM.HasPcModUpdate || SettingsVM.HasQuestModUpdate ? MessageBoxImage.Warning : MessageBoxImage.Information);
+            }
+            finally { IsUpdatingMods = false; RefreshUpdateNotice(); }
         }
 
         private void LaunchGame()

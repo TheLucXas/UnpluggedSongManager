@@ -104,11 +104,9 @@
                                  FontSize="13"
                                  Margin="0,0,10,0" />
 
-                        <Button Grid.Column="1"
+                        <Button ContentTemplate="{StaticResource WrappingButtonContent}" Grid.Column="1"
                                 Content="{DynamicResource Loc_Settings_BrowseButton}"
-                                Command="{Binding BrowseGamePathCommand}"
-                                Padding="16,8"
-                                FontSize="12" />
+                                Command="{Binding BrowseGamePathCommand}" />
                     </Grid>
                 </StackPanel>
             </Border>
@@ -134,14 +132,12 @@
                                    Foreground="{StaticResource BrushTextPrimary}"
                                    VerticalAlignment="Center" />
 
-                        <Button Grid.Column="1"
+                        <Button ContentTemplate="{StaticResource WrappingButtonContent}" Grid.Column="1"
                                 Content="{DynamicResource Loc_Settings_InstallModButton}"
                                 Command="{Binding InstallModCommand}"
                                 Background="{StaticResource BrushAccentGreen}"
                                 Foreground="#000000"
-                                FontWeight="Bold"
-                                Padding="16,8"
-                                FontSize="12" />
+                                FontWeight="Bold" />
                     </Grid>
 
                     <!-- Status Rows -->
@@ -160,27 +156,27 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
                         <TextBlock Grid.Column="0" Text="{DynamicResource Loc_Settings_MelonLabel}" Foreground="{StaticResource BrushTextSecondary}" VerticalAlignment="Center" />
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <StackPanel Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center">
                             <TextBlock Text="{Binding IsMelonInstalled, Converter={StaticResource StatusTextConv}}" Foreground="{Binding IsMelonInstalled, Converter={StaticResource StatusColorConv}}" FontWeight="Bold" VerticalAlignment="Center" />
                             <TextBlock Text="{Binding MelonInstallStatusMessage}" Foreground="{StaticResource BrushAccentYellow}" FontSize="11" Margin="10,0,0,0" VerticalAlignment="Center" Visibility="{Binding IsInstallingMelon, Converter={StaticResource BoolToVis}}" />
                         </StackPanel>
-                        <StackPanel Grid.Column="2" Orientation="Horizontal">
-                            <Button Content="{Binding MelonActionButtonText}"
+                        <WrapPanel Grid.Row="1" Grid.ColumnSpan="3" HorizontalAlignment="Right" Margin="0,8,0,0">
+                            <Button ContentTemplate="{StaticResource WrappingButtonContent}" Content="{Binding MelonActionButtonText}"
                                     Command="{Binding InstallMelonCommand}"
                                     IsEnabled="{Binding CanInstallMelon}"
-                                    Style="{StaticResource SecondaryButton}"
-                                    Padding="10,4"
-                                    FontSize="11" />
-                            <Button Content="{DynamicResource Loc_Settings_MelonUninstallBtn}"
+                                    Style="{StaticResource SecondaryButton}" />
+                            <Button ContentTemplate="{StaticResource WrappingButtonContent}" Content="{DynamicResource Loc_Settings_MelonUninstallBtn}"
                                     Command="{Binding UninstallMelonCommand}"
                                     Visibility="{Binding IsMelonInstalled, Converter={StaticResource BoolToVis}}"
                                     IsEnabled="{Binding CanInstallMelon}"
                                     Style="{StaticResource DangerButton}"
-                                    Padding="10,4"
-                                    FontSize="11"
                                     Margin="6,0,0,0" />
-                        </StackPanel>
+                        </WrapPanel>
                     </Grid>
 
                     <Grid Margin="0,4">
@@ -224,14 +220,12 @@
                                    Foreground="{StaticResource BrushTextPrimary}"
                                    VerticalAlignment="Center" />
 
-                        <Button Grid.Column="1"
+                        <Button ContentTemplate="{StaticResource WrappingButtonContent}" Grid.Column="1"
                                 Content="{DynamicResource Loc_Settings_CheckUpdatesBtn}"
                                 Command="{Binding CheckUpdatesCommand}"
                                 Background="{StaticResource BrushAccentPurple}"
                                 Foreground="#FFFFFF"
-                                FontWeight="Bold"
-                                Padding="16,8"
-                                FontSize="12" />
+                                FontWeight="Bold" />
                     </Grid>
 
                     <!-- Version Rows -->
@@ -250,7 +244,7 @@
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" Text="{DynamicResource Loc_Settings_InstalledModVersion}" Foreground="{StaticResource BrushTextSecondary}" />
-                        <TextBlock Grid.Column="1" Text="{Binding InstalledModVersion}" Foreground="{StaticResource BrushTextPrimary}" FontWeight="Bold" />
+                        <TextBlock Grid.Column="1" Text="{Binding InstalledPcModVersionText}" Foreground="{StaticResource BrushTextPrimary}" FontWeight="Bold" TextWrapping="Wrap" />
                     </Grid>
 
                     <Grid Margin="0,4" Visibility="{Binding IsQuestModInstalled, Converter={StaticResource BoolToVis}}">
@@ -290,33 +284,27 @@
                                  Margin="0,0,0,12" />
 
                     <!-- Action Buttons -->
-                    <StackPanel Orientation="Horizontal">
-                        <Button Content="{DynamicResource Loc_Settings_UpdateAppBtn}"
+                    <WrapPanel>
+                        <Button ContentTemplate="{StaticResource WrappingButtonContent}" Content="{DynamicResource Loc_Settings_UpdateAppBtn}"
                                 Command="{Binding UpdateAppCommand}"
                                 Visibility="{Binding CanUpdateApp, Converter={StaticResource BoolToVis}}"
                                 Background="{StaticResource BrushAccentPink}"
                                 Foreground="#FFFFFF"
                                 FontWeight="Bold"
-                                Margin="0,0,10,0"
-                                Padding="14,7"
-                                FontSize="12" />
+                                Margin="0,0,10,0" />
 
-                        <Button Content="{DynamicResource Loc_Settings_ViewReleaseBtn}"
+                        <Button ContentTemplate="{StaticResource WrappingButtonContent}" Content="{DynamicResource Loc_Settings_ViewReleaseBtn}"
                                 Command="{Binding OpenReleaseCommand}"
                                 Style="{StaticResource SecondaryButton}"
-                                Margin="0,0,10,0"
-                                Padding="14,7"
-                                FontSize="12" />
+                                Margin="0,0,10,0" />
 
-                        <Button Content="{DynamicResource Loc_Settings_DownloadModBtn}"
+                        <Button ContentTemplate="{StaticResource WrappingButtonContent}" Content="{DynamicResource Loc_Settings_DownloadModBtn}"
                                 Command="{Binding DownloadModAssetCommand}"
                                 Visibility="{Binding CanDownloadModAsset, Converter={StaticResource BoolToVis}}"
                                 Background="{StaticResource BrushAccentGreen}"
                                 Foreground="#000000"
-                                FontWeight="Bold"
-                                Padding="14,7"
-                                FontSize="12" />
-                    </StackPanel>
+                                FontWeight="Bold" />
+                    </WrapPanel>
                 </StackPanel>
             </Border>
 

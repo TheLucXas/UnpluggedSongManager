@@ -1404,6 +1404,25 @@ namespace USM.Core.Services.Quest
             return true;
         }
 
+        public async Task<(bool Success, string Message)> LaunchModdedGameAsync(string serial)
+        {
+            if (!await IsPackageInstalledAsync(serial, ModdedPackage))
+                return (false, LocalizationService.T("Quest_ModNeedsApp"));
+            var (resolveCode, output, error) = await RunAdbShellAsync(serial,
+                $"cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER {ModdedPackage}", 15000);
+            string? activity = output.Split('\n').Select(line => line.Trim())
+                .LastOrDefault(line => line.StartsWith(ModdedPackage + "/", StringComparison.Ordinal)
+                    && System.Text.RegularExpressions.Regex.IsMatch(line, @"^[A-Za-z0-9_.$]+/[A-Za-z0-9_.$]+$"));
+            if (resolveCode != 0 || activity == null)
+                return (false, LocalizationService.T("Quest_LaunchFailed", string.IsNullOrWhiteSpace(error) ? output.Trim() : error.Trim()));
+            await RunAdbShellAsync(serial, "input keyevent 224", 5000);
+            var (code, started, launchError) = await RunAdbShellAsync(serial, $"am start -W -n {activity}", 30000);
+            bool success = code == 0 && !started.Contains("Error", StringComparison.OrdinalIgnoreCase)
+                && string.IsNullOrWhiteSpace(launchError);
+            return (success, success ? LocalizationService.T("Quest_LaunchDone")
+                : LocalizationService.T("Quest_LaunchFailed", (started + " " + launchError).Trim()));
+        }
+
         public async Task<(bool Success, string Message)> UpdateModOnlyAsync(string serial, Action<string>? log = null, GitHubAssetInfo? releaseAsset = null)
         {
             if (!await IsPackageInstalledAsync(serial, ModdedPackage))
@@ -1427,7 +1446,8 @@ namespace USM.Core.Services.Quest
                 }
                 var current = await GetInstalledQuestModInfoAsync(serial, ModdedPackage);
                 string? targetVersion = ModAssemblyMetadata.GetVersion(releasePath ?? packaged ?? "");
-                if (current != null && targetVersion != null && UpdateService.CompareVersions(targetVersion, current.Version) < 0)
+                if (current != null && targetVersion != null && UpdateService.CompareVersions(targetVersion, current.Version) < 0
+                    && !(releasePath == null && ModAssemblyMetadata.IsDevelopmentVersionReset(targetVersion, current.Version)))
                     return (false, LocalizationService.T("Quest_ModNewerInstalled"));
                 var (stopCode, _, stopError) = await RunProcessAsync(GetAdbPath(),
                     $"-s {serial} shell am force-stop {ModdedPackage}");

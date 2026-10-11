@@ -49,12 +49,17 @@
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
 
         <!-- Modern Button Style -->
+        <DataTemplate x:Key="WrappingButtonContent">
+            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextAlignment="Center" />
+        </DataTemplate>
         <Style TargetType="Button">
             <Setter Property="Background" Value="{StaticResource BrushAccentBlue}" />
             <Setter Property="Foreground" Value="{StaticResource BrushTextOnAccent}" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="FontSize" Value="13" />
-            <Setter Property="Padding" Value="14,8" />
+            <Setter Property="Padding" Value="14,7" />
+            <Setter Property="MinHeight" Value="36" />
+            <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Template">

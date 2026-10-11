@@ -20,6 +20,12 @@ namespace USM.ViewModels
         private GitHubAssetInfo? _questModAsset;
         private string? _installedPcHash;
         private bool _packagedPcUpdateAvailable;
+        private bool _isUpdatingMod;
+        public bool IsUpdatingMod
+        {
+            get => _isUpdatingMod;
+            private set { if (SetProperty(ref _isUpdatingMod, value)) CommandManager.InvalidateRequerySuggested(); }
+        }
 
         public bool HasPcModUpdate => IsModInstalled && (_packagedPcUpdateAvailable ||
             HasNewReleaseBuild(_modAsset, InstalledModVersion));
@@ -36,6 +42,8 @@ namespace USM.ViewModels
         {
             OnPropertyChanged(nameof(HasPcModUpdate));
             OnPropertyChanged(nameof(HasQuestModUpdate));
+            OnPropertyChanged(nameof(InstalledPcModVersionText));
+            OnPropertyChanged(nameof(InstalledQuestModVersion));
         }
 
         public string CurrentAppVersion => _updateService.CurrentAppVersion;
@@ -49,13 +57,16 @@ namespace USM.ViewModels
 
         public bool IsQuestModInstalled => _questViewModel?.IsModdedInstalled == true;
 
+        public string InstalledPcModVersionText => !IsModInstalled ? "N/A"
+            : $"v{InstalledModVersion} · {LocalizationService.T(HasPcModUpdate ? "Settings_ModOutdated" : "Settings_ModCurrent")}";
+
         public string InstalledQuestModVersion
         {
             get
             {
                 var mod = _questViewModel?.InstalledModInfo;
                 if (!IsQuestModInstalled || mod == null) return "N/A";
-                string status = LocalizationService.T(mod.MatchesPackagedBuild ? "Settings_ModCurrent" : "Settings_ModOutdated");
+                string status = LocalizationService.T(HasQuestModUpdate ? "Settings_ModOutdated" : "Settings_ModCurrent");
                 return $"v{mod.Version} · {status}";
             }
         }
@@ -297,7 +308,7 @@ namespace USM.ViewModels
                 _questViewModel.PropertyChanged += OnQuestViewModelPropertyChanged;
 
             BrowseGamePathCommand = new RelayCommand(BrowseGamePath);
-            InstallModCommand = new RelayCommand(InstallMod);
+            InstallModCommand = new RelayCommand(_ => InstallMod(), _ => !IsUpdatingMod);
             InstallMelonCommand = new AsyncRelayCommand(InstallMelonAsync);
             UninstallMelonCommand = new RelayCommand(UninstallMelon);
             IncrementDownloadsCommand = new RelayCommand(IncrementDownloads);
@@ -305,10 +316,11 @@ namespace USM.ViewModels
 
             CheckUpdatesCommand = new AsyncRelayCommand(CheckForUpdatesAsync);
             OpenReleaseCommand = new RelayCommand(() => UpdateService.OpenUrlInBrowser(ReleaseUrl));
-            DownloadModAssetCommand = new AsyncRelayCommand(DownloadModAssetAsync);
+            DownloadModAssetCommand = new AsyncRelayCommand(_ => DownloadModAssetAsync(), _ => !IsUpdatingMod);
             UpdateAppCommand = new AsyncRelayCommand(UpdateAppAsync);
 
             RefreshStatus();
+            LocalizationService.Instance.LanguageChanged += _ => RefreshUpdateNotices();
             _ = CheckForUpdatesAsync();
         }
 
@@ -356,7 +368,7 @@ namespace USM.ViewModels
             string? packagedHash = ModAssemblyMetadata.GetHash(packagedPc);
             _packagedPcUpdateAvailable = IsModInstalled && packagedHash != null && _installedPcHash != null
                 && !packagedHash.Equals(_installedPcHash, StringComparison.OrdinalIgnoreCase)
-                && UpdateService.CompareVersions(ModAssemblyMetadata.GetVersion(packagedPc ?? "") ?? "0", InstalledModVersion) >= 0;
+                && ModAssemblyMetadata.CanInstallPackagedVersion(ModAssemblyMetadata.GetVersion(packagedPc ?? ""), InstalledModVersion);
             RefreshUpdateNotices();
             IsCustomSongsReady = Directory.Exists(_gameDetector.GetCustomSongsDir() ?? "");
 
@@ -503,6 +515,78 @@ namespace USM.ViewModels
             else
             {
                 MessageBox.Show(msg, "USM Mod Update Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        public async Task<bool> UpdatePcModAsync()
+        {
+            if (IsUpdatingMod || !IsGameFound || !IsModInstalled) return false;
+            IsUpdatingMod = true;
+            string? downloadedPath = null;
+            string? pendingPath = null;
+            try
+            {
+                string? packaged = PackagedModAssemblyProvider.ExtractPcModAssembly();
+                string? packagedVersion = ModAssemblyMetadata.GetVersion(packaged ?? "");
+                string? source = packaged;
+                if (_modAsset?.ModVersion != null
+                    && UpdateService.CompareVersions(_modAsset.ModVersion, packagedVersion ?? "0") > 0)
+                {
+                    downloadedPath = Path.Combine(Path.GetTempPath(), $"USM_PcUpdate_{Guid.NewGuid():N}.dll");
+                    var result = await _updateService.DownloadAndInstallModAssetAsync(_modAsset.BrowserDownloadUrl,
+                        downloadedPath);
+                    if (!result.Success) throw new IOException(result.Message);
+                    if (ModAssemblyMetadata.GetVersion(downloadedPath) != _modAsset.ModVersion
+                        || (_modAsset.Digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase)
+                            && !string.Equals(_modAsset.Digest[7..], ModAssemblyMetadata.GetHash(downloadedPath), StringComparison.OrdinalIgnoreCase)))
+                        throw new InvalidDataException(LocalizationService.T("Nav_ModUpdateFailed"));
+                    source = downloadedPath;
+                }
+                if (source == null || !File.Exists(source))
+                    throw new FileNotFoundException(LocalizationService.T("Nav_ModUpdateFailed"));
+                string target = Path.Combine(GamePath, "Mods", "UnpluggedCustomSongs.dll");
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                pendingPath = target + ".pending";
+                File.Copy(source, pendingPath, true);
+                string? expectedHash = ModAssemblyMetadata.GetHash(source);
+                if (expectedHash == null || !string.Equals(expectedHash, ModAssemblyMetadata.GetHash(pendingPath), StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException(LocalizationService.T("Nav_ModUpdateFailed"));
+
+                // Stop only this installation of the game before replacing its
+                // loaded DLL. Other programs and other game copies are untouched.
+                string gameExe = Path.GetFullPath(Path.Combine(GamePath, "Unplugged.exe"));
+                foreach (var process in System.Diagnostics.Process.GetProcessesByName("Unplugged"))
+                {
+                    using (process)
+                    {
+                        if (!string.Equals(process.MainModule?.FileName, gameExe, StringComparison.OrdinalIgnoreCase)) continue;
+                        process.CloseMainWindow();
+                        if (!await Task.Run(() => process.WaitForExit(4000)))
+                        {
+                            process.Kill();
+                            await process.WaitForExitAsync();
+                        }
+                    }
+                }
+                File.Move(pendingPath, target, true);
+                bool success = string.Equals(expectedHash, ModAssemblyMetadata.GetHash(target), StringComparison.OrdinalIgnoreCase);
+                string message = LocalizationService.T(success ? "Settings_ModUpdatedSuccess" : "Nav_ModUpdateFailed");
+                UpdateStatusMessage = message;
+                RefreshStatus();
+                _notifyCallback(message);
+                return success;
+            }
+            catch (Exception ex)
+            {
+                UpdateStatusMessage = ex.Message;
+                _notifyCallback(ex.Message);
+                return false;
+            }
+            finally
+            {
+                foreach (string? temp in new[] { downloadedPath, pendingPath })
+                    if (temp != null) try { File.Delete(temp); } catch { }
+                IsUpdatingMod = false;
             }
         }
 

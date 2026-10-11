@@ -31,11 +31,10 @@
                                        Foreground="{StaticResource BrushTextPrimary}"
                                        VerticalAlignment="Center" />
                         </StackPanel>
-                        <Button Grid.Column="1"
+                        <Button ContentTemplate="{StaticResource WrappingButtonContent}" Grid.Column="1"
                                 Content="{DynamicResource Loc_Quest_RefreshDevices}"
                                 Style="{StaticResource SecondaryButton}"
-                                Command="{Binding RefreshDevicesCommand}"
-                                Padding="12,6" />
+                                Command="{Binding RefreshDevicesCommand}" />
                     </Grid>
 
                     <!-- Connection Controls Grid -->
@@ -104,13 +103,11 @@
                                 </StackPanel>
 
                                 <!-- Button -->
-                                <Button Grid.Column="4"
+                                <Button ContentTemplate="{StaticResource WrappingButtonContent}" Grid.Column="4"
                                         VerticalAlignment="Bottom"
                                         Content="{DynamicResource Loc_Quest_ConnectWifi}"
                                         Style="{StaticResource SecondaryButton}"
-                                        Command="{Binding ConnectWirelessCommand}"
-                                        Padding="14,0"
-                                        Height="36" />
+                                        Command="{Binding ConnectWirelessCommand}" />
                             </Grid>
                         </StackPanel>
                     </Grid>
@@ -140,12 +137,10 @@
                                            Foreground="{StaticResource BrushTextMuted}"
                                            VerticalAlignment="Center"
                                            Margin="0,0,8,0" />
-                                <Button Content="{DynamicResource Loc_Quest_DownloadToolsBtn}"
+                                <Button ContentTemplate="{StaticResource WrappingButtonContent}" Content="{DynamicResource Loc_Quest_DownloadToolsBtn}"
                                         Command="{Binding DownloadQuestToolsCommand}"
                                         Visibility="{Binding NeedsQuestTools, Converter={StaticResource BoolToVis}}"
-                                        Style="{StaticResource SecondaryButton}"
-                                        Padding="8,3"
-                                        FontSize="11" />
+                                        Style="{StaticResource SecondaryButton}" />
                             </StackPanel>
                         </Grid>
                     </Border>
@@ -180,12 +175,10 @@
                         <TextBox Grid.Column="0"
                                  Text="{Binding CustomApkPath, UpdateSourceTrigger=PropertyChanged}"
                                  Height="36" />
-                        <Button Grid.Column="2"
+                        <Button ContentTemplate="{StaticResource WrappingButtonContent}" Grid.Column="2"
                                 Content="{DynamicResource Loc_Quest_BrowseApk}"
                                 Style="{StaticResource SecondaryButton}"
-                                Command="{Binding BrowseApkCommand}"
-                                Padding="14,0"
-                                Height="36" />
+                                Command="{Binding BrowseApkCommand}" />
                     </Grid>
                     <Border Height="1" Background="{StaticResource BrushBorder}" Margin="0,10,0,10" />
 
@@ -231,28 +224,22 @@
                                    TextWrapping="Wrap"
                                    LineHeight="17"
                                    Margin="0,0,0,14" />
-                        <Button Content="{Binding PatchButtonText}"
+                        <Button ContentTemplate="{StaticResource WrappingButtonContent}" Content="{Binding PatchButtonText}"
                                 Command="{Binding StartPatchCommand}"
-                                Height="40"
-                                FontSize="13"
                                 FontWeight="Bold" />
-                        <Button Content="{DynamicResource Loc_Quest_ImportPcSaveButton}"
+                        <Button ContentTemplate="{StaticResource WrappingButtonContent}" Content="{DynamicResource Loc_Quest_ImportPcSaveButton}"
                                 Command="{Binding ImportPcSaveCommand}"
                                 Style="{StaticResource SecondaryButton}"
-                                Height="36"
-                                FontSize="12"
                                 Margin="0,8,0,0" />
                         <TextBlock Text="{DynamicResource Loc_Quest_ImportPcSaveDesc}"
                                    FontSize="11"
                                    Foreground="{StaticResource BrushTextMuted}"
                                    TextWrapping="Wrap"
                                    Margin="0,5,0,0" />
-                        <Button Content="{DynamicResource Loc_Quest_UninstallButton}"
+                        <Button ContentTemplate="{StaticResource WrappingButtonContent}" Content="{DynamicResource Loc_Quest_UninstallButton}"
                                 Style="{StaticResource DangerButton}"
                                 Command="{Binding UninstallModdedCommand}"
                                 Visibility="{Binding CanUninstallModded, Converter={StaticResource BoolToVis}}"
-                                Height="34"
-                                FontSize="12"
                                 Margin="0,8,0,0" />
                     </StackPanel>
                 </Border>
@@ -276,11 +263,9 @@
                                    TextWrapping="Wrap"
                                    LineHeight="17"
                                    Margin="0,0,0,14" />
-                        <Button Content="{DynamicResource Loc_Quest_SyncSongsButton}"
+                        <Button ContentTemplate="{StaticResource WrappingButtonContent}" Content="{DynamicResource Loc_Quest_SyncSongsButton}"
                                 Style="{StaticResource PurpleButton}"
                                 Command="{Binding SyncSongsCommand}"
-                                Height="40"
-                                FontSize="13"
                                 FontWeight="Bold" />
                         <StackPanel Visibility="{Binding IsModdedInstalled, Converter={StaticResource BoolToVis}}">
                             <Border Height="1" Background="{StaticResource BrushBorder}" Margin="0,18,0,14" />
@@ -289,8 +274,11 @@
                             <TextBlock Text="{Binding ModStatusText}" Foreground="{StaticResource BrushAccentBlue}" Margin="0,0,0,6" />
                             <TextBlock Text="{DynamicResource Loc_Quest_ModMaintenanceDesc}" FontSize="12" TextWrapping="Wrap"
                                        Foreground="{StaticResource BrushTextSecondary}" Margin="0,0,0,12" />
-                            <Button Content="{Binding ModActionText}" Command="{Binding UpdateModCommand}"
-                                    Style="{StaticResource PurpleButton}" Height="40" FontSize="13" FontWeight="Bold" />
+                            <Button ContentTemplate="{StaticResource WrappingButtonContent}" Content="{Binding ModActionText}" Command="{Binding UpdateModCommand}"
+                                    Style="{StaticResource PurpleButton}" FontWeight="Bold" />
+                            <Button ContentTemplate="{StaticResource WrappingButtonContent}" Content="{DynamicResource Loc_Nav_LaunchQuest}" Command="{Binding LaunchGameCommand}"
+                                    Visibility="{Binding CanLaunchGame, Converter={StaticResource BoolToVis}}"
+                                    Style="{StaticResource SecondaryButton}" Margin="0,8,0,0" />
                         </StackPanel>
                     </StackPanel>
                 </Border>
@@ -334,12 +322,10 @@
                                        Foreground="{StaticResource BrushTextPrimary}"
                                        VerticalAlignment="Center" />
                         </StackPanel>
-                        <Button Content="{DynamicResource Loc_Quest_ClearLogs}"
+                        <Button ContentTemplate="{StaticResource WrappingButtonContent}" Content="{DynamicResource Loc_Quest_ClearLogs}"
                                 HorizontalAlignment="Right"
                                 Style="{StaticResource SecondaryButton}"
-                                Command="{Binding ClearLogsCommand}"
-                                Padding="10,4"
-                                FontSize="11" />
+                                Command="{Binding ClearLogsCommand}" />
                     </Grid>
 
                     <Border Background="{StaticResource BrushBgCard}"

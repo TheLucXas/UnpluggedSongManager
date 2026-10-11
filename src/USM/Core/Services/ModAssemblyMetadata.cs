@@ -6,6 +6,15 @@ namespace USM.Core.Services;
 
 internal static class ModAssemblyMetadata
 {
+    // Correct the development-only 1.1 label used before the first release.
+    // Future published versions still retain the normal downgrade protection.
+    public static bool IsDevelopmentVersionReset(string? target, string? installed) =>
+        (target is "1.0" or "1.0.0") && (installed is "1.1" or "1.1.0");
+
+    public static bool CanInstallPackagedVersion(string? target, string? installed) =>
+        UpdateService.CompareVersions(target ?? "0", installed ?? "0") >= 0
+        || IsDevelopmentVersionReset(target, installed);
+
     public static string? GetHash(string? path)
     {
         try
