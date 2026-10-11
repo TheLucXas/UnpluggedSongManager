@@ -5041,6 +5041,33 @@ namespace UnpluggedCustomSongs
             // The badge travels and fades with its native title during entry.
             Patch_SongMenuItem_SetSong.SetLabelsVisible(true);
         }
+
+        public static void Postfix(SongMenu __instance)
+        {
+            try
+            {
+                if (__instance == null || AlbumsManager.SelectedAlbum?.AlbumID != "CustomSongsAlbum")
+                    return;
+                if (CustomSongLoader.CustomAlbumInstance?.builtInSongsMetadata == null ||
+                    CustomSongLoader.CustomAlbumInstance.builtInSongsMetadata.Count == 0)
+                    return;
+
+                // The native options panel hides on album/menu changes and only
+                // shows difficulty after SelectedSongHasStopped. EnterMenu sets
+                // ForceUpdateIndex, but Update clears it before assigning the
+                // unchanged selection in multi-song albums. Schedule the game's
+                // own settle notification even when the saved song stays centered.
+                // It cancels the previous timer, so moving a card still postpones
+                // the notification until the newly selected song has settled.
+                __instance.CheckIfCarouselHasStoped();
+                if (ModMain.ConfigVerbose)
+                    MelonLogger.Msg("[MenuDiag] Scheduled native selection-settled notification on custom menu entry; difficulty and venue selectors refresh without rotating the disc.");
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[MenuDiag] Could not refresh options on custom menu entry: {ex.Message}");
+            }
+        }
     }
     [HarmonyPatch(typeof(SongMenu), "ExitMenu")]
     public static class Patch_SongMenu_ExitMenuLabels
