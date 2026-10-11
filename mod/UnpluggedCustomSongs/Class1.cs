@@ -483,6 +483,7 @@ namespace UnpluggedCustomSongs
                     startSpace.songMenu == null || !startSpace.songMenu.gameObject.activeInHierarchy ||
                     album == null || album.AlbumID != "CustomSongsAlbum" || GameManager.IsPlaying)
                 {
+                    CustomSongLoader.StopCustomAudioPreview();
                     _lastMenuPreviewSongKey = null;
                     _pendingMenuPreviewSongKey = null;
                     return;
@@ -3147,6 +3148,29 @@ namespace UnpluggedCustomSongs
             }
         }
 
+        public static void StopCustomAudioPreview()
+        {
+            if (PendingPreviewArchivePath == null && ActivePreviewArchivePath == null) return;
+
+            // Invalidate a decoder that is still running before it can start a
+            // custom clip over a vanilla album's silent menu.
+            PreviewLoadGeneration++;
+            PendingPreviewArchivePath = null;
+            ActivePreviewArchivePath = null;
+
+            var player = GameManager.I != null ? GameManager.I.musicPlayer : null;
+            if (player == null) player = UnityEngine.Object.FindObjectOfType<Mp3Player>();
+            var source = player?.MusicAudioSource;
+            var clip = source?.clip;
+            if (clip == null || !clip.name.StartsWith("sample_", StringComparison.Ordinal)) return;
+
+            source.Stop();
+            source.clip = null;
+            UnityEngine.Object.Destroy(clip);
+            if (ModMain.ConfigChartDiagnostics)
+                MelonLogger.Msg("[PreviewDiag] Stopped custom sample after leaving Custom Songs.");
+        }
+
         public static void PlayCustomAudioSample(Mp3Player player, string path)
         {
             try
@@ -3224,7 +3248,8 @@ namespace UnpluggedCustomSongs
                         var menu = StartSpace.I?.songMenu;
                         string currentArchive = menu != null && menu.gameObject.activeInHierarchy
                             ? ResolveUsmPath(menu.SelectedSong?.FileName) : null;
-                        if (GameManager.IsPlaying || !string.Equals(currentArchive, previewArchivePath, StringComparison.OrdinalIgnoreCase))
+                        if (GameManager.IsPlaying || AlbumsManager.SelectedAlbum?.AlbumID != "CustomSongsAlbum" ||
+                            !string.Equals(currentArchive, previewArchivePath, StringComparison.OrdinalIgnoreCase))
                         {
                             if (clip != null) UnityEngine.Object.Destroy(clip);
                             return;
@@ -3566,15 +3591,17 @@ namespace UnpluggedCustomSongs
         {
             try
             {
-                if (album != null && album.AlbumID == "CustomSongsAlbum")
+                if (album == null || album.AlbumID != "CustomSongsAlbum")
                 {
-                    int targetIndex = CustomSongLoader.GetLastPlayedCustomSongIndex();
-                    if (targetIndex < 0) targetIndex = 0;
-                    CustomSongLoader.QueueDirectSelectionIndex(targetIndex);
-                    if (StartSpace.I != null && StartSpace.I.songMenu != null)
-                        StartSpace.I.songMenu.InitialOffset = 0;
-                    MelonLogger.Msg($"[CustomSongs] Album selected; queued direct song index {targetIndex} (no carousel walk).");
+                    CustomSongLoader.StopCustomAudioPreview();
+                    return;
                 }
+                int targetIndex = CustomSongLoader.GetLastPlayedCustomSongIndex();
+                if (targetIndex < 0) targetIndex = 0;
+                CustomSongLoader.QueueDirectSelectionIndex(targetIndex);
+                if (StartSpace.I != null && StartSpace.I.songMenu != null)
+                    StartSpace.I.songMenu.InitialOffset = 0;
+                MelonLogger.Msg($"[CustomSongs] Album selected; queued direct song index {targetIndex} (no carousel walk).");
             }
             catch (Exception ex)
             {
@@ -3587,6 +3614,49 @@ namespace UnpluggedCustomSongs
     public static class Patch_InteractiveHandOculus_IsTracked
     {
         private static readonly Dictionary<int, bool> LastControllerTrackingState = new Dictionary<int, bool>();
+        private static readonly Dictionary<int, bool> LastHandTrackingMode = new Dictionary<int, bool>();
+        private static readonly Dictionary<int, HandSideState> OriginalHandSides = new Dictionary<int, HandSideState>();
+        private static readonly HashSet<int> NormalizedControllerHands = new HashSet<int>();
+
+        private sealed class HandSideState
+        {
+            public bool? ControllerIsLeft;
+            public bool? SkeletonIsLeft;
+            public bool? ControllerSkeletonIsLeft;
+        }
+
+        private static HandSkeletonControllerOculus GetControllerSkeleton(InteractiveHandOculus hand)
+        {
+#if QUEST_IL2CPP
+            return hand.skeletonController?.TryCast<HandSkeletonControllerOculus>();
+#else
+            return hand.skeletonController as HandSkeletonControllerOculus;
+#endif
+        }
+
+        public static void RememberOriginalHandSide(InteractiveHandOculus hand)
+        {
+            if (hand == null) return;
+            var controllerSkeleton = GetControllerSkeleton(hand);
+            OriginalHandSides[hand.GetInstanceID()] = new HandSideState
+            {
+                ControllerIsLeft = hand.Controller != null ? hand.Controller.IsLeftController : (bool?)null,
+                SkeletonIsLeft = hand.SkeletonInfo != null ? hand.SkeletonInfo.IsLeftHand : (bool?)null,
+                ControllerSkeletonIsLeft = controllerSkeleton != null ? controllerSkeleton.IsLeftController : (bool?)null
+            };
+        }
+
+        private static void RestoreOriginalHandSide(InteractiveHandOculus hand, int instanceId)
+        {
+            if (!NormalizedControllerHands.Remove(instanceId) || !OriginalHandSides.TryGetValue(instanceId, out var original)) return;
+            if (original.ControllerIsLeft.HasValue && hand.Controller != null)
+                hand.Controller.IsLeftController = original.ControllerIsLeft.Value;
+            if (original.SkeletonIsLeft.HasValue && hand.SkeletonInfo != null)
+                hand.SkeletonInfo.IsLeftHand = original.SkeletonIsLeft.Value;
+            var controllerSkeleton = GetControllerSkeleton(hand);
+            if (original.ControllerSkeletonIsLeft.HasValue && controllerSkeleton != null)
+                controllerSkeleton.IsLeftController = original.ControllerSkeletonIsLeft.Value;
+        }
 
         public static void NormalizeHandSide(InteractiveHandOculus hand)
         {
@@ -3596,11 +3666,7 @@ namespace UnpluggedCustomSongs
                 hand.Controller.IsLeftController = isLeft;
             if (hand.SkeletonInfo != null && hand.SkeletonInfo.IsLeftHand != isLeft)
                 hand.SkeletonInfo.IsLeftHand = isLeft;
-#if QUEST_IL2CPP
-            var controllerSkeleton = hand.skeletonController?.TryCast<HandSkeletonControllerOculus>();
-#else
-            var controllerSkeleton = hand.skeletonController as HandSkeletonControllerOculus;
-#endif
+            var controllerSkeleton = GetControllerSkeleton(hand);
             if (controllerSkeleton != null && controllerSkeleton.IsLeftController != isLeft)
                 controllerSkeleton.IsLeftController = isLeft;
         }
@@ -3642,9 +3708,26 @@ namespace UnpluggedCustomSongs
                 if (__instance == null)
                     return true;
 
-                NormalizeHandSide(__instance);
-                if (VRPlatformBase.I == null || VRPlatformBase.I.IsHandTrackingEnabled)
+                if (VRPlatformBase.I == null)
                     return true;
+
+                int instanceId = __instance.GetInstanceID();
+                bool nativeHandTracking = VRPlatformBase.I.IsHandTrackingEnabled;
+                if (!LastHandTrackingMode.TryGetValue(instanceId, out bool previousMode) || previousMode != nativeHandTracking)
+                {
+                    LastHandTrackingMode[instanceId] = nativeHandTracking;
+                    if (ModMain.ConfigChartDiagnostics)
+                        MelonLogger.Msg($"[HandPoseDiag] {(__instance.IsLeftHand ? "left" : "right")} Oculus hand mode={(nativeHandTracking ? "native hands" : "controllers")}; native pose stays untouched in hand mode.");
+                }
+                if (nativeHandTracking)
+                {
+                    RestoreOriginalHandSide(__instance, instanceId);
+                    return true;
+                }
+
+                if (!OriginalHandSides.ContainsKey(instanceId)) RememberOriginalHandSide(__instance);
+                NormalizeHandSide(__instance);
+                NormalizedControllerHands.Add(instanceId);
 
                 if (Params.Global.DisableControllerMode)
                 {
@@ -3662,7 +3745,6 @@ namespace UnpluggedCustomSongs
                 bool tracked = OVRInput.GetControllerPositionTracked(controller);
                 __result = tracked;
 
-                int instanceId = __instance.GetInstanceID();
                 bool hadPrevious = LastControllerTrackingState.TryGetValue(instanceId, out bool previous);
                 if (!hadPrevious || previous != tracked)
                 {
@@ -3693,11 +3775,11 @@ namespace UnpluggedCustomSongs
         {
             try
             {
-                Patch_InteractiveHandOculus_IsTracked.NormalizeHandSide(__instance);
+                Patch_InteractiveHandOculus_IsTracked.RememberOriginalHandSide(__instance);
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[HandPoseDiag] Could not normalize Oculus hand side during Awake: {ex.Message}");
+                MelonLogger.Warning($"[HandPoseDiag] Could not remember the original Oculus hand side during Awake: {ex.Message}");
             }
         }
     }
