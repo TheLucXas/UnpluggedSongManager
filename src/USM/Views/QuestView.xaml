@@ -276,11 +276,6 @@
                                        Foreground="{StaticResource BrushTextSecondary}" Margin="0,0,0,12" />
                             <Button ContentTemplate="{StaticResource WrappingButtonContent}" Content="{Binding ModActionText}" Command="{Binding UpdateModCommand}"
                                     Style="{StaticResource PurpleButton}" FontWeight="Bold" />
-                            <Button ContentTemplate="{StaticResource WrappingButtonContent}" Content="{DynamicResource Loc_Nav_LaunchQuest}" Command="{Binding LaunchGameCommand}"
-                                    Visibility="{Binding CanLaunchGame, Converter={StaticResource BoolToVis}}"
-                                    Background="{StaticResource BrushAccentGreen}"
-                                    Foreground="{StaticResource BrushTextOnAccent}"
-                                    FontWeight="Bold" Margin="0,8,0,0" />
                         </StackPanel>
                     </StackPanel>
                 </Border>
