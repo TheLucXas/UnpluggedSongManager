@@ -2193,6 +2193,22 @@ namespace UnpluggedCustomSongs
 
             using (var archive = System.IO.Compression.ZipFile.OpenRead(usmPath))
             {
+#if QUEST_IL2CPP
+                if (isHandTracking)
+                {
+                    string nativeHandName = Path.GetFileNameWithoutExtension(diff) + ".hand.xml";
+                    var nativeHandEntry = FindArchiveEntry(archive, GetChartEntryCandidates(nativeHandName));
+                    if (nativeHandEntry == null)
+                        throw new InvalidDataException($"'{Path.GetFileName(usmPath)}' has no Quest hand mapping for {diff}. Sync this song to Quest again from the updated USM.");
+                    loadedDiff = nativeHandEntry.Name;
+                    using (var sr = new StreamReader(nativeHandEntry.Open()))
+                        xmlContent = sr.ReadToEnd();
+                    if (ModMain.ConfigChartDiagnostics)
+                        MelonLogger.Msg($"[ChartDiag] Selected prebuilt Quest hand mapping '{nativeHandEntry.FullName}'.");
+                }
+                else
+#endif
+                {
                 string jsonDiff = Path.ChangeExtension(Path.GetFileName(diff), ".json");
                 var jsonEntry = FindArchiveEntry(archive, GetChartEntryCandidates(jsonDiff));
                 if (jsonEntry != null)
@@ -2218,6 +2234,7 @@ namespace UnpluggedCustomSongs
                             xmlContent = sr.ReadToEnd();
                         }
                     }
+                }
                 }
             }
 
@@ -2250,6 +2267,14 @@ namespace UnpluggedCustomSongs
 
             mapping.IsHandTrackingMapping = isHandTracking;
             MelonLogger.Msg($"[CustomSongs] Chart mapping loaded: {mapping.Keys?.Count ?? 0} track/key group(s), handTracking={isHandTracking}");
+
+#if QUEST_IL2CPP
+            // The prebuilt hand XML already contains every finger and the exact
+            // requested difficulty. Do not enter the legacy repair/conversion
+            // loops: reading List<TierFinger> through the interop bridge crashes.
+            if (isHandTracking)
+                return mapping;
+#endif
 
             // DYNAMIC FINGERING POPULATION FOR ALL NOTES (Fixes missing scoring without needing Harmony patches)
             if (mapping.Keys != null)
@@ -2923,7 +2948,7 @@ namespace UnpluggedCustomSongs
             }
             else if (note.TryCast<HandGuitarNote>() is HandGuitarNote questHandNote)
             {
-                questInput = $"noteType=hand tier={questHandNote.Tier} fingerCount={questHandNote.Fingers?.Count ?? 0}";
+                questInput = $"noteType=hand tier={questHandNote.Tier}";
                 questMode = "hand";
             }
 
@@ -4286,6 +4311,7 @@ namespace UnpluggedCustomSongs
         }
     }
 
+#if !QUEST_IL2CPP
     [HarmonyPatch(typeof(GuitarHandPoseRecognitionManager), "CheckHandPoseColliderMethod")]
     public static class Patch_GuitarHandPoseRecognitionManager_CheckHandPoseColliderMethod
     {
@@ -4321,6 +4347,7 @@ namespace UnpluggedCustomSongs
             catch { }
         }
     }
+#endif
 
 
 
