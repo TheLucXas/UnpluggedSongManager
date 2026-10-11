@@ -1721,6 +1721,14 @@ namespace UnpluggedCustomSongs
             }
         }
 
+        private static bool IsSameSong(SongMappingMetaData current, SongMappingMetaData expected)
+        {
+            // IL2CPP can return a new managed wrapper for the same native metadata.
+            // Reference equality would discard every deferred cover on Quest.
+            return current != null && expected != null && !string.IsNullOrEmpty(expected.SongID)
+                && string.Equals(current.SongID, expected.SongID, StringComparison.Ordinal);
+        }
+
         private static IEnumerator LoadQueuedSongCovers()
         {
             while (PendingSongCoverLoads.Count > 0)
@@ -1729,15 +1737,23 @@ namespace UnpluggedCustomSongs
                 PendingSongCoverKeys.Remove(request.Key);
                 try
                 {
-                    if (request.Item != null && request.Song != null && request.Item.SongData == request.Song)
+                    var currentSong = request.Item != null ? request.Item.SongData : null;
+                    if (IsSameSong(currentSong, request.Song))
                     {
-                        var cover = EnsureSongCover(request.Song);
+                        var cover = EnsureSongCover(currentSong);
                         if (cover != null)
                         {
                             if (request.Item.CoverRenderer != null && request.Item.CoverRenderer.sharedMaterial != null)
                                 request.Item.CoverRenderer.sharedMaterial.mainTexture = cover;
                             if (request.Item.FramedCoverRenderer != null && request.Item.FramedCoverRenderer.sharedMaterial != null)
                                 request.Item.FramedCoverRenderer.sharedMaterial.mainTexture = cover;
+
+                            var menu = StartSpace.I?.songMenu;
+                            if (menu != null && AlbumsManager.SelectedAlbum?.AlbumID == "CustomSongsAlbum"
+                                && IsSameSong(menu.SelectedSong, currentSong))
+                                VinylCoverHelper.UpdateTurntableVinyl(currentSong, force: true);
+
+                            MelonLogger.Msg($"[CoverDiag] Applied visible cover for '{currentSong.FileName}' without requiring gameplay.");
                         }
                     }
                 }
@@ -1844,21 +1860,41 @@ namespace UnpluggedCustomSongs
 
             try
             {
+                int targetIndex = GetLastPlayedCustomSongIndex();
+                if (targetIndex < 0) targetIndex = 0;
+                QueueDirectSelectionIndex(targetIndex);
+
+                var manager = AlbumsManager.I;
+                if (manager == null) return;
+                // The property setter raises AlbumLoaded, which tells StartSpace to
+                // replay ChangeAlbum even while its initial disc animation is running.
+                // Set the initial album as vanilla Awake does, before the menu enters.
+                if (AlbumsManager.SelectedAlbum?.AlbumID != "CustomSongsAlbum")
+                {
+                    manager.SetSelectedAlbum(CustomAlbumInstance);
+                    MelonLogger.Msg("[StartupDiag] Prepared the saved custom album without queuing a second disc animation.");
+                }
+                manager.CurrentAlbumSongs = CustomAlbumInstance.SongsMetadata;
+
                 var startSpace = StartSpace.I;
                 if (startSpace == null || !startSpace.gameObject.activeInHierarchy || startSpace.songMenu == null)
                     return;
 
-                int targetIndex = GetLastPlayedCustomSongIndex();
-                if (targetIndex < 0) targetIndex = 0;
-                QueueDirectSelectionIndex(targetIndex);
                 startSpace.songMenu.InitialOffset = 0;
-                AlbumsManager.SelectedAlbum = CustomAlbumInstance;
-                if (AlbumsManager.I != null)
-                    AlbumsManager.I.CurrentAlbumSongs = CustomAlbumInstance.SongsMetadata;
+#if QUEST_IL2CPP
+                var existingSongs = GameFieldAccess.Get<Il2CppSystem.Collections.Generic.List<SongMappingMetaData>>(startSpace.songMenu, "songList");
+#else
+                var existingSongs = GameFieldAccess.Get<List<SongMappingMetaData>>(startSpace.songMenu, "songList");
+#endif
+                bool needsLateMenuRefresh = existingSongs != null && existingSongs.Count > 0
+                    && (existingSongs[0]?.SongID == null || !existingSongs[0].SongID.StartsWith("CUSTOM_", StringComparison.Ordinal));
+                if (needsLateMenuRefresh)
+                    startSpace.songMenu.ChangeAlbum(manager.CurrentAlbumSongs);
+
                 Traverse.Create(startSpace).Method("SetChallengeSetup", CustomAlbumInstance).GetValue();
                 Traverse.Create(startSpace).Method("SongMenu_SelectedSongChanged", CustomAlbumInstance.builtInSongsMetadata[targetIndex]).GetValue();
                 _pendingSavedAlbumRestore = false;
-                MelonLogger.Msg($"[CustomSongs] Restored the saved custom song after the background scan (index {targetIndex}); the album change uses a direct carousel selection.");
+                MelonLogger.Msg($"[StartupDiag] Restored saved custom song index={targetIndex}, lateMenuRefresh={needsLateMenuRefresh}; the initial disc animation remains responsible for entering the menu.");
             }
             catch (Exception ex)
             {
@@ -4800,25 +4836,7 @@ namespace UnpluggedCustomSongs
                 {
                     CustomSongLoader.QueueSongCoverLoad(__instance, __instance.SongData);
 
-                    if (__instance.SongData.SongID != null &&
-                        __instance.SongData.SongID.StartsWith("CUSTOM_", StringComparison.Ordinal))
-                    {
-                        string trackLabel = CustomSongLoader.GetTrackDisplayLabel(__instance.SongData);
-                        if (!string.IsNullOrEmpty(trackLabel))
-                        {
-                            // The hidden FileName TMP is optional in the Quest
-                            // prefab; never gate the visible badge on that field.
-                            if (__instance.BandName != null)
-                            {
-                                string artist = __instance.SongData.BandName ?? string.Empty;
-                                __instance.BandName.text = string.IsNullOrEmpty(artist)
-                                    ? $"<size=65%>{trackLabel}</size>"
-                                    : $"{artist}\n<size=65%>{trackLabel}</size>";
-                            }
-                            if (__instance.FileName != null)
-                                __instance.FileName.text = trackLabel;
-                        }
-                    }
+                    SetTrackLabel(__instance, CustomSongLoader.GetTrackDisplayLabel(__instance.SongData));
                 }
             }
             catch (Exception ex)
@@ -4826,6 +4844,55 @@ namespace UnpluggedCustomSongs
                 MelonLogger.Warning($"[CustomSongs] Could not show the custom song track label: {ex.Message}");
             }
             ApplyOutlines(__instance);
+        }
+
+        private static void SetTrackLabel(SongMenuItem item, string label)
+        {
+            var title = item.SongName;
+            if (title == null) return;
+            var existing = title.transform.Find("USMTrackLabel");
+            if (string.IsNullOrEmpty(label))
+            {
+                if (existing != null) existing.gameObject.SetActive(false);
+                return;
+            }
+
+            TextMeshPro badge;
+            if (existing != null)
+                badge = existing.GetComponent<TextMeshPro>();
+            else
+            {
+                var badgeObject = new GameObject("USMTrackLabel");
+                badgeObject.layer = title.gameObject.layer;
+                badgeObject.transform.SetParent(title.transform, false);
+                badge = badgeObject.AddComponent<TextMeshPro>();
+            }
+            if (badge == null) return;
+
+            title.ForceMeshUpdate(true);
+            badge.gameObject.SetActive(true);
+            badge.font = title.font;
+            badge.fontSharedMaterial = title.fontSharedMaterial;
+            badge.fontSize = title.fontSize * 0.65f;
+            badge.enableAutoSizing = false;
+            badge.enableWordWrapping = false;
+            badge.overflowMode = TextOverflowModes.Overflow;
+            badge.alignment = title.alignment;
+            badge.color = title.color;
+            badge.richText = true;
+            badge.rectTransform.sizeDelta = title.rectTransform.rect.size;
+            badge.text = label;
+            badge.ForceMeshUpdate(true);
+            badge.transform.localPosition = new Vector3(0f, GetTrackLabelVerticalOffset(title.textBounds, badge.textBounds), 0f);
+            ApplyOutline(badge);
+        }
+
+        private static float GetTrackLabelVerticalOffset(Bounds titleBounds, Bounds labelBounds)
+        {
+            // Place the badge's top beneath the title's actual bottom, including
+            // wrapped titles, without shifting the artist or song name.
+            float gap = Math.Max(0.005f, titleBounds.size.y * 0.12f);
+            return titleBounds.min.y - labelBounds.max.y - gap;
         }
 
         public static void ApplyOutlines(SongMenuItem item)
