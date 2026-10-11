@@ -17,6 +17,26 @@ namespace USM.ViewModels
         private readonly UpdateService _updateService;
         private readonly QuestViewModel? _questViewModel;
         private GitHubAssetInfo? _modAsset;
+        private GitHubAssetInfo? _questModAsset;
+        private string? _installedPcHash;
+        private bool _packagedPcUpdateAvailable;
+
+        public bool HasPcModUpdate => IsModInstalled && (_packagedPcUpdateAvailable ||
+            HasNewReleaseBuild(_modAsset, InstalledModVersion));
+        public bool HasQuestModUpdate => _questViewModel?.IsModdedInstalled == true &&
+            (_questViewModel.IsModUpdateAvailable || HasNewReleaseBuild(_questModAsset, _questViewModel.InstalledModInfo?.Version));
+
+        private static bool HasNewReleaseBuild(GitHubAssetInfo? asset, string? installedVersion)
+        {
+            return !string.IsNullOrWhiteSpace(installedVersion) && !string.IsNullOrWhiteSpace(asset?.ModVersion)
+                && UpdateService.CompareVersions(asset.ModVersion, installedVersion) > 0;
+        }
+
+        private void RefreshUpdateNotices()
+        {
+            OnPropertyChanged(nameof(HasPcModUpdate));
+            OnPropertyChanged(nameof(HasQuestModUpdate));
+        }
 
         public string CurrentAppVersion => _updateService.CurrentAppVersion;
 
@@ -299,7 +319,9 @@ namespace USM.ViewModels
             {
                 OnPropertyChanged(nameof(IsQuestModInstalled));
                 OnPropertyChanged(nameof(InstalledQuestModVersion));
+                RefreshUpdateNotices();
             }
+            if (e.PropertyName == nameof(QuestViewModel.IsModUpdateAvailable)) RefreshUpdateNotices();
         }
 
         private void IncrementDownloads()
@@ -329,6 +351,13 @@ namespace USM.ViewModels
             IsMelonInstalled = _gameDetector.IsMelonInstalled();
             IsModInstalled = _gameDetector.IsModInstalled();
             InstalledModVersion = _gameDetector.GetInstalledModVersion() ?? "N/A";
+            _installedPcHash = ModAssemblyMetadata.GetHash(string.IsNullOrEmpty(GamePath) ? null : Path.Combine(GamePath, "Mods", "UnpluggedCustomSongs.dll"));
+            string? packagedPc = PackagedModAssemblyProvider.ExtractPcModAssembly();
+            string? packagedHash = ModAssemblyMetadata.GetHash(packagedPc);
+            _packagedPcUpdateAvailable = IsModInstalled && packagedHash != null && _installedPcHash != null
+                && !packagedHash.Equals(_installedPcHash, StringComparison.OrdinalIgnoreCase)
+                && UpdateService.CompareVersions(ModAssemblyMetadata.GetVersion(packagedPc ?? "") ?? "0", InstalledModVersion) >= 0;
+            RefreshUpdateNotices();
             IsCustomSongsReady = Directory.Exists(_gameDetector.GetCustomSongsDir() ?? "");
 
             var (disc, verb) = _gameDetector.ReadPreferences();
@@ -370,6 +399,9 @@ namespace USM.ViewModels
                 }
 
                 _modAsset = result.ModAsset;
+                _questModAsset = result.QuestModAsset;
+                _questViewModel?.SetAvailableModRelease(_questModAsset);
+                RefreshUpdateNotices();
                 _usmAsset = result.UsmAsset;
                 CanDownloadModAsset = _modAsset != null && IsGameFound;
                 OnPropertyChanged(nameof(CanUpdateApp));

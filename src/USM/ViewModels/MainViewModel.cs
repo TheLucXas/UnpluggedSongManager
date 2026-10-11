@@ -41,6 +41,25 @@ namespace USM.ViewModels
         public string GameStatusText => IsGameConnected ? USM.Core.Services.Localization.LocalizationService.T("Nav_GameConnected") : USM.Core.Services.Localization.LocalizationService.T("Nav_GameNotDetected");
 
         public ICommand LaunchGameCommand { get; }
+        public ICommand ShowUpdatesCommand { get; }
+        public bool HasAvailableUpdates => SettingsVM.IsUpdateAvailable || SettingsVM.HasPcModUpdate || SettingsVM.HasQuestModUpdate;
+        public string UpdateNoticeText
+        {
+            get
+            {
+                var components = new System.Collections.Generic.List<string>();
+                if (SettingsVM.IsUpdateAvailable) components.Add("USM");
+                if (SettingsVM.HasPcModUpdate) components.Add("PC");
+                if (SettingsVM.HasQuestModUpdate) components.Add("Quest");
+                return USM.Core.Services.Localization.LocalizationService.T("Nav_UpdatesAvailable", string.Join(" / ", components));
+            }
+        }
+
+        private void RefreshUpdateNotice()
+        {
+            OnPropertyChanged(nameof(HasAvailableUpdates));
+            OnPropertyChanged(nameof(UpdateNoticeText));
+        }
 
         public MainViewModel()
         {
@@ -55,10 +74,17 @@ namespace USM.ViewModels
             QuestVM = new QuestViewModel(GameDetector, Notify);
             LibraryVM = new LibraryViewModel(GameDetector, Notify, QuestVM);
             SettingsVM = new SettingsViewModel(GameDetector, Notify, questViewModel: QuestVM);
+            SettingsVM.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName is nameof(SettingsViewModel.IsUpdateAvailable) or nameof(SettingsViewModel.HasPcModUpdate) or nameof(SettingsViewModel.HasQuestModUpdate))
+                    RefreshUpdateNotice();
+            };
+            ShowUpdatesCommand = new RelayCommand(() => SelectedTabIndex = SettingsVM.HasQuestModUpdate && !SettingsVM.IsUpdateAvailable && !SettingsVM.HasPcModUpdate ? 3 : 4);
 
             USM.Core.Services.Localization.LocalizationService.Instance.LanguageChanged += _ =>
             {
                 OnPropertyChanged(nameof(GameStatusText));
+                RefreshUpdateNotice();
                 ToastMessage = USM.Core.Services.Localization.LocalizationService.T("Toast_Ready");
             };
 

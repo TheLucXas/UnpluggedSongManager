@@ -19,7 +19,7 @@ using USM.Core.Services.Localization;
 namespace USM.Core.Services.Quest
 {
     public sealed record WirelessAdbEndpoint(string Ip, int Port, string ServiceName, string DeviceName);
-    public sealed record QuestModInstallationInfo(string Version, bool MatchesPackagedBuild);
+    public sealed record QuestModInstallationInfo(string Version, bool MatchesPackagedBuild, string Sha256 = "");
 
     public class QuestService
     {
@@ -622,7 +622,7 @@ namespace USM.Core.Services.Quest
                     byte[] packagedHash = await SHA256.HashDataAsync(packaged);
                     matches = installedHash.AsSpan().SequenceEqual(packagedHash);
                 }
-                return new QuestModInstallationInfo(version, matches);
+                return new QuestModInstallationInfo(version, matches, ModAssemblyMetadata.GetHash(tempFile) ?? "");
             }
             catch { return null; }
             finally { try { File.Delete(tempFile); } catch { } }
@@ -1404,11 +1404,51 @@ namespace USM.Core.Services.Quest
             return true;
         }
 
-        public async Task<bool> DeployModDllAsync(string serial, string packageName, Action<string>? log = null)
+        public async Task<(bool Success, string Message)> UpdateModOnlyAsync(string serial, Action<string>? log = null, GitHubAssetInfo? releaseAsset = null)
+        {
+            if (!await IsPackageInstalledAsync(serial, ModdedPackage))
+                return (false, LocalizationService.T("Quest_ModNeedsApp"));
+            string? releasePath = null;
+            try
+            {
+                string? packaged = PackagedModAssemblyProvider.ExtractQuestModAssembly();
+                if (releaseAsset?.ModVersion != null && UpdateService.CompareVersions(releaseAsset.ModVersion,
+                    ModAssemblyMetadata.GetVersion(packaged ?? "") ?? "0") > 0)
+                {
+                    releasePath = Path.Combine(Path.GetTempPath(), $"USM_QuestUpdate_{Guid.NewGuid():N}.dll");
+                    var downloaded = await _updateService.DownloadAndInstallModAssetAsync(releaseAsset.BrowserDownloadUrl,
+                        releasePath, expectedAssemblyName: "UnpluggedCustomSongs.Quest");
+                    if (!downloaded.Success) return downloaded;
+                    if (ModAssemblyMetadata.GetVersion(releasePath) != releaseAsset.ModVersion)
+                        return (false, LocalizationService.T("Quest_ModUpdateFailed"));
+                    if (releaseAsset.Digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase)
+                        && !releaseAsset.Digest[7..].Equals(ModAssemblyMetadata.GetHash(releasePath), StringComparison.OrdinalIgnoreCase))
+                        return (false, LocalizationService.T("Quest_ModUpdateFailed"));
+                }
+                var current = await GetInstalledQuestModInfoAsync(serial, ModdedPackage);
+                string? targetVersion = ModAssemblyMetadata.GetVersion(releasePath ?? packaged ?? "");
+                if (current != null && targetVersion != null && UpdateService.CompareVersions(targetVersion, current.Version) < 0)
+                    return (false, LocalizationService.T("Quest_ModNewerInstalled"));
+                var (stopCode, _, stopError) = await RunProcessAsync(GetAdbPath(),
+                    $"-s {serial} shell am force-stop {ModdedPackage}");
+                if (stopCode != 0) return (false, stopError);
+                if (!await DeployModDllAsync(serial, ModdedPackage, log, releasePath))
+                    return (false, LocalizationService.T("Quest_ModUpdateFailed"));
+                var installed = await GetInstalledQuestModInfoAsync(serial, ModdedPackage);
+                return installed != null && (releasePath == null ? installed.MatchesPackagedBuild
+                    : installed.Sha256.Equals(ModAssemblyMetadata.GetHash(releasePath), StringComparison.OrdinalIgnoreCase))
+                    ? (true, LocalizationService.T("Quest_ModUpdateDone"))
+                    : (false, LocalizationService.T("Quest_ModUpdateFailed"));
+            }
+            finally { if (releasePath != null) try { File.Delete(releasePath); } catch { } }
+        }
+
+        public async Task<bool> DeployModDllAsync(string serial, string packageName, Action<string>? log = null, string? modOverridePath = null)
         {
             try
             {
-                string? modDll = _modDllPath;
+                if (!string.IsNullOrEmpty(modOverridePath) && !IsQuestModAssembly(modOverridePath)) return false;
+                string? modDll = modOverridePath ?? _modDllPath;
                 if (string.IsNullOrEmpty(modDll) || !File.Exists(modDll))
                 {
                     string appDir = AppDomain.CurrentDomain.BaseDirectory;

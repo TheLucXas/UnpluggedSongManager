@@ -15,6 +15,8 @@ namespace USM.Core.Services
 {
     public class GitHubAssetInfo
     {
+        public string Digest { get; set; } = string.Empty;
+        public string? ModVersion { get; set; }
         public string Name { get; set; } = string.Empty;
         public string BrowserDownloadUrl { get; set; } = string.Empty;
         public long Size { get; set; }
@@ -38,6 +40,7 @@ namespace USM.Core.Services
         public string LatestVersion { get; set; } = string.Empty;
         public GitHubReleaseInfo? Release { get; set; }
         public GitHubAssetInfo? ModAsset { get; set; }
+        public GitHubAssetInfo? QuestModAsset { get; set; }
         public GitHubAssetInfo? UsmAsset { get; set; }
         public GitHubAssetInfo? QuestToolsAsset { get; set; }
         public string Message { get; set; } = string.Empty;
@@ -135,6 +138,10 @@ namespace USM.Core.Services
                 result.QuestToolsAsset = release.Assets.FirstOrDefault(a =>
                     a.Name.Contains("quest-tools", StringComparison.OrdinalIgnoreCase) ||
                     a.Name.Contains("quest_tools", StringComparison.OrdinalIgnoreCase));
+                result.QuestModAsset = release.Assets.FirstOrDefault(a =>
+                    a.Name.Equals("UnpluggedCustomSongs.Quest.dll", StringComparison.OrdinalIgnoreCase));
+                await Task.WhenAll(ReadReleaseModVersionAsync(result.ModAsset, cancellationToken),
+                    ReadReleaseModVersionAsync(result.QuestModAsset, cancellationToken));
 
                 result.IsUpdateAvailable = CompareVersions(result.LatestVersion, result.CurrentVersion) > 0;
 
@@ -157,11 +164,41 @@ namespace USM.Core.Services
             }
         }
 
+        private static async Task ReadReleaseModVersionAsync(GitHubAssetInfo? asset, CancellationToken cancellationToken)
+        {
+            if (asset == null || asset.Size > 16 * 1024 * 1024 || !Uri.TryCreate(asset.BrowserDownloadUrl, UriKind.Absolute, out var uri)
+                || uri.Scheme != "https" || uri.Host != "github.com") return;
+            string path = Path.Combine(Path.GetTempPath(), $"USM_ReleaseMod_{Guid.NewGuid():N}.dll");
+            try
+            {
+                using var response = await _httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                response.EnsureSuccessStatusCode();
+                if (response.Content.Headers.ContentLength > 16 * 1024 * 1024) return;
+                await using (var source = await response.Content.ReadAsStreamAsync(cancellationToken))
+                await using (var target = File.Create(path))
+                {
+                    byte[] buffer = new byte[81920];
+                    int count;
+                    long total = 0;
+                    while ((count = await source.ReadAsync(buffer, cancellationToken)) > 0)
+                    {
+                        total += count;
+                        if (total > 16 * 1024 * 1024) return;
+                        await target.WriteAsync(buffer.AsMemory(0, count), cancellationToken);
+                    }
+                }
+                asset.ModVersion = ModAssemblyMetadata.GetVersion(path);
+            }
+            catch { /* A failed mod lookup must not suppress a valid USM release. */ }
+            finally { try { File.Delete(path); } catch { } }
+        }
+
         public async Task<(bool Success, string Message)> DownloadAndInstallModAssetAsync(
             string downloadUrl,
             string targetPath,
             IProgress<double>? progress = null,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            string expectedAssemblyName = "UnpluggedCustomSongs")
         {
             try
             {
@@ -196,10 +233,10 @@ namespace USM.Core.Services
                 }
 
                 string? assemblyName = AssemblyName.GetAssemblyName(tempFile).Name;
-                if (!string.Equals(assemblyName, "UnpluggedCustomSongs", StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(assemblyName, expectedAssemblyName, StringComparison.OrdinalIgnoreCase))
                 {
                     try { File.Delete(tempFile); } catch { }
-                    return (false, "The downloaded DLL is not the PC mod build, so it was not installed.");
+                    return (false, "The downloaded DLL does not match the requested mod platform, so it was not installed.");
                 }
 
                 string? dir = Path.GetDirectoryName(targetPath);
@@ -387,6 +424,7 @@ namespace USM.Core.Services
                         {
                             Name = a.TryGetProperty("name", out var an) ? an.GetString() ?? "" : "",
                             BrowserDownloadUrl = a.TryGetProperty("browser_download_url", out var dl) ? dl.GetString() ?? "" : "",
+                            Digest = a.TryGetProperty("digest", out var digest) ? digest.GetString() ?? "" : "",
                             Size = a.TryGetProperty("size", out var s) ? s.GetInt64() : 0
                         };
                         release.Assets.Add(asset);

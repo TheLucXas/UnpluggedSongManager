@@ -6,6 +6,17 @@ namespace USM.Core.Services;
 
 internal static class ModAssemblyMetadata
 {
+    public static string? GetHash(string? path)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(path)) return null;
+            using var stream = File.OpenRead(path);
+            return System.Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream));
+        }
+        catch { return null; }
+    }
+
     // Inspect the file without loading or executing a PC/IL2CPP mod in USM.
     public static string? GetVersion(string path)
     {

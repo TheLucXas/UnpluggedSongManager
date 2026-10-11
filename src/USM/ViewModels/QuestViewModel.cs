@@ -133,6 +133,7 @@ namespace USM.ViewModels
                 if (SetProperty(ref _isModdedInstalled, value))
                 {
                     OnPropertyChanged(nameof(CanUninstallModded));
+                    RefreshModUpdateProperties();
                     CommandManager.InvalidateRequerySuggested();
                 }
             }
@@ -177,7 +178,33 @@ namespace USM.ViewModels
         public QuestModInstallationInfo? InstalledModInfo
         {
             get => _installedModInfo;
-            private set => SetProperty(ref _installedModInfo, value);
+            private set
+            {
+                if (SetProperty(ref _installedModInfo, value)) RefreshModUpdateProperties();
+            }
+        }
+
+        public GitHubAssetInfo? AvailableModRelease { get; private set; }
+        public void SetAvailableModRelease(GitHubAssetInfo? asset)
+        {
+            AvailableModRelease = asset;
+            RefreshModUpdateProperties();
+        }
+        public bool IsModUpdateAvailable => IsModdedInstalled && InstalledModInfo != null &&
+            ((!InstalledModInfo.MatchesPackagedBuild
+            && UpdateService.CompareVersions(ModAssemblyMetadata.GetVersion(PackagedModAssemblyProvider.ExtractQuestModAssembly() ?? "") ?? "0", InstalledModInfo.Version) >= 0)
+            || (AvailableModRelease?.ModVersion != null && UpdateService.CompareVersions(AvailableModRelease.ModVersion, InstalledModInfo.Version) > 0));
+        public string ModActionText => LocalizationService.T(InstalledModInfo == null
+            ? "Quest_ModInstall" : IsModUpdateAvailable ? "Quest_ModUpdate" : "Quest_ModReinstall");
+        public string ModStatusText => LocalizationService.T(InstalledModInfo == null
+            ? "Quest_ModMissing" : IsModUpdateAvailable ? "Quest_ModOutdated" : "Quest_ModCurrent");
+
+        private void RefreshModUpdateProperties()
+        {
+            OnPropertyChanged(nameof(IsModUpdateAvailable));
+            OnPropertyChanged(nameof(ModActionText));
+            OnPropertyChanged(nameof(ModStatusText));
+            CommandManager.InvalidateRequerySuggested();
         }
 
         public bool CanUninstallModded => IsDeviceConnected && IsModdedInstalled;
@@ -229,6 +256,7 @@ namespace USM.ViewModels
         public ICommand ImportPcSaveCommand { get; }
         public ICommand ClearLogsCommand { get; }
         public ICommand DownloadQuestToolsCommand { get; }
+        public ICommand UpdateModCommand { get; }
 
         public QuestViewModel(GameDetector gameDetector, Action<string> notifyCallback)
         {
@@ -249,15 +277,41 @@ namespace USM.ViewModels
             SyncSongsCommand = new AsyncRelayCommand(_ => SyncSongsAsync(), _ => !IsBusy && IsDeviceConnected && LocalSongCount > 0);
             ImportPcSaveCommand = new AsyncRelayCommand(_ => ImportPcSaveAsync(), _ => !IsBusy && IsDeviceConnected && IsModdedInstalled);
             ClearLogsCommand = new RelayCommand(ClearLogs);
+            UpdateModCommand = new AsyncRelayCommand(_ => UpdateModAsync(), _ => !IsBusy && IsDeviceConnected && IsModdedInstalled);
             DownloadQuestToolsCommand = new AsyncRelayCommand(_ => DownloadQuestToolsAsync(), _ => !IsBusy);
 
             LocalizationService.Instance.LanguageChanged += lang =>
             {
+                RefreshModUpdateProperties();
                 OnPropertyChanged(nameof(QuestToolsStatusText));
                 _ = CheckInstalledPackagesAsync();
             };
             AppendLog(LocalizationService.T("Log_QuestInit"));
             _ = RefreshDevicesAsync(discoverWireless: true);
+        }
+
+        private async Task UpdateModAsync()
+        {
+            if (IsBusy || SelectedDevice == null || !IsModdedInstalled) return;
+            string serial = SelectedDevice.Serial;
+            IsBusy = true;
+            ProgressPercent = 0;
+            ProgressStatus = LocalizationService.T("Quest_ModUpdating");
+            try
+            {
+                var result = await _questService.UpdateModOnlyAsync(serial, AppendLog, AvailableModRelease);
+                ProgressPercent = result.Success ? 100 : 0;
+                ProgressStatus = result.Message;
+                AppendLog(result.Message);
+                _notifyCallback(result.Message);
+                await CheckInstalledPackagesAsync();
+            }
+            catch (Exception ex)
+            {
+                AppendLog(ex.Message);
+                _notifyCallback(LocalizationService.T("Quest_ModUpdateFailed"));
+            }
+            finally { IsBusy = false; }
         }
 
         private async Task DownloadQuestToolsAsync()

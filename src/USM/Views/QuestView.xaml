@@ -282,6 +282,16 @@
                                 Height="40"
                                 FontSize="13"
                                 FontWeight="Bold" />
+                        <StackPanel Visibility="{Binding IsModdedInstalled, Converter={StaticResource BoolToVis}}">
+                            <Border Height="1" Background="{StaticResource BrushBorder}" Margin="0,18,0,14" />
+                            <TextBlock Text="{DynamicResource Loc_Quest_ModMaintenanceTitle}" FontSize="15" FontWeight="Bold"
+                                       Foreground="{StaticResource BrushAccentPink}" Margin="0,0,0,6" />
+                            <TextBlock Text="{Binding ModStatusText}" Foreground="{StaticResource BrushAccentBlue}" Margin="0,0,0,6" />
+                            <TextBlock Text="{DynamicResource Loc_Quest_ModMaintenanceDesc}" FontSize="12" TextWrapping="Wrap"
+                                       Foreground="{StaticResource BrushTextSecondary}" Margin="0,0,0,12" />
+                            <Button Content="{Binding ModActionText}" Command="{Binding UpdateModCommand}"
+                                    Style="{StaticResource PurpleButton}" Height="40" FontSize="13" FontWeight="Bold" />
+                        </StackPanel>
                     </StackPanel>
                 </Border>
             </Grid>
