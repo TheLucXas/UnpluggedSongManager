@@ -2,6 +2,7 @@ using System;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -922,6 +923,23 @@ namespace USM.ViewModels
                         !remoteSizes.TryGetValue(Path.GetFileName(dir), out long remoteSize) ||
                         remoteSize != new FileInfo(dir).Length)
                     .ToList();
+
+                var sameSizeSongs = allSongDirs.Except(songsToSync).ToList();
+                if (sameSizeSongs.Count > 0)
+                {
+                    // Resync can change notes without changing the archive size.
+                    // Compare contents before calling a song up to date on Quest.
+                    var remoteHashes = await _questService.GetQuestInstalledSongHashesAsync(SelectedDevice.Serial);
+                    var changedSongs = await Task.Run(() => sameSizeSongs.Where(path =>
+                    {
+                        if (!remoteHashes.TryGetValue(Path.GetFileName(path), out string? remoteHash))
+                            return true;
+                        using var file = File.OpenRead(path);
+                        string localHash = Convert.ToHexString(SHA256.HashData(file));
+                        return !string.Equals(localHash, remoteHash, StringComparison.OrdinalIgnoreCase);
+                    }).ToList());
+                    songsToSync.AddRange(changedSongs);
+                }
 
                 if (songsToSync.Count == 0)
                 {

@@ -1633,6 +1633,27 @@ namespace USM.Core.Services.Quest
             return sizes;
         }
 
+        public async Task<Dictionary<string, string>> GetQuestInstalledSongHashesAsync(string serial)
+        {
+            var hashes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var (code, stdout, stderr) = await RunAdbShellAsync(serial,
+                $"sha256sum {ModdedSongsPath}/*.usm", 300000);
+            if (code != 0)
+                throw new IOException($"Could not verify Quest song hashes: {(stdout + " " + stderr).Trim()}");
+
+            foreach (string line in stdout.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                Match match = Regex.Match(line, @"^([0-9a-fA-F]{64})\s+(.+)$");
+                if (!match.Success)
+                    continue;
+                string remotePath = match.Groups[2].Value.Trim();
+                string name = remotePath[(remotePath.LastIndexOf('/') + 1)..];
+                if (name.EndsWith(".usm", StringComparison.OrdinalIgnoreCase))
+                    hashes[name] = match.Groups[1].Value;
+            }
+            return hashes;
+        }
+
         public async Task<(bool DirectoryExists, List<string> SongFiles, string Message)> ListQuestSongsAsync(string serial)
         {
             var (directoryCode, _, directoryError) = await RunProcessAsync(
