@@ -294,7 +294,7 @@ namespace USM.ViewModels
                 _ = CheckInstalledPackagesAsync();
             };
             AppendLog(LocalizationService.T("Log_QuestInit"));
-            _deviceRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(8) };
+            _deviceRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(20) };
             _deviceRefreshTimer.Tick += async (_, _) =>
             {
                 if (!IsBusy && !_refreshingDevices)
