@@ -472,6 +472,8 @@ namespace UnpluggedCustomSongs
         private static float _arrowHoldStartTime = 0f;
         private static float _arrowNextStepTime = 0f;
         private static int _configuredArrowMenuId;
+        private static PressableButton _carouselLeftButton;
+        private static PressableButton _carouselRightButton;
         private static string _lastMenuPreviewSongKey = null;
         private static bool _hasCarouselOffset;
         private static float _lastCarouselOffset;
@@ -533,7 +535,9 @@ namespace UnpluggedCustomSongs
                 }
 
                 string selectionKey = (selectedSong.SongID ?? "") + "|" + selectedSong.FileName;
-                float settleDelay = Mathf.Max(menu.SamplePlayDelay, menu.CarouselSpinningDelay);
+                // The offset check above already waits for the actual movement
+                // to finish. Only a short quiet period is needed here.
+                const float settleDelay = 0.12f;
                 if (Time.unscaledTime - _lastCarouselMotionAt < settleDelay) return;
                 IsCustomCarouselSettled = true;
                 VinylCoverHelper.UpdateTurntableVinyl(selectedSong);
@@ -560,6 +564,7 @@ namespace UnpluggedCustomSongs
             {
                 _navHoldDir = 0;
                 _arrowHoldDir = 0;
+                SetCarouselArrowsVisible(false);
                 return;
             }
 
@@ -568,6 +573,7 @@ namespace UnpluggedCustomSongs
             {
                 _navHoldDir = 0;
                 _arrowHoldDir = 0;
+                SetCarouselArrowsVisible(false);
                 return;
             }
 
@@ -575,6 +581,7 @@ namespace UnpluggedCustomSongs
             {
                 _navHoldDir = 0;
                 _arrowHoldDir = 0;
+                SetCarouselArrowsVisible(false);
                 return;
             }
 
@@ -666,26 +673,29 @@ namespace UnpluggedCustomSongs
 
         private static void HandleCarouselArrows(SongMenu sm)
         {
-            if (AlbumsManager.SelectedAlbum?.AlbumID != "CustomSongsAlbum")
+            bool customAlbum = AlbumsManager.SelectedAlbum?.AlbumID == "CustomSongsAlbum";
+            if (!customAlbum)
             {
                 _arrowHoldDir = 0;
+                SetCarouselArrowsVisible(false);
                 return;
             }
 
-            if (_configuredArrowMenuId != sm.GetInstanceID())
+            if (_configuredArrowMenuId != sm.GetInstanceID() ||
+                _carouselLeftButton == null || _carouselRightButton == null)
             {
                 _configuredArrowMenuId = sm.GetInstanceID();
-                ConfigureCarouselArrow(sm.Prev, "<");
-                ConfigureCarouselArrow(sm.Next, ">");
+                CreateCarouselArrows();
             }
+            SetCarouselArrowsVisible(true);
 
-            // SongMenu already handles the initial physical press. Repeat only
-            // after a deliberate hold, with the same acceleration as the sticks.
+            // The new buttons handle the first step through their Pressed event.
+            // A deliberate hold repeats with the same acceleration as the sticks.
             int dir = 0;
             try
             {
-                if (sm.Prev != null && sm.Prev.IsPressed) dir = 1;
-                else if (sm.Next != null && sm.Next.IsPressed) dir = -1;
+                if (_carouselRightButton != null && _carouselRightButton.IsPressed) dir = 1;
+                else if (_carouselLeftButton != null && _carouselLeftButton.IsPressed) dir = -1;
             }
             catch { }
 
@@ -708,14 +718,59 @@ namespace UnpluggedCustomSongs
             _arrowNextStepTime = Time.unscaledTime + Mathf.Lerp(0.22f, 0.045f, factor);
         }
 
-        private static void ConfigureCarouselArrow(PressableButton button, string label)
+        private static void SetCarouselArrowsVisible(bool visible)
         {
-            if (button == null) return;
-            button.gameObject.SetActive(true);
-            button.CanTouch = true;
+            if (_carouselLeftButton != null && _carouselLeftButton.gameObject.activeSelf != visible)
+                _carouselLeftButton.gameObject.SetActive(visible);
+            if (_carouselRightButton != null && _carouselRightButton.gameObject.activeSelf != visible)
+                _carouselRightButton.gameObject.SetActive(visible);
+        }
+
+        private static void CreateCarouselArrows()
+        {
+            if (_carouselLeftButton != null) UnityEngine.Object.Destroy(_carouselLeftButton.gameObject);
+            if (_carouselRightButton != null) UnityEngine.Object.Destroy(_carouselRightButton.gameObject);
+            _carouselLeftButton = CreateCarouselArrow("USM_PreviousSong", "<", -1);
+            _carouselRightButton = CreateCarouselArrow("USM_NextSong", ">", 1);
+        }
+
+        private static PressableButton CreateCarouselArrow(string name, string label, int dir)
+        {
+            var startButton = StartSpace.I?.StartButton;
+            if (startButton == null) return null;
+            var obj = UnityEngine.Object.Instantiate(startButton.gameObject, startButton.transform.parent);
+            obj.SetActive(false);
+            obj.name = name;
+            var button = obj.GetComponent<PressableButton>();
+            if (button == null)
+            {
+                UnityEngine.Object.Destroy(obj);
+                return null;
+            }
+            button.IgnoreLocalization = true;
+            button.OnPressed = null;
             button.Text = label;
-            foreach (var text in button.GetComponentsInChildren<TextMeshPro>(true))
-                text.text = label;
+            button.SetText(label);
+            button.transform.position = startButton.transform.position
+                + startButton.transform.right * (dir * 0.27f)
+                + startButton.transform.up * 0.16f;
+            button.transform.rotation = startButton.transform.rotation;
+            button.transform.localScale = startButton.transform.localScale * 0.38f;
+#if QUEST_IL2CPP
+            button.add_Pressed(new Action(() => TriggerCurrentSongStep(dir)));
+#else
+            button.Pressed += () => TriggerCurrentSongStep(dir);
+#endif
+            obj.SetActive(true);
+            return button;
+        }
+
+        private static void TriggerCurrentSongStep(int dir)
+        {
+            var sm = StartSpace.I?.songMenu;
+            if (sm != null && sm.gameObject.activeInHierarchy &&
+                AlbumsManager.SelectedAlbum?.AlbumID == "CustomSongsAlbum")
+                TriggerSongStep(sm, dir);
         }
 
         private static void TriggerSongStep(SongMenu sm, int dir)
