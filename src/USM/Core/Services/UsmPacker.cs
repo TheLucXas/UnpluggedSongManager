@@ -5,6 +5,7 @@ using System.IO.Compression;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using USM.Core.Parsers;
 
 namespace USM.Core.Services
 {
@@ -82,7 +83,7 @@ namespace USM.Core.Services
                     bool wroteMeta = false;
                     foreach (var sourceEntry in source.Entries)
                     {
-                        if (IsGeneratedChartJson(sourceEntry.Name)) continue;
+                        if (IsGeneratedChartData(sourceEntry.Name)) continue;
 
                         if (string.Equals(sourceEntry.Name, "meta.json", StringComparison.OrdinalIgnoreCase))
                         {
@@ -139,6 +140,7 @@ namespace USM.Core.Services
                     foreach (var chart in jsonCharts)
                     {
                         WriteEntry(destination, Path.GetFileName(chart.Key), chart.Value, CompressionLevel.Optimal, DateTimeOffset.UtcNow);
+                        WriteEntry(destination, GetQuestHandChartName(chart.Key), XmlGenerator.BuildQuestHandXml(chart.Value), CompressionLevel.Optimal, DateTimeOffset.UtcNow);
                     }
                 }
 
@@ -151,11 +153,58 @@ namespace USM.Core.Services
             }
         }
 
-        private static bool IsGeneratedChartJson(string entryName)
+        private static string GetQuestHandChartName(string jsonName) => Path.GetFileNameWithoutExtension(jsonName) + ".hand.xml";
+
+        private static bool IsGeneratedChartData(string entryName)
         {
             string fileName = Path.GetFileName(entryName);
             return fileName.StartsWith("songdata-", StringComparison.OrdinalIgnoreCase) &&
-                fileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
+                (fileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ||
+                 fileName.EndsWith(".hand.xml", StringComparison.OrdinalIgnoreCase));
+        }
+
+        // Existing .usm archives can gain the Quest hand mapping from their
+        // canonical JSON while syncing, without fetching or reparsing a chart.
+        public static int EnsureQuestHandCharts(string usmPath)
+        {
+            using var source = ZipFile.OpenRead(usmPath);
+            var names = new HashSet<string>(source.Entries.Select(entry => Path.GetFileName(entry.Name)), StringComparer.OrdinalIgnoreCase);
+            var missing = source.Entries
+                .Where(entry => entry.Name.StartsWith("songdata-", StringComparison.OrdinalIgnoreCase)
+                    && entry.Name.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+                    && !names.Contains(GetQuestHandChartName(entry.Name)))
+                .ToArray();
+            if (missing.Length == 0) return 0;
+
+            string tempPath = usmPath + ".hand.tmp";
+            try
+            {
+                using (var destination = ZipFile.Open(tempPath, ZipArchiveMode.Create))
+                {
+                    foreach (var entry in source.Entries)
+                    {
+                        var copied = destination.CreateEntry(entry.FullName, GetCompressionLevel(entry.Name));
+                        copied.LastWriteTime = entry.LastWriteTime;
+                        using var input = entry.Open();
+                        using var output = copied.Open();
+                        input.CopyTo(output);
+                    }
+                    foreach (var chart in missing)
+                    {
+                        using var reader = new StreamReader(chart.Open());
+                        WriteEntry(destination, GetQuestHandChartName(chart.Name),
+                            XmlGenerator.BuildQuestHandXml(reader.ReadToEnd()), CompressionLevel.Optimal, DateTimeOffset.UtcNow);
+                    }
+                }
+                source.Dispose();
+                File.Move(tempPath, usmPath, overwrite: true);
+                return missing.Length;
+            }
+            catch
+            {
+                try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+                throw;
+            }
         }
 
         public static void RefreshAudioMetadata(string usmPath)

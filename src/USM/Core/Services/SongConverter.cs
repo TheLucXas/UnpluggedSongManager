@@ -323,8 +323,10 @@ namespace USM.Core.Services
                     foreach (var kvp in jsonCharts)
                     {
                         File.WriteAllText(Path.Combine(outDir, kvp.Key), kvp.Value, Encoding.UTF8);
+                        string handFile = Path.GetFileNameWithoutExtension(kvp.Key) + ".hand.xml";
+                        File.WriteAllText(Path.Combine(outDir, handFile), XmlGenerator.BuildQuestHandXml(kvp.Value), Encoding.UTF8);
                     }
-                    log?.Invoke($"  [Chart] Generated {jsonCharts.Count} JSON difficulty files with both hand and controller tracks precomputed.");
+                    log?.Invoke($"  [Chart] Generated {jsonCharts.Count} JSON difficulty files and native Quest hand mappings.");
                 }
 
                 var outputAudio = AudioLayoutDetector.Analyze(Directory.GetFiles(outDir)

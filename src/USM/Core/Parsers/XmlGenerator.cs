@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Xml.Linq;
 
 namespace USM.Core.Parsers
@@ -13,6 +14,58 @@ namespace USM.Core.Parsers
         private static readonly XNamespace NsDefault = "http://schemas.datacontract.org/2004/07/";
         private static readonly XNamespace NsI = "http://www.w3.org/2001/XMLSchema-instance";
         private static readonly XNamespace NsA = "http://schemas.microsoft.com/2003/10/Serialization/Arrays";
+
+        // Quest's IL2CPP runtime cannot safely populate List<TierFinger> through
+        // the mod's generic bridge. Build the native hand mapping ahead of time
+        // from the canonical JSON, so gameplay only deserializes game data.
+        public static string BuildQuestHandXml(string chartJson)
+        {
+            using JsonDocument document = JsonDocument.Parse(chartJson);
+            JsonElement chart = document.RootElement;
+            var root = new XElement(NsDefault + "SongLevel",
+                new XAttribute(XNamespace.Xmlns + "i", NsI.NamespaceName),
+                new XAttribute(XNamespace.Xmlns + "a", NsA.NamespaceName),
+                new XElement(NsDefault + "BPM", chart.GetProperty("BPM").GetRawText()));
+
+            var bpmGrid = new XElement(NsDefault + "BPMGrid");
+            foreach (JsonElement beat in chart.GetProperty("BPMGrid").EnumerateArray())
+            {
+                bpmGrid.Add(new XElement(NsDefault + "BPMKey",
+                    new XElement(NsDefault + "Duration", "0"),
+                    new XElement(NsDefault + "Time", beat.GetProperty("Time").GetRawText()),
+                    new XElement(NsDefault + "BPM", beat.GetProperty("BPM").GetRawText())));
+            }
+            root.Add(bpmGrid,
+                new XElement(NsDefault + "BeatGrid", new XAttribute(NsI + "nil", "true")),
+                new XElement(NsDefault + "BeatGridFromFile", "false"));
+
+            var notes = new XElement(NsDefault + "Notes");
+            foreach (JsonElement note in chart.GetProperty("HandNotes").EnumerateArray())
+            {
+                var tierNote = new XElement(NsDefault + "TierNote");
+                if (note.GetProperty("IsPullOff").GetBoolean())
+                    tierNote.Add(new XAttribute(NsI + "type", "PullOffGuitarNote"));
+                tierNote.Add(new XElement(NsDefault + "Duration", note.GetProperty("Duration").GetRawText()),
+                    new XElement(NsDefault + "Time", note.GetProperty("Time").GetRawText()),
+                    new XElement(NsDefault + "Tier", note.GetProperty("StringLane").GetRawText()),
+                    new XElement(NsDefault + "CursableProbability", "0"),
+                    new XElement(NsDefault + "IsBlind", "false"));
+                var fingers = new XElement(NsDefault + "Fingers");
+                foreach (JsonElement finger in note.GetProperty("Fingers").EnumerateArray())
+                    fingers.Add(new XElement(NsDefault + "TierFinger", finger.GetString()));
+                tierNote.Add(fingers);
+                notes.Add(tierNote);
+            }
+
+            root.Add(new XElement(NsDefault + "Keys",
+                new XElement(NsDefault + "KeyTime",
+                    new XAttribute(NsI + "type", "GuitarGame"),
+                    new XElement(NsDefault + "Duration", chart.GetProperty("Duration").GetRawText()),
+                    new XElement(NsDefault + "Time", "0"),
+                    new XElement(NsDefault + "PrewarmTime", "4"),
+                    notes)));
+            return new XDocument(new XDeclaration("1.0", "utf-8", null), root).ToString();
+        }
 
         private static readonly Dictionary<int, (int Tier, string[] Fingers)> FingerMap = new()
         {

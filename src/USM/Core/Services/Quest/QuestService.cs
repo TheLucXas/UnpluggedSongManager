@@ -1712,6 +1712,18 @@ namespace USM.Core.Services.Quest
                 progress.Report((i + 1, songDirs.Length));
                 log(LocalizationService.T("Log_SyncingSong", i + 1, songDirs.Length, songName));
 
+                try
+                {
+                    int added = UsmPacker.EnsureQuestHandCharts(dir);
+                    if (added > 0)
+                        log($"  Prepared {added} native hand chart(s) for Quest from the existing JSON in {songName}.");
+                }
+                catch (Exception ex)
+                {
+                    log($"Warning: Could not prepare Quest hand charts for {songName}: {ex.Message}");
+                    continue;
+                }
+
                 var (code, _, err) = await RunProcessAsync(GetAdbPath(), $"-s {serial} push \"{dir}\" {ModdedSongsPath}/", 120000);
                 if (code == 0)
                 {
