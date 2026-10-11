@@ -90,14 +90,14 @@
 
         <!-- Secondary Button Style -->
         <Style x:Key="SecondaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="Background" Value="{StaticResource BrushBgInput}" />
+            <Setter Property="Background" Value="#164365" />
             <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="border"
                                 Background="{TemplateBinding Background}"
-                                BorderBrush="{StaticResource BrushBorder}"
+                                BorderBrush="#326B92"
                                 BorderThickness="1"
                                 CornerRadius="6"
                                 Padding="{TemplateBinding Padding}">
@@ -105,7 +105,8 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="{StaticResource BrushBgCardHover}" />
+                                <Setter TargetName="border" Property="Background" Value="#1B5277" />
+                                <Setter TargetName="border" Property="BorderBrush" Value="{StaticResource BrushAccentBlue}" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="border" Property="Opacity" Value="0.45" />

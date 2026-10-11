@@ -278,7 +278,9 @@
                                     Style="{StaticResource PurpleButton}" FontWeight="Bold" />
                             <Button ContentTemplate="{StaticResource WrappingButtonContent}" Content="{DynamicResource Loc_Nav_LaunchQuest}" Command="{Binding LaunchGameCommand}"
                                     Visibility="{Binding CanLaunchGame, Converter={StaticResource BoolToVis}}"
-                                    Style="{StaticResource SecondaryButton}" Margin="0,8,0,0" />
+                                    Background="{StaticResource BrushAccentGreen}"
+                                    Foreground="{StaticResource BrushTextOnAccent}"
+                                    FontWeight="Bold" Margin="0,8,0,0" />
                         </StackPanel>
                     </StackPanel>
                 </Border>

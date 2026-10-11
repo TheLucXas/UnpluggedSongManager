@@ -87,7 +87,10 @@
                             ContentTemplate="{StaticResource WrappingButtonContent}"
                             Command="{Binding LaunchQuestGameCommand}"
                             Visibility="{Binding CanLaunchQuestGame, Converter={StaticResource BoolToVis}}"
-                            Style="{StaticResource SecondaryButton}" Margin="0,2,8,2" />
+                            Background="{StaticResource BrushAccentGreen}"
+                            Foreground="{StaticResource BrushTextOnAccent}"
+                            FontWeight="Bold"
+                            Margin="0,2,8,2" />
 
                     <!-- Game Connection Badge -->
                     <Border Background="{StaticResource BrushBgInput}"
