@@ -4879,6 +4879,16 @@ namespace UnpluggedCustomSongs
         private static readonly Dictionary<int, string> PresentedSongs = new Dictionary<int, string>();
         public static TMP_FontAsset GameFont { get; private set; }
         public static Material GameFontMaterial { get; private set; }
+        public static bool LabelsVisible { get; private set; }
+
+        public static void SetLabelsVisible(bool visible)
+        {
+            LabelsVisible = visible;
+            var menu = StartSpace.I?.songMenu;
+            if (menu == null) return;
+            foreach (var item in menu.GetComponentsInChildren<SongMenuItem>(true))
+                RestoreBadgeVisibility(item);
+        }
 
         public static void Postfix(SongMenuItem __instance)
         {
@@ -4939,7 +4949,7 @@ namespace UnpluggedCustomSongs
             if (badge == null) return;
 
             title.ForceMeshUpdate(true);
-            badge.gameObject.SetActive(true);
+            badge.gameObject.SetActive(LabelsVisible);
             badge.font = title.font;
             // The title's material/color may still be hidden by its native
             // entry animation. Give the badge its own opaque material.
@@ -4964,7 +4974,7 @@ namespace UnpluggedCustomSongs
             {
                 badgeRenderer.sortingLayerID = titleRenderer.sortingLayerID;
                 badgeRenderer.sortingOrder = titleRenderer.sortingOrder + 1;
-                badgeRenderer.enabled = true;
+                badgeRenderer.enabled = LabelsVisible;
             }
             ApplyOutline(badge);
             MelonLogger.Msg($"[MenuDiag] Track label ready: song='{item.SongData.SongID}', label='{label}', alpha={badge.alpha}, font='{badge.font?.name}', boundsHeight={badge.textBounds.size.y:F4}.");
@@ -4978,9 +4988,9 @@ namespace UnpluggedCustomSongs
             if (badge == null || string.IsNullOrEmpty(badge.text)) return;
             badge.color = Color.white;
             badge.alpha = 1f;
-            if (!child.gameObject.activeSelf) child.gameObject.SetActive(true);
+            if (child.gameObject.activeSelf != LabelsVisible) child.gameObject.SetActive(LabelsVisible);
             var renderer = badge.GetComponent<MeshRenderer>();
-            if (renderer != null) renderer.enabled = true;
+            if (renderer != null) renderer.enabled = LabelsVisible;
         }
 
         private static float GetTrackLabelVerticalOffset(Bounds titleBounds, Bounds labelBounds)
@@ -5023,6 +5033,50 @@ namespace UnpluggedCustomSongs
                 tmp.UpdateMeshPadding();
             }
             catch { }
+        }
+    }
+
+    [HarmonyPatch(typeof(SongMenu), "EnterMenu")]
+    public static class Patch_SongMenu_EnterMenuLabels
+    {
+        internal static int Transition;
+
+        public static void Prefix(out int __state)
+        {
+            __state = ++Transition;
+            Patch_SongMenuItem_SetSong.SetLabelsVisible(false);
+        }
+
+#if QUEST_IL2CPP
+        public static void Postfix(Il2CppSystem.Threading.Tasks.Task __result, int __state)
+#else
+        public static void Postfix(Task __result, int __state)
+#endif
+        {
+            if (__result != null) MelonCoroutines.Start(WaitForEntry(__result, __state));
+        }
+
+#if QUEST_IL2CPP
+        private static IEnumerator WaitForEntry(Il2CppSystem.Threading.Tasks.Task entry, int transition)
+#else
+        private static IEnumerator WaitForEntry(Task entry, int transition)
+#endif
+        {
+            // Native EnterMenu completes after all staggered disc movements.
+            // An exit/new entry invalidates this completion instead of flashing badges.
+            while (!entry.IsCompleted && Transition == transition) yield return null;
+            if (Transition == transition && !entry.IsFaulted && !entry.IsCanceled)
+                Patch_SongMenuItem_SetSong.SetLabelsVisible(true);
+        }
+    }
+
+    [HarmonyPatch(typeof(SongMenu), "ExitMenu")]
+    public static class Patch_SongMenu_ExitMenuLabels
+    {
+        public static void Prefix()
+        {
+            Patch_SongMenu_EnterMenuLabels.Transition++;
+            Patch_SongMenuItem_SetSong.SetLabelsVisible(false);
         }
     }
 
