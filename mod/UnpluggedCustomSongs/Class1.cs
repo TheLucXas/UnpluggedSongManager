@@ -4372,6 +4372,7 @@ namespace UnpluggedCustomSongs
         private static GameObject _promptObj = null;
         private static TextMeshPro _promptText = null;
         private static float _nextInputDiagnosticTime = 0f;
+        private static bool _promptPlaced;
 
         public static void OnSongStarted()
         {
@@ -4379,6 +4380,7 @@ namespace UnpluggedCustomSongs
             HasSkipped = false;
             FirstNoteTime = 0f;
             SkipTargetTime = 0f;
+            _promptPlaced = false;
             HidePrompt();
 
             try
@@ -4642,9 +4644,29 @@ namespace UnpluggedCustomSongs
                     _promptObj = new GameObject("SkipIntroPrompt");
                     UnityEngine.Object.DontDestroyOnLoad(_promptObj);
                     _promptText = _promptObj.AddComponent<TextMeshPro>();
-                    _promptText.fontSize = 1.45f;
+                    var font = Patch_SongMenuItem_SetSong.GameFont;
+                    var material = Patch_SongMenuItem_SetSong.GameFontMaterial;
+                    if (font == null)
+                    {
+                        foreach (var gameText in UnityEngine.Object.FindObjectsOfType<TextMeshPro>())
+                            if (gameText != null && gameText.font != null && gameText != _promptText)
+                            {
+                                font = gameText.font;
+                                material = gameText.fontSharedMaterial;
+                                break;
+                            }
+                    }
+                    if (font != null)
+                    {
+                        _promptText.font = font;
+                        if (material != null) _promptText.fontSharedMaterial = new Material(material);
+                    }
+                    _promptText.fontSize = 0.8f;
                     _promptText.alignment = TextAlignmentOptions.Center;
-                    _promptText.color = new Color(1f, 0.86f, 0.2f);
+                    _promptText.color = Color.white;
+                    _promptText.faceColor = Color.white;
+                    _promptText.enableWordWrapping = false;
+                    _promptText.rectTransform.sizeDelta = new Vector2(0.65f, 0.20f);
                     _promptText.outlineColor = Color.black;
                     _promptText.outlineWidth = 0.26f;
                     try
@@ -4662,16 +4684,28 @@ namespace UnpluggedCustomSongs
 
                 if (_promptText != null)
                 {
-                    _promptText.fontSize = 1.45f;
-                    _promptText.text = "<b>PRESS BOTH TRIGGERS (L2 + R2) TO SKIP INTRO</b>";
+                    _promptText.text = "L2 + R2\nSKIP INTRO";
                 }
 
                 Camera cam = CameraManager.Main != null ? CameraManager.Main : Camera.main;
-                if (cam != null)
+                if (cam != null && !_promptPlaced)
                 {
                     Transform ct = cam.transform;
-                    _promptObj.transform.position = ct.position + ct.forward * 2.2f + ct.up * (-0.35f);
-                    _promptObj.transform.rotation = Quaternion.LookRotation(ct.forward, Vector3.up);
+                    var pause = PlaterSpaceController.I?.PauseButton;
+                    if (pause != null)
+                    {
+                        var anchor = PlaterSpaceController.I.ButtonsAnchor ?? pause.transform;
+                        _promptObj.transform.position = anchor.position + Vector3.up * 0.20f;
+                        _promptObj.layer = pause.gameObject.layer;
+                    }
+                    else
+                    {
+                        Vector3 forward = Vector3.ProjectOnPlane(ct.forward, Vector3.up).normalized;
+                        _promptObj.transform.position = ct.position + forward * 2.0f - Vector3.up * 0.25f;
+                    }
+                    Vector3 facing = Vector3.ProjectOnPlane(_promptObj.transform.position - ct.position, Vector3.up);
+                    _promptObj.transform.rotation = Quaternion.LookRotation(facing.normalized, Vector3.up);
+                    _promptPlaced = true;
                 }
                 if (!_promptObj.activeSelf) _promptObj.SetActive(true);
             }
@@ -4843,6 +4877,8 @@ namespace UnpluggedCustomSongs
     public static class Patch_SongMenuItem_SetSong
     {
         private static readonly Dictionary<int, string> PresentedSongs = new Dictionary<int, string>();
+        public static TMP_FontAsset GameFont { get; private set; }
+        public static Material GameFontMaterial { get; private set; }
 
         public static void Postfix(SongMenuItem __instance)
         {
@@ -4858,7 +4894,10 @@ namespace UnpluggedCustomSongs
                     int id = item.GetInstanceID();
                     string songId = item.SongData.SongID ?? string.Empty;
                     if (!force && PresentedSongs.TryGetValue(id, out string previous) && previous == songId)
+                    {
+                        RestoreBadgeVisibility(item);
                         return;
+                    }
                     CustomSongLoader.QueueSongCoverLoad(item, item.SongData);
 
                     SetTrackLabel(item, CustomSongLoader.GetTrackDisplayLabel(item.SongData));
@@ -4878,6 +4917,8 @@ namespace UnpluggedCustomSongs
         {
             var title = item.SongName;
             if (title == null) return;
+            GameFont = title.font;
+            GameFontMaterial = title.fontSharedMaterial;
             var existing = title.transform.Find("USMTrackLabel");
             if (string.IsNullOrEmpty(label))
             {
@@ -4900,19 +4941,46 @@ namespace UnpluggedCustomSongs
             title.ForceMeshUpdate(true);
             badge.gameObject.SetActive(true);
             badge.font = title.font;
-            badge.fontSharedMaterial = title.fontSharedMaterial;
+            // The title's material/color may still be hidden by its native
+            // entry animation. Give the badge its own opaque material.
+            if (badge.fontSharedMaterial == null || badge.fontSharedMaterial == title.fontSharedMaterial)
+                badge.fontSharedMaterial = new Material(title.fontSharedMaterial);
             badge.fontSize = title.fontSize * 0.65f;
             badge.enableAutoSizing = false;
             badge.enableWordWrapping = false;
             badge.overflowMode = TextOverflowModes.Overflow;
             badge.alignment = title.alignment;
-            badge.color = title.color;
+            badge.color = Color.white;
+            badge.faceColor = Color.white;
+            badge.alpha = 1f;
             badge.richText = true;
             badge.rectTransform.sizeDelta = title.rectTransform.rect.size;
             badge.text = label;
             badge.ForceMeshUpdate(true);
             badge.transform.localPosition = new Vector3(0f, GetTrackLabelVerticalOffset(title.textBounds, badge.textBounds), 0f);
+            var titleRenderer = title.GetComponent<MeshRenderer>();
+            var badgeRenderer = badge.GetComponent<MeshRenderer>();
+            if (titleRenderer != null && badgeRenderer != null)
+            {
+                badgeRenderer.sortingLayerID = titleRenderer.sortingLayerID;
+                badgeRenderer.sortingOrder = titleRenderer.sortingOrder + 1;
+                badgeRenderer.enabled = true;
+            }
             ApplyOutline(badge);
+            MelonLogger.Msg($"[MenuDiag] Track label ready: song='{item.SongData.SongID}', label='{label}', alpha={badge.alpha}, font='{badge.font?.name}', boundsHeight={badge.textBounds.size.y:F4}.");
+        }
+
+        private static void RestoreBadgeVisibility(SongMenuItem item)
+        {
+            var child = item.SongName?.transform.Find("USMTrackLabel");
+            if (child == null) return;
+            var badge = child.GetComponent<TextMeshPro>();
+            if (badge == null || string.IsNullOrEmpty(badge.text)) return;
+            badge.color = Color.white;
+            badge.alpha = 1f;
+            if (!child.gameObject.activeSelf) child.gameObject.SetActive(true);
+            var renderer = badge.GetComponent<MeshRenderer>();
+            if (renderer != null) renderer.enabled = true;
         }
 
         private static float GetTrackLabelVerticalOffset(Bounds titleBounds, Bounds labelBounds)
