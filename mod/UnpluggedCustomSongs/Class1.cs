@@ -27,7 +27,7 @@ using Il2CppTMPro;
 using CultureInfo = Il2CppSystem.Globalization.CultureInfo;
 #endif
 
-[assembly: MelonInfo(typeof(UnpluggedCustomSongs.ModMain), "Unplugged Custom Songs", "1.1.0", "Luc & Antigravity")]
+[assembly: MelonInfo(typeof(UnpluggedCustomSongs.ModMain), "Unplugged Custom Songs", "1.0", "Luc & Antigravity")]
 [assembly: MelonGame("Anotherway", "Unplugged")]
 
 namespace UnpluggedCustomSongs
