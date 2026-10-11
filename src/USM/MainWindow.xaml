@@ -38,6 +38,10 @@
                 BorderThickness="0,0,0,1"
                 Padding="20,10">
             <Grid VerticalAlignment="Center">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
@@ -45,7 +49,7 @@
                 </Grid.ColumnDefinitions>
 
                 <!-- Brand / Logo -->
-                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                     <Image Source="assets/icon.png"
                            Width="28"
                            Height="28"
@@ -66,7 +70,7 @@
                 </StackPanel>
 
                 <!-- Actions & Connection Badge -->
-                <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <StackPanel Grid.Row="0" Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                     <Button Content="{Binding UpdateNoticeText}" Command="{Binding ShowUpdatesCommand}"
                             Visibility="{Binding HasAvailableUpdates, Converter={StaticResource BoolToVis}}"
                             Style="{StaticResource SecondaryButton}" Foreground="{StaticResource BrushAccentPink}"
@@ -110,6 +114,15 @@
                         </StackPanel>
                     </Border>
                 </StackPanel>
+                <Button Grid.Row="1" Grid.ColumnSpan="3"
+                        Content="{Binding ChartAttentionText}"
+                        Command="{Binding ShowChartAttentionCommand}"
+                        Visibility="{Binding HasChartAttention, Converter={StaticResource BoolToVis}}"
+                        Style="{StaticResource SecondaryButton}"
+                        Foreground="{StaticResource BrushAccentYellow}"
+                        HorizontalContentAlignment="Left"
+                        Margin="0,8,0,0"
+                        ToolTip="{Binding ChartAttentionText}" />
             </Grid>
         </Border>
 

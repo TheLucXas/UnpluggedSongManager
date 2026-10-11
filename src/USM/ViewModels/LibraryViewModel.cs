@@ -63,6 +63,11 @@ namespace USM.ViewModels
         private int _selectedLibraryTab;
         private bool _isRefreshingQuestSongs;
         private bool _isResyncingCharts;
+        private int _questSongsNeedingSyncCount;
+        private Dictionary<string, string> _questSongHashes = new(StringComparer.OrdinalIgnoreCase);
+        private string? _questHashesSerial;
+        private int _questChartAuditRevision;
+        private string _librarySnapshot = string.Empty;
         private string _questSongsStatusKey = "Library_ConnectQuest";
         private object[] _questSongsStatusArgs = Array.Empty<object>();
 
@@ -100,6 +105,11 @@ namespace USM.ViewModels
 
         public int OutdatedChartCount => _allSongs.Count(song => song.NeedsChartResync);
         public bool HasOutdatedCharts => OutdatedChartCount > 0;
+        public int QuestSongsNeedingSyncCount
+        {
+            get => _questSongsNeedingSyncCount;
+            private set => SetProperty(ref _questSongsNeedingSyncCount, value);
+        }
         public string ResyncChartsText => IsResyncingCharts
             ? LocalizationService.T("Library_ResyncingCharts")
             : LocalizationService.T("Library_ResyncCharts", OutdatedChartCount);
@@ -279,6 +289,10 @@ namespace USM.ViewModels
                 QuestDevice? device = _questViewModel.SelectedDevice;
                 if (device == null || !device.Status.Equals("device", StringComparison.OrdinalIgnoreCase))
                 {
+                    _questChartAuditRevision++;
+                    _questHashesSerial = null;
+                    _questSongHashes.Clear();
+                    QuestSongsNeedingSyncCount = 0;
                     ClearQuestSongs();
                     IsQuestSongsAvailable = false;
                     SetQuestSongsStatus("Library_ConnectQuest");
@@ -310,9 +324,14 @@ namespace USM.ViewModels
                 OnPropertyChanged(nameof(QuestSongsCountText));
                 OnPropertyChanged(nameof(HasNoQuestSongs));
                 UpdateQuestSongSelectionState();
+                _ = AuditQuestChartsAsync(device.Serial, result.SongFiles);
             }
             catch (Exception ex)
             {
+                _questChartAuditRevision++;
+                _questHashesSerial = null;
+                _questSongHashes.Clear();
+                QuestSongsNeedingSyncCount = 0;
                 ClearQuestSongs();
                 IsQuestSongsAvailable = false;
                 SetQuestSongsStatus("Library_CouldNotReadQuestSongs", ex.Message);
@@ -325,6 +344,50 @@ namespace USM.ViewModels
                 IsRefreshingQuestSongs = false;
                 OnPropertyChanged(nameof(HasNoQuestSongs));
                 _questSongsRefreshGate.Release();
+            }
+        }
+
+        private async Task AuditQuestChartsAsync(string serial, IReadOnlyList<string> questFileNames,
+            bool useCachedHashes = false)
+        {
+            int revision = ++_questChartAuditRevision;
+            var localPaths = _allSongs.ToDictionary(song => Path.GetFileName(song.FolderPath),
+                song => (song.FolderPath, song.NeedsChartResync), StringComparer.OrdinalIgnoreCase);
+            var comparable = questFileNames.Where(localPaths.ContainsKey).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (comparable.Count == 0)
+            {
+                QuestSongsNeedingSyncCount = 0;
+                return;
+            }
+
+            try
+            {
+                var remoteHashes = useCachedHashes && _questHashesSerial == serial
+                    ? new Dictionary<string, string>(_questSongHashes, StringComparer.OrdinalIgnoreCase)
+                    : await _questViewModel.QuestService.GetQuestInstalledSongHashesAsync(serial);
+                int count = await Task.Run(() => comparable.Count(name =>
+                {
+                    var local = localPaths[name];
+                    if (local.NeedsChartResync) return true;
+                    if (!remoteHashes.TryGetValue(name, out string? remoteHash)) return true;
+                    using var stream = File.OpenRead(local.FolderPath);
+                    string localHash = Convert.ToHexString(SHA256.HashData(stream));
+                    return !string.Equals(localHash, remoteHash, StringComparison.OrdinalIgnoreCase);
+                }));
+                if (revision != _questChartAuditRevision || _questViewModel.SelectedDevice?.Serial != serial)
+                    return;
+                _questHashesSerial = serial;
+                _questSongHashes = remoteHashes;
+                QuestSongsNeedingSyncCount = count;
+            }
+            catch
+            {
+                if (revision == _questChartAuditRevision)
+                {
+                    _questHashesSerial = null;
+                    _questSongHashes.Clear();
+                    QuestSongsNeedingSyncCount = 0;
+                }
             }
         }
 
@@ -481,6 +544,18 @@ namespace USM.ViewModels
             OnPropertyChanged(nameof(HasOutdatedCharts));
             OnPropertyChanged(nameof(ResyncChartsText));
             CommandManager.InvalidateRequerySuggested();
+            if (IsResyncingCharts) return;
+            string snapshot = string.Join("|", _allSongs.Select(song =>
+            {
+                var file = new FileInfo(song.FolderPath);
+                return $"{song.FolderPath}:{file.Length}:{file.LastWriteTimeUtc.Ticks}:{song.ChartParserVersion}";
+            }));
+            bool libraryChanged = !string.Equals(snapshot, _librarySnapshot, StringComparison.Ordinal);
+            _librarySnapshot = snapshot;
+            if (libraryChanged && _questHashesSerial is string serial && serial == _questViewModel.SelectedDevice?.Serial
+                && _questSongHashes.Count > 0)
+                _ = AuditQuestChartsAsync(serial, QuestSongs.Select(song => song.FileName).ToList(),
+                    useCachedHashes: true);
         }
 
         private async Task RefreshCompatibilityProfileAsync(string chartMd5)

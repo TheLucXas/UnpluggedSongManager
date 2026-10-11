@@ -44,6 +44,7 @@ namespace USM.ViewModels
 
         public ICommand LaunchGameCommand { get; }
         public ICommand ShowUpdatesCommand { get; }
+        public ICommand ShowChartAttentionCommand { get; }
         public ICommand LaunchQuestGameCommand => QuestVM.LaunchGameCommand;
         public bool CanLaunchQuestGame => QuestVM.CanLaunchGame;
         private bool _isUpdatingMods;
@@ -60,6 +61,19 @@ namespace USM.ViewModels
             }
         }
         public bool HasAvailableUpdates => SettingsVM.IsUpdateAvailable || SettingsVM.HasPcModUpdate || SettingsVM.HasQuestModUpdate;
+        public bool HasChartAttention => LibraryVM.OutdatedChartCount > 0 || LibraryVM.QuestSongsNeedingSyncCount > 0;
+        public string ChartAttentionText
+        {
+            get
+            {
+                var parts = new System.Collections.Generic.List<string>();
+                if (LibraryVM.OutdatedChartCount > 0)
+                    parts.Add(LocalizationService.T("Nav_ChartResyncPc", LibraryVM.OutdatedChartCount));
+                if (LibraryVM.QuestSongsNeedingSyncCount > 0)
+                    parts.Add(LocalizationService.T("Nav_ChartSyncQuest", LibraryVM.QuestSongsNeedingSyncCount));
+                return "⚠ " + string.Join("  •  ", parts);
+            }
+        }
         public string UpdateNoticeText
         {
             get
@@ -91,6 +105,15 @@ namespace USM.ViewModels
             ConverterVM = new ConverterViewModel(GameDetector, Notify);
             QuestVM = new QuestViewModel(GameDetector, Notify);
             LibraryVM = new LibraryViewModel(GameDetector, Notify, QuestVM);
+            LibraryVM.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName is nameof(LibraryViewModel.OutdatedChartCount)
+                    or nameof(LibraryViewModel.QuestSongsNeedingSyncCount))
+                {
+                    OnPropertyChanged(nameof(HasChartAttention));
+                    OnPropertyChanged(nameof(ChartAttentionText));
+                }
+            };
             SettingsVM = new SettingsViewModel(GameDetector, Notify, questViewModel: QuestVM);
             SettingsVM.PropertyChanged += (_, e) =>
             {
@@ -99,6 +122,11 @@ namespace USM.ViewModels
             };
             ShowUpdatesCommand = new AsyncRelayCommand(_ => ShowUpdatesAsync(),
                 _ => !IsUpdatingMods && !QuestVM.IsBusy && !SettingsVM.IsUpdatingMod && !SettingsVM.IsUpdatingApp);
+            ShowChartAttentionCommand = new RelayCommand(_ =>
+            {
+                SelectedTabIndex = LibraryVM.OutdatedChartCount > 0 ? 2 : 3;
+                if (SelectedTabIndex == 2) LibraryVM.SelectedLibraryTab = 0;
+            });
             QuestVM.PropertyChanged += (_, e) =>
             {
                 if (e.PropertyName is nameof(QuestViewModel.CanLaunchGame) or nameof(QuestViewModel.IsDeviceConnected))
@@ -109,6 +137,7 @@ namespace USM.ViewModels
             {
                 OnPropertyChanged(nameof(GameStatusText));
                 RefreshUpdateNotice();
+                OnPropertyChanged(nameof(ChartAttentionText));
                 ToastMessage = USM.Core.Services.Localization.LocalizationService.T("Toast_Ready");
             };
 

@@ -1651,6 +1651,8 @@ namespace USM.Core.Services.Quest
                 if (name.EndsWith(".usm", StringComparison.OrdinalIgnoreCase))
                     hashes[name] = match.Groups[1].Value;
             }
+            if (hashes.Count == 0)
+                throw new InvalidDataException("Quest did not return any readable song hashes.");
             return hashes;
         }
 
