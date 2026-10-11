@@ -92,7 +92,7 @@
         </Style>
     </UserControl.Resources>
 
-    <TabControl Background="Transparent" BorderThickness="0">
+    <TabControl Background="Transparent" BorderThickness="0" SelectedIndex="{Binding SelectedLibraryTab, Mode=TwoWay}">
         <TabItem Header="{DynamicResource Loc_Library_PcTab}">
     <Grid Margin="20,10,20,15">
         <Grid.RowDefinitions>

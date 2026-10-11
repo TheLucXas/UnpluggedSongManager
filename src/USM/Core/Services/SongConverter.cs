@@ -103,7 +103,7 @@ namespace USM.Core.Services
             if (!File.Exists(chartPath)) chartPath = Path.Combine(inputDir, "song.chart");
 
             var candidates = new List<(string Name, List<ChartParser.BpmEvent> BpmGrid, Func<long, double> TickToSec,
-                Dictionary<string, SortedDictionary<long, List<ChartParser.NoteEvent>>> Difficulties, int TicksPerBeat)>();
+                Dictionary<string, SortedDictionary<long, List<ChartParser.NoteEvent>>> Difficulties, int TicksPerBeat, int HopoThresholdTicks)>();
 
             if (File.Exists(midPath))
             {
@@ -112,7 +112,7 @@ namespace USM.Core.Services
                     log?.Invoke("  [Chart] Reading notes.mid (Standard MIDI format).");
                     var midi = MidiParser.Parse(midPath);
                     log?.Invoke($"  [Chart] MIDI guitar track '{midi.SelectedTrackName}' contains {midi.SelectedTrackPlayableNoteCount} notes in supported difficulty ranges.");
-                    candidates.Add(("notes.mid", midi.BpmGrid, midi.TickToSec, midi.Difficulties, midi.TicksPerBeat));
+                    candidates.Add(("notes.mid", midi.BpmGrid, midi.TickToSec, midi.Difficulties, midi.TicksPerBeat, midi.HopoThresholdTicks));
                 }
                 catch (Exception ex)
                 {
@@ -130,7 +130,7 @@ namespace USM.Core.Services
                     {
                         log?.Invoke($"  [Chart] Ignored {chart.IgnoredNonPlayableNoteEvents} non-playable note events (HOPO/tap markers or unsupported lanes).");
                     }
-                    candidates.Add((Path.GetFileName(chartPath), chart.BpmGrid, chart.TickToSec, chart.Difficulties, chart.Resolution));
+                    candidates.Add((Path.GetFileName(chartPath), chart.BpmGrid, chart.TickToSec, chart.Difficulties, chart.Resolution, chart.HopoThresholdTicks));
                 }
                 catch (Exception ex)
                 {
@@ -197,7 +197,8 @@ namespace USM.Core.Services
                 selected.Candidate.Difficulties,
                 selected.Candidate.TicksPerBeat,
                 log,
-                songDurationSeconds);
+                songDurationSeconds,
+                selected.Candidate.HopoThresholdTicks);
         }
         
         public static void CleanupOutDir(string? outDir)

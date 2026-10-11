@@ -23,6 +23,7 @@ namespace USM.Core.Parsers
         public class ParsedMidi
         {
             public int TicksPerBeat { get; set; } = 480;
+            public int HopoThresholdTicks => Math.Max(1, TicksPerBeat / 3 + 1);
             public List<ChartParser.BpmEvent> BpmGrid { get; set; } = new();
             public Func<long, double> TickToSec { get; set; } = _ => 0.0;
             public Dictionary<string, SortedDictionary<long, List<ChartParser.NoteEvent>>> Difficulties { get; set; } = new(StringComparer.OrdinalIgnoreCase);
@@ -272,6 +273,31 @@ namespace USM.Core.Parsers
                             Lane = lane,
                             DurationTicks = note.DurationTicks
                         });
+                    }
+                }
+            }
+
+            // MIDI uses per-difficulty force markers and a shared tap marker.
+            // Markers may span a phrase, so apply their full tick range rather
+            // than treating them as ordinary guitar notes.
+            foreach (var kvp in diffRanges)
+            {
+                int noteBase = kvp.Value.Base;
+                var hopoMarkers = guitarTrack.Notes.Where(note => note.NoteNumber == noteBase + 5).ToList();
+                var strumMarkers = guitarTrack.Notes.Where(note => note.NoteNumber == noteBase + 6).ToList();
+                var tapMarkers = guitarTrack.Notes.Where(note => note.NoteNumber == 104).ToList();
+                bool CoversTick(MidiNote marker, long tick) => tick == marker.StartTick ||
+                    (marker.DurationTicks > 0 && tick > marker.StartTick && tick < marker.StartTick + marker.DurationTicks);
+                foreach (var entry in difficulties[kvp.Key])
+                {
+                    bool forcedHopo = hopoMarkers.Any(marker => CoversTick(marker, entry.Key));
+                    bool forcedStrum = strumMarkers.Any(marker => CoversTick(marker, entry.Key));
+                    bool tap = tapMarkers.Any(marker => CoversTick(marker, entry.Key));
+                    foreach (var note in entry.Value)
+                    {
+                        note.ForceHopo = forcedHopo;
+                        note.ForceStrum = forcedStrum;
+                        note.Tap = tap;
                     }
                 }
             }

@@ -212,6 +212,16 @@
                         BorderThickness="1"
                         CornerRadius="12"
                         Padding="18,16">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Grid.ColumnSpan" Value="1" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsDeviceConnected}" Value="False">
+                                    <Setter Property="Grid.ColumnSpan" Value="3" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
                     <StackPanel>
                         <TextBlock Text="{DynamicResource Loc_Quest_StandaloneModderTitle}"
                                    FontSize="15"
@@ -246,6 +256,7 @@
 
                 <!-- Right: Custom Songs Sync -->
                 <Border Grid.Column="2"
+                        Visibility="{Binding IsDeviceConnected, Converter={StaticResource BoolToVis}}"
                         Background="{StaticResource BrushBgCard}"
                         BorderBrush="{StaticResource BrushBorder}"
                         BorderThickness="1"

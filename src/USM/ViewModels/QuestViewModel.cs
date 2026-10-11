@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Threading;
 using Microsoft.Win32;
 using USM.Core.Services;
 using USM.Core.Services.Localization;
@@ -19,6 +20,8 @@ namespace USM.ViewModels
         private readonly GameDetector _gameDetector;
         private readonly Action<string> _notifyCallback;
         private readonly QuestService _questService;
+        private readonly DispatcherTimer _deviceRefreshTimer;
+        private bool _refreshingDevices;
         private bool _wirelessSettingsAreManual;
         private bool _applyingDetectedWirelessSettings;
 
@@ -58,7 +61,7 @@ namespace USM.ViewModels
             }
         }
 
-        public bool IsDeviceConnected => SelectedDevice != null;
+        public bool IsDeviceConnected => SelectedDevice?.Status.Equals("device", StringComparison.OrdinalIgnoreCase) == true;
         public bool CanLaunchGame => IsDeviceConnected && IsModdedInstalled;
 
         public string WirelessIp
@@ -291,6 +294,13 @@ namespace USM.ViewModels
                 _ = CheckInstalledPackagesAsync();
             };
             AppendLog(LocalizationService.T("Log_QuestInit"));
+            _deviceRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(8) };
+            _deviceRefreshTimer.Tick += async (_, _) =>
+            {
+                if (!IsBusy && !_refreshingDevices)
+                    await RefreshDevicesAsync(discoverWireless: false);
+            };
+            _deviceRefreshTimer.Start();
             _ = RefreshDevicesAsync(discoverWireless: true);
         }
 
@@ -385,6 +395,8 @@ namespace USM.ViewModels
 
         private async Task RefreshDevicesAsync(bool discoverWireless)
         {
+            if (_refreshingDevices) return;
+            _refreshingDevices = true;
             try
             {
                 var list = await _questService.GetDevicesAsync();
@@ -408,15 +420,23 @@ namespace USM.ViewModels
                     }
                 }
 
+                if (Devices.Count == list.Count && Devices.Zip(list, (oldDevice, newDevice) =>
+                    oldDevice.Serial == newDevice.Serial && oldDevice.Status == newDevice.Status &&
+                    oldDevice.Model == newDevice.Model).All(same => same))
+                    return;
+
+                string? selectedSerial = SelectedDevice?.Serial;
                 Devices.Clear();
                 foreach (var d in list)
                 {
                     Devices.Add(d);
                 }
 
-                if (Devices.Count > 0)
+                var connectedDevice = Devices.FirstOrDefault(d => d.Serial == selectedSerial && d.Status == "device")
+                    ?? Devices.FirstOrDefault(d => d.Status == "device");
+                if (connectedDevice != null)
                 {
-                    SelectedDevice = Devices.First();
+                    SelectedDevice = connectedDevice;
                     AppendLog(LocalizationService.T("Log_FoundDevices", Devices.Count, SelectedDevice.DisplayName));
                 }
                 else
@@ -429,6 +449,10 @@ namespace USM.ViewModels
             catch (Exception ex)
             {
                 AppendLog($"Error discovering devices: {ex.Message}");
+            }
+            finally
+            {
+                _refreshingDevices = false;
             }
         }
 
@@ -487,7 +511,7 @@ namespace USM.ViewModels
 
         private async Task CheckInstalledPackagesAsync()
         {
-            if (SelectedDevice == null)
+            if (!IsDeviceConnected)
             {
                 PackageStatusText = LocalizationService.T("Quest_StatusNoDevice");
                 IsOriginalInstalled = false;
@@ -500,25 +524,28 @@ namespace USM.ViewModels
                 return;
             }
 
-            if (SelectedDevice.Status.Equals("unauthorized", StringComparison.OrdinalIgnoreCase))
-            {
-                PackageStatusText = LocalizationService.T("Quest_StatusUnauthorized");
-                AppendLog(LocalizationService.T("Quest_StatusUnauthorized"));
-                IsOriginalInstalled = false;
-                IsModdedInstalled = false;
-                InstalledModInfo = null;
-                return;
-            }
-
+            string serial = SelectedDevice!.Serial;
+            bool StillConnected() => IsDeviceConnected && SelectedDevice?.Serial == serial;
             PackageStatusText = LocalizationService.T("Quest_StatusChecking");
+            IsOriginalInstalled = false;
+            IsModdedInstalled = false;
+            OriginalVersion = null;
+            ModdedVersion = null;
+            InstalledModInfo = null;
             try
             {
-                IsOriginalInstalled = await _questService.IsPackageInstalledAsync(SelectedDevice.Serial, QuestService.OriginalPackage);
-                IsModdedInstalled = await _questService.IsPackageInstalledAsync(SelectedDevice.Serial, QuestService.ModdedPackage);
+                bool originalInstalled = await _questService.IsPackageInstalledAsync(serial, QuestService.OriginalPackage);
+                if (!StillConnected()) return;
+                bool moddedInstalled = await _questService.IsPackageInstalledAsync(serial, QuestService.ModdedPackage);
+                if (!StillConnected()) return;
+                IsOriginalInstalled = originalInstalled;
+                IsModdedInstalled = moddedInstalled;
 
                 if (IsOriginalInstalled)
                 {
-                    OriginalVersion = await _questService.GetPackageVersionAsync(SelectedDevice.Serial, QuestService.OriginalPackage);
+                    string? originalVersion = await _questService.GetPackageVersionAsync(serial, QuestService.OriginalPackage);
+                    if (!StillConnected()) return;
+                    OriginalVersion = originalVersion;
                 }
                 else
                 {
@@ -527,8 +554,12 @@ namespace USM.ViewModels
 
                 if (IsModdedInstalled)
                 {
-                    ModdedVersion = await _questService.GetPackageVersionAsync(SelectedDevice.Serial, QuestService.ModdedPackage);
-                    InstalledModInfo = await _questService.GetInstalledQuestModInfoAsync(SelectedDevice.Serial, QuestService.ModdedPackage);
+                    string? moddedVersion = await _questService.GetPackageVersionAsync(serial, QuestService.ModdedPackage);
+                    if (!StillConnected()) return;
+                    ModdedVersion = moddedVersion;
+                    var installedMod = await _questService.GetInstalledQuestModInfoAsync(serial, QuestService.ModdedPackage);
+                    if (!StillConnected()) return;
+                    InstalledModInfo = installedMod;
                 }
                 else
                 {
@@ -582,6 +613,7 @@ namespace USM.ViewModels
             }
             catch (Exception ex)
             {
+                if (!StillConnected()) return;
                 InstalledModInfo = null;
                 PackageStatusText = $"Error checking packages: {ex.Message}";
             }

@@ -60,6 +60,7 @@ namespace USM.ViewModels
         private bool _allSelected;
         private InstalledSong? _currentlyPreviewingSong;
         private bool _isQuestSongsAvailable;
+        private int _selectedLibraryTab;
         private bool _isRefreshingQuestSongs;
         private bool _isResyncingCharts;
         private string _questSongsStatusKey = "Library_ConnectQuest";
@@ -150,7 +151,17 @@ namespace USM.ViewModels
         public bool IsQuestSongsAvailable
         {
             get => _isQuestSongsAvailable;
-            private set => SetProperty(ref _isQuestSongsAvailable, value);
+            private set
+            {
+                if (SetProperty(ref _isQuestSongsAvailable, value) && !value)
+                    SelectedLibraryTab = 0;
+            }
+        }
+
+        public int SelectedLibraryTab
+        {
+            get => _selectedLibraryTab;
+            set => SetProperty(ref _selectedLibraryTab, value);
         }
 
         public bool IsRefreshingQuestSongs

@@ -19,20 +19,25 @@ namespace USM.Core.Parsers
         {
             public int Lane { get; set; }
             public long DurationTicks { get; set; }
+            public bool FlipHopo { get; set; }
+            public bool Tap { get; set; }
+            public bool ForceHopo { get; set; }
+            public bool ForceStrum { get; set; }
         }
 
         public class ParsedChart
         {
             public int Resolution { get; set; } = 192;
+            public int HopoThresholdTicks => Math.Max(1, (int)Math.Floor(65.0 * Resolution / 192.0));
             public int IgnoredNonPlayableNoteEvents { get; set; }
             public List<BpmEvent> BpmGrid { get; set; } = new();
             public Func<long, double> TickToSec { get; set; } = _ => 0.0;
             public Dictionary<string, SortedDictionary<long, List<NoteEvent>>> Difficulties { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         }
 
-        // Clone Hero guitar N events 5 and 6 are HOPO/tap markers, not fretted
-        // notes. Lane 7 is the valid open-note lane and is mapped to a normal
-        // low-tier Unplugged note by the generators.
+        // Clone Hero guitar N events 5 and 6 modify playable notes at the same
+        // tick; they are retained as modifiers, never emitted as extra notes.
+        // Lane 7 is a valid open-note lane.
         public static bool IsPlayableGuitarLane(int lane) => (lane >= 0 && lane <= 4) || lane == 7;
 
         public static ParsedChart Parse(string chartPath)
@@ -135,6 +140,7 @@ namespace USM.Core.Parsers
                 if (sections.TryGetValue(secName, out var lines))
                 {
                     var noteDict = new SortedDictionary<long, List<NoteEvent>>();
+                    var modifiers = new Dictionary<long, (bool Flip, bool Tap)>();
                     foreach (var line in lines)
                     {
                         var match = Regex.Match(line, @"(\d+)\s*=\s*N\s+(\d+)\s+(\d+)");
@@ -143,6 +149,13 @@ namespace USM.Core.Parsers
                             long tick = long.Parse(match.Groups[1].Value);
                             int lane = int.Parse(match.Groups[2].Value);
                             long dur = long.Parse(match.Groups[3].Value);
+
+                            if (lane is 5 or 6)
+                            {
+                                modifiers.TryGetValue(tick, out var state);
+                                modifiers[tick] = (state.Flip || lane == 5, state.Tap || lane == 6);
+                                continue;
+                            }
 
                             // Do not create gameplay notes from HOPO/tap markers or
                             // unknown lanes. A marker on its own used to become a
@@ -157,6 +170,15 @@ namespace USM.Core.Parsers
                                 noteDict[tick] = new List<NoteEvent>();
 
                             noteDict[tick].Add(new NoteEvent { Lane = lane, DurationTicks = dur });
+                        }
+                    }
+                    foreach (var entry in noteDict)
+                    {
+                        if (!modifiers.TryGetValue(entry.Key, out var state)) continue;
+                        foreach (var note in entry.Value)
+                        {
+                            note.FlipHopo = state.Flip;
+                            note.Tap = state.Tap;
                         }
                     }
                     if (noteDict.Count > 0)

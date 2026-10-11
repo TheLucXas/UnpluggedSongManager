@@ -15,7 +15,7 @@ namespace USM.Core.Parsers
     {
         // Bump when chart parsing or generated note semantics change. Stored in
         // meta.json so the PC library can selectively regenerate outdated charts.
-        public const int ParserVersion = 7;
+        public const int ParserVersion = 8;
 
         // These are spatial string lanes (the four white paths in the game),
         // independent of difficulty and source fret/button colors. Every output
@@ -70,7 +70,8 @@ namespace USM.Core.Parsers
             int ticksPerBeat,
             string outputDifficulty,
             Action<string>? log = null,
-            double songDurationSeconds = 0)
+            double songDurationSeconds = 0,
+            int hopoThresholdTicks = 0)
         {
             bpmGrid ??= new List<ChartParser.BpmEvent>();
             notesByTick ??= new SortedDictionary<long, List<ChartParser.NoteEvent>>();
@@ -114,8 +115,9 @@ namespace USM.Core.Parsers
             int[] laneTargets = BuildStringLaneTargets(notesByTick);
             int generatedNoteIndex = 0;
 
-            double previousTime = -999.0;
-            string previousFingers = string.Empty;
+            long previousTick = -1;
+            List<int> previousLanes = new();
+            int pullOffCount = 0;
 
             foreach (var tickEntry in notesByTick)
             {
@@ -159,10 +161,14 @@ namespace USM.Core.Parsers
                 int tier = SelectStringLane(generatedNoteIndex++, laneAssignedCounts, laneTargets);
                 tierCounts[tier] = tierCounts.TryGetValue(tier, out int tierCount) ? tierCount + 1 : 1;
 
-                string fingerShape = string.Join("+", fingers);
-                bool isPullOff = noteTime - previousTime < 0.22
-                    && previousFingers.Length > 0
-                    && !previousFingers.Equals(fingerShape, StringComparison.Ordinal);
+                bool naturalHopo = previousTick >= 0 && hopoThresholdTicks > 0 &&
+                    tick - previousTick <= hopoThresholdTicks &&
+                    lanes.Count == 1 && previousLanes.Count == 1 && lanes[0] != previousLanes[0];
+                bool isPullOff = tickEntry.Value.Any(note => note.Tap) ||
+                    (!tickEntry.Value.Any(note => note.ForceStrum) &&
+                     (tickEntry.Value.Any(note => note.ForceHopo) ||
+                      (naturalHopo ^ tickEntry.Value.Any(note => note.FlipHopo))));
+                if (isPullOff) pullOffCount++;
 
                 if (!firstHand) sb.Append(',');
                 sb.Append("{\"Time\":").Append(Number(noteTime))
@@ -197,15 +203,17 @@ namespace USM.Core.Parsers
                     // rotation gestures. Inferring a rotation from lane 4 (orange)
                     // generated false arrows on otherwise ordinary notes.
                     .Append(",\"ChordRotation\":0")
-                    .Append(",\"Intensity\":0}");
+                    .Append(",\"Intensity\":0")
+                    .Append(",\"IsPullOff\":").Append(isPullOff ? "true" : "false").Append('}');
                 firstController = false;
 
-                previousTime = noteTime;
-                previousFingers = fingerShape;
+                previousTick = tick;
+                previousLanes = lanes;
             }
 
             sb.Append(controllerNotes).Append("]}");
             log?.Invoke($"  [ChartDiag] {outputDifficulty}: stringLanes=[{string.Join(",", tierCounts.Select(pair => $"{pair.Key}:{pair.Value}"))}], fretButtons[trigger,grip]=[{string.Join(",", controllerButtonCounts.Select(pair => $"{pair.Key}:{pair.Value}"))}].");
+            log?.Invoke($"  [ChartDiag] {outputDifficulty}: {pullOffCount} notes without strumming in both hand and controller tracks.");
             return sb.ToString();
         }
 
@@ -361,7 +369,8 @@ namespace USM.Core.Parsers
             Dictionary<string, SortedDictionary<long, List<ChartParser.NoteEvent>>> difficulties,
             int ticksPerBeat,
             Action<string>? log = null,
-            double songDurationSeconds = 0)
+            double songDurationSeconds = 0,
+            int hopoThresholdTicks = 0)
         {
             var outputFiles = new[]
             {
@@ -459,7 +468,7 @@ namespace USM.Core.Parsers
                 }
 
                 string outputFile = outputFiles[targetRank];
-                results[outputFile] = BuildSongJson(bpmGrid, tickToSec, selectedNotes, ticksPerBeat, outputFile, log, songDurationSeconds);
+                results[outputFile] = BuildSongJson(bpmGrid, tickToSec, selectedNotes, ticksPerBeat, outputFile, log, songDurationSeconds, hopoThresholdTicks);
                 log?.Invoke($"  [Chart] {outputFile}: {CountNotes(selectedNotes)} notes; {origin}.");
             }
 
@@ -502,9 +511,19 @@ namespace USM.Core.Parsers
         {
             return new SortedDictionary<long, List<ChartParser.NoteEvent>>(
                 source.ToDictionary(entry => entry.Key, entry => entry.Value
-                    .Select(note => new ChartParser.NoteEvent { Lane = note.Lane, DurationTicks = note.DurationTicks })
+                    .Select(CloneNote)
                     .ToList()));
         }
+
+        private static ChartParser.NoteEvent CloneNote(ChartParser.NoteEvent note) => new()
+        {
+            Lane = note.Lane,
+            DurationTicks = note.DurationTicks,
+            FlipHopo = note.FlipHopo,
+            Tap = note.Tap,
+            ForceHopo = note.ForceHopo,
+            ForceStrum = note.ForceStrum
+        };
 
         private static List<(int TargetRank, string SourceName, SortedDictionary<long, List<ChartParser.NoteEvent>>? Notes)> GetDifficultyAnchors(
             List<(string Name, int Rank, SortedDictionary<long, List<ChartParser.NoteEvent>>? Notes)> availableSources)
@@ -540,11 +559,7 @@ namespace USM.Core.Parsers
                     group = new List<ChartParser.NoteEvent>();
                     result[addition.Key] = group;
                 }
-                group.AddRange(addition.Notes.Select(note => new ChartParser.NoteEvent
-                {
-                    Lane = note.Lane,
-                    DurationTicks = note.DurationTicks
-                }));
+                group.AddRange(addition.Notes.Select(CloneNote));
             }
             return result;
         }
@@ -563,7 +578,7 @@ namespace USM.Core.Parsers
             {
                 var group = groups[index];
                 result[group.Key] = group.Value
-                    .Select(note => new ChartParser.NoteEvent { Lane = note.Lane, DurationTicks = note.DurationTicks })
+                    .Select(CloneNote)
                     .ToList();
             }
             return result;
