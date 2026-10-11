@@ -450,6 +450,7 @@ namespace UnpluggedCustomSongs
 
         public override void OnLateUpdate()
         {
+            Patch_SongMenuItem_SetSong.SyncTitleVisibility();
         }
 
         public override void OnApplicationQuit()
@@ -810,7 +811,7 @@ namespace UnpluggedCustomSongs
                 GUI.Box(skipRect, "");
                 var oldC = GUI.color;
                 GUI.color = new Color(1f, 0.88f, 0.2f);
-                GUI.Label(skipRect, "<b>PRESS BOTH TRIGGERS (L2 + R2) OR [3] TO SKIP INTRO SILENCE</b>");
+                GUI.Label(skipRect, "<b>PRESS A + X OR [3] TO SKIP INTRO SILENCE</b>");
                 GUI.color = oldC;
             }
 
@@ -4511,42 +4512,20 @@ namespace UnpluggedCustomSongs
                 return true;
             }
 
-            // VR Oculus Touch controllers (both index triggers L2 + R2)
+            // Touch face buttons: A on the right controller, X on the left.
+            // Grabbing the pick/guitar must never request an intro skip.
             try
             {
-                float leftTrig = OVRInput.Get(OVRInput.Axis1D.PrimaryIndexTrigger);
-                float rightTrig = OVRInput.Get(OVRInput.Axis1D.SecondaryIndexTrigger);
+                bool a = OVRInput.Get(OVRInput.RawButton.A, OVRInput.Controller.All);
+                bool x = OVRInput.Get(OVRInput.RawButton.X, OVRInput.Controller.All);
                 if (ModMain.ConfigVerbose && Time.unscaledTime >= _nextInputDiagnosticTime)
                 {
                     _nextInputDiagnosticTime = Time.unscaledTime + 1.0f;
-                    MelonLogger.Msg($"[IntroSkip][Input] L2={leftTrig:F2}, R2={rightTrig:F2}, target={SkipTargetTime:F2}s, song={GameManager.SongTime:F2}s.");
+                    MelonLogger.Msg($"[IntroSkip][Input] A={a}, X={x}, target={SkipTargetTime:F2}s, song={GameManager.SongTime:F2}s.");
                 }
-                if (leftTrig > 0.55f && rightTrig > 0.55f)
-                {
-                    return true;
-                }
-
-                bool leftBtn = OVRInput.Get(OVRInput.Button.PrimaryIndexTrigger);
-                bool rightBtn = OVRInput.Get(OVRInput.Button.SecondaryIndexTrigger);
-                if (leftBtn && rightBtn)
-                {
-                    return true;
-                }
+                return a && x;
             }
             catch { }
-
-            // Cross-platform Unity input
-            try
-            {
-                float l = Input.GetAxisRaw("Oculus_CrossPlatform_PrimaryIndexTrigger");
-                float r = Input.GetAxisRaw("Oculus_CrossPlatform_SecondaryIndexTrigger");
-                if (l > 0.55f && r > 0.55f)
-                {
-                    return true;
-                }
-            }
-            catch { }
-
             return false;
         }
 
@@ -4684,7 +4663,7 @@ namespace UnpluggedCustomSongs
 
                 if (_promptText != null)
                 {
-                    _promptText.text = "L2 + R2\nSKIP INTRO";
+                    _promptText.text = "A + X\nSKIP INTRO";
                 }
 
                 Camera cam = CameraManager.Main != null ? CameraManager.Main : Camera.main;
@@ -4877,6 +4856,7 @@ namespace UnpluggedCustomSongs
     public static class Patch_SongMenuItem_SetSong
     {
         private static readonly Dictionary<int, string> PresentedSongs = new Dictionary<int, string>();
+        private static readonly Dictionary<int, SongMenuItem> TrackedItems = new Dictionary<int, SongMenuItem>();
         public static TMP_FontAsset GameFont { get; private set; }
         public static Material GameFontMaterial { get; private set; }
         public static bool LabelsVisible { get; private set; }
@@ -4886,8 +4866,19 @@ namespace UnpluggedCustomSongs
             LabelsVisible = visible;
             var menu = StartSpace.I?.songMenu;
             if (menu == null) return;
+            TrackedItems.Clear();
             foreach (var item in menu.GetComponentsInChildren<SongMenuItem>(true))
+            {
+                TrackedItems[item.GetInstanceID()] = item;
                 RestoreBadgeVisibility(item);
+            }
+        }
+
+        public static void SyncTitleVisibility()
+        {
+            if (!LabelsVisible) return;
+            foreach (var item in TrackedItems.Values)
+                if (item != null) RestoreBadgeVisibility(item);
         }
 
         public static void Postfix(SongMenuItem __instance)
@@ -4902,6 +4893,7 @@ namespace UnpluggedCustomSongs
                 if (item?.SongData != null)
                 {
                     int id = item.GetInstanceID();
+                    TrackedItems[id] = item;
                     string songId = item.SongData.SongID ?? string.Empty;
                     if (!force && PresentedSongs.TryGetValue(id, out string previous) && previous == songId)
                     {
@@ -4982,15 +4974,20 @@ namespace UnpluggedCustomSongs
 
         private static void RestoreBadgeVisibility(SongMenuItem item)
         {
+            if (item == null) return;
             var child = item.SongName?.transform.Find("USMTrackLabel");
             if (child == null) return;
             var badge = child.GetComponent<TextMeshPro>();
             if (badge == null || string.IsNullOrEmpty(badge.text)) return;
-            badge.color = Color.white;
-            badge.alpha = 1f;
+            float titleAlpha = item.SongName.alpha;
+            if (!Mathf.Approximately(badge.alpha, titleAlpha)) badge.alpha = titleAlpha;
+            if (Mathf.Abs(((Color)badge.faceColor).a - titleAlpha) > 1f / 255f)
+                badge.faceColor = new Color(1f, 1f, 1f, titleAlpha);
             if (child.gameObject.activeSelf != LabelsVisible) child.gameObject.SetActive(LabelsVisible);
             var renderer = badge.GetComponent<MeshRenderer>();
-            if (renderer != null) renderer.enabled = LabelsVisible;
+            var titleRenderer = item.SongName.GetComponent<MeshRenderer>();
+            if (renderer != null) renderer.enabled = LabelsVisible && titleAlpha > 0.001f
+                && titleRenderer != null && titleRenderer.enabled;
         }
 
         private static float GetTrackLabelVerticalOffset(Bounds titleBounds, Bounds labelBounds)
@@ -5039,43 +5036,17 @@ namespace UnpluggedCustomSongs
     [HarmonyPatch(typeof(SongMenu), "EnterMenu")]
     public static class Patch_SongMenu_EnterMenuLabels
     {
-        internal static int Transition;
-
-        public static void Prefix(out int __state)
+        public static void Prefix()
         {
-            __state = ++Transition;
-            Patch_SongMenuItem_SetSong.SetLabelsVisible(false);
-        }
-
-#if QUEST_IL2CPP
-        public static void Postfix(Il2CppSystem.Threading.Tasks.Task __result, int __state)
-#else
-        public static void Postfix(Task __result, int __state)
-#endif
-        {
-            if (__result != null) MelonCoroutines.Start(WaitForEntry(__result, __state));
-        }
-
-#if QUEST_IL2CPP
-        private static IEnumerator WaitForEntry(Il2CppSystem.Threading.Tasks.Task entry, int transition)
-#else
-        private static IEnumerator WaitForEntry(Task entry, int transition)
-#endif
-        {
-            // Native EnterMenu completes after all staggered disc movements.
-            // An exit/new entry invalidates this completion instead of flashing badges.
-            while (!entry.IsCompleted && Transition == transition) yield return null;
-            if (Transition == transition && !entry.IsFaulted && !entry.IsCanceled)
-                Patch_SongMenuItem_SetSong.SetLabelsVisible(true);
+            // The badge travels and fades with its native title during entry.
+            Patch_SongMenuItem_SetSong.SetLabelsVisible(true);
         }
     }
-
     [HarmonyPatch(typeof(SongMenu), "ExitMenu")]
     public static class Patch_SongMenu_ExitMenuLabels
     {
         public static void Prefix()
         {
-            Patch_SongMenu_EnterMenuLabels.Transition++;
             Patch_SongMenuItem_SetSong.SetLabelsVisible(false);
         }
     }
