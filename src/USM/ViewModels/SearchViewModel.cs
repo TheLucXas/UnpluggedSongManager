@@ -423,7 +423,12 @@ namespace USM.ViewModels
 
             cancellationToken.ThrowIfCancellationRequested();
             ShowCurrentPage();
-            if (SelectedChartQualityFilterIndex == 1 && profileTasks.Count > 0)
+            // Audio layouts are discovered from the SNG header, not the search
+            // response. Finish this batch before deciding whether the filtered
+            // page is full or fetching another batch. Individual probes still
+            // publish matches while this await keeps the UI responsive.
+            if ((SelectedAudioLayoutFilterIndex > 0 || SelectedChartQualityFilterIndex == 1)
+                && profileTasks.Count > 0)
             {
                 await Task.WhenAll(profileTasks);
                 cancellationToken.ThrowIfCancellationRequested();
@@ -523,10 +528,13 @@ namespace USM.ViewModels
 
             int first = startIndex + 1;
             int last = startIndex + Results.Count;
-            string matchCount = _hasMoreApiPages
+            bool profilesPending = SelectedAudioLayoutFilterIndex > 0
+                && _rawCharts.Any(c => c.IsCheckingQuality);
+            string matchCount = _hasMoreApiPages || profilesPending
                 ? LocalizationService.T("Search_AtLeast", filtered.Count)
                 : filtered.Count.ToString();
-            bool pageStillFilling = filtered.Count < _currentPage * SearchPageSize && _hasMoreApiPages;
+            bool pageStillFilling = filtered.Count < _currentPage * SearchPageSize
+                && (_hasMoreApiPages || profilesPending);
             string scanStatus = IsSearching && pageStillFilling
                 ? LocalizationService.T("Search_ScanningSuffix", _rawCharts.Count, _totalCharts)
                 : string.Empty;
