@@ -268,10 +268,15 @@ namespace UnpluggedCustomSongs
             var rightAxisError = input.GetAnalogActionData(rightStickHandle, ref rightAxis, axisSize, 0);
             var leftButtonError = input.GetDigitalActionData(leftPrimaryHandle, ref leftButton, buttonSize, 0);
             var rightButtonError = input.GetDigitalActionData(rightPrimaryHandle, ref rightButton, buttonSize, 0);
+            bool xrX = ReadXrPrimary(XRNode.LeftHand);
+            bool xrA = ReadXrPrimary(XRNode.RightHand);
+            bool rawX = ReadOpenVrPrimary(ETrackedControllerRole.LeftHand);
+            bool rawA = ReadOpenVrPrimary(ETrackedControllerRole.RightHand);
             MelonLogger.Msg($"[PcVrInput] LStick={leftAxisError}/{leftAxis.bActive}/{leftAxis.x:F2}, " +
                 $"RStick={rightAxisError}/{rightAxis.bActive}/{rightAxis.x:F2}, " +
                 $"X={leftButtonError}/{leftButton.bActive}/{leftButton.bState}, " +
-                $"A={rightButtonError}/{rightButton.bActive}/{rightButton.bState}.");
+                $"A={rightButtonError}/{rightButton.bActive}/{rightButton.bState}, " +
+                $"XR(X/A)={xrX}/{xrA}, Raw(X/A)={rawX}/{rawA}.");
         }
 
         private static void ReadXrStick(XRNode hand, ref float x)
