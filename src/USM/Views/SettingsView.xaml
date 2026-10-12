@@ -139,7 +139,8 @@
                                     Background="{StaticResource BrushAccentGreen}"
                                     Foreground="#000000"
                                     FontWeight="Bold" />
-                            <Button Content="{DynamicResource Loc_Settings_UninstallModButton}"
+                            <Button Content="{DynamicResource Loc_Settings_ModUninstallBtn}"
+                                    ContentTemplate="{StaticResource WrappingButtonContent}"
                                     Command="{Binding UninstallModCommand}" Style="{StaticResource DangerButton}"
                                     Visibility="{Binding IsModInstalled, Converter={StaticResource BoolToVis}}"
                                     Margin="8,0,0,0" />

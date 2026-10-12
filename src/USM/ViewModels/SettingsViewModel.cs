@@ -386,12 +386,8 @@ namespace USM.ViewModels
             InstalledModVersion = _gameDetector.GetInstalledModVersion() ?? "N/A";
             string? packagedPc = PackagedModAssemblyProvider.ExtractPcModAssembly();
             string? packagedVersion = ModAssemblyMetadata.GetVersion(packagedPc ?? "");
-            string installedPath = Path.Combine(GamePath, "Mods", "UnpluggedCustomSongs.dll");
             _packagedPcUpdateAvailable = IsModInstalled &&
-                (ModAssemblyMetadata.IsNewPackagedVersion(packagedVersion, InstalledModVersion) ||
-                 (ModAssemblyMetadata.CanInstallPackagedVersion(packagedVersion, InstalledModVersion) &&
-                  !string.Equals(ModAssemblyMetadata.GetHash(packagedPc), ModAssemblyMetadata.GetHash(installedPath),
-                      StringComparison.OrdinalIgnoreCase)));
+                ModAssemblyMetadata.IsNewPackagedVersion(packagedVersion, InstalledModVersion);
             RefreshUpdateNotices();
             IsCustomSongsReady = Directory.Exists(_gameDetector.GetCustomSongsDir() ?? "");
 
