@@ -799,9 +799,8 @@ namespace UnpluggedCustomSongs
         {
             if (_carouselLeftButton == null || _carouselRightButton == null ||
                 !IsCustomCarouselSettled || _arrowsAnchored) return;
-            var camera = CameraManager.Main != null ? CameraManager.Main : Camera.main;
-            var difficultyLabel = StartSpace.I?.difficultyPanel?.backLabel;
-            if (camera == null || difficultyLabel == null) return;
+            var difficulty = StartSpace.I?.difficultyPanel;
+            if (difficulty?.PrevButton == null || difficulty.NextButtton == null) return;
 
             SongMenuItem selectedItem = null;
             var selectedSong = menu.SelectedSong;
@@ -818,36 +817,34 @@ namespace UnpluggedCustomSongs
             if (selectedItem == null) return;
             if (Mathf.Abs(selectedItem.transform.parent.localPosition.y) > 0.01f) return;
 
-            // Use the difficulty text's horizontal position and depth, plus the
-            // selected song title's height. These menu anchors stay fixed as
-            // cards rotate, so the arrows no longer jump between songs.
-            Vector3 anchor = difficultyLabel.transform.position;
-            anchor.y = selectedItem.SongName.transform.position.y;
-            Vector3 axis = difficultyLabel.transform.right;
+            // All positions are in the menu's world space. Camera-relative
+            // placement changed with headset pose on every game launch.
+            Vector3 leftDifficulty = difficulty.PrevButton.transform.position;
+            Vector3 rightDifficulty = difficulty.NextButtton.transform.position;
+            Vector3 axis = rightDifficulty - leftDifficulty;
             axis.y = 0f;
-            axis.Normalize();
-            Vector3 center = camera.WorldToViewportPoint(anchor);
-            float projectedRight = camera.WorldToViewportPoint(anchor + axis).x - center.x;
-            if (projectedRight < 0f)
-            {
-                axis = -axis;
-                projectedRight = -projectedRight;
-            }
-            float viewportPerWorldUnit = projectedRight;
-            if (center.z <= 0f || viewportPerWorldUnit < 0.001f) return;
-            float distance = Mathf.Clamp(0.26f / viewportPerWorldUnit, 0.15f, 0.80f);
+            float difficultyArrowSpan = axis.magnitude;
+            if (difficultyArrowSpan < 0.05f) return;
+            axis /= difficultyArrowSpan;
+
+            var titleRenderer = selectedItem.SongName.GetComponent<Renderer>();
+            Vector3 titleCenter = titleRenderer != null
+                ? titleRenderer.bounds.center
+                : selectedItem.SongName.transform.position;
+            Vector3 anchor = (leftDifficulty + rightDifficulty) * 0.5f;
+            anchor.y = titleCenter.y;
+            anchor += axis * Vector3.Dot(titleCenter - anchor, axis);
+            float distance = difficultyArrowSpan * 0.95f;
             for (int dir = -1; dir <= 1; dir += 2)
             {
                 var button = dir < 0 ? _carouselLeftButton : _carouselRightButton;
-                Vector3 target = anchor + axis * (dir * distance) - camera.transform.forward * 0.04f;
-                target.y = anchor.y;
-                button.transform.position = target;
+                button.transform.position = anchor + axis * (dir * distance);
             }
             _arrowsAnchored = true;
             if (!_arrowPositionLogged)
             {
                 _arrowPositionLogged = true;
-                MelonLogger.Msg($"[CustomSongs][Arrows] Anchored to difficulty/title: viewport=({center.x:F2}, {center.y:F2}), left={_carouselLeftButton.transform.position}, right={_carouselRightButton.transform.position}.");
+                MelonLogger.Msg($"[CustomSongs][Arrows] Anchored symmetrically in menu space: center={anchor}, distance={distance:F3}, left={_carouselLeftButton.transform.position}, right={_carouselRightButton.transform.position}.");
             }
         }
 
