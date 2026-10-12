@@ -21,6 +21,7 @@ using Unplugged.Model;
 using UnityEngine.XR;
 using Valve.VR;
 using System.Runtime.InteropServices;
+using Newtonsoft.Json.Linq;
 using CultureInfo = System.Globalization.CultureInfo;
 #endif
 #if QUEST_IL2CPP
@@ -39,10 +40,163 @@ namespace UnpluggedCustomSongs
     internal static class PcVrInput
     {
         private static readonly List<InputDevice> Devices = new List<InputDevice>();
+        private const string ActionPrefix = "/actions/default/in/";
+        private static ulong leftStickHandle, rightStickHandle, leftPrimaryHandle, rightPrimaryHandle;
+        private static float nextHandleAttempt;
+        private static bool handlesReady;
+        private static bool warnedMissingBindings;
+
+        public static void EnsureBindings()
+        {
+            try
+            {
+                string dir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
+                    "Unplugged_Data", "StreamingAssets", "SteamVR");
+                string manifestPath = Path.Combine(dir, "actions.json");
+                if (!File.Exists(manifestPath)) return;
+
+                // Add actions before the game's SteamVR initializer reads the manifest.
+                var manifest = JObject.Parse(File.ReadAllText(manifestPath));
+                var actions = manifest["actions"] as JArray;
+                if (actions == null) return;
+                bool changed = false;
+                changed |= AddAction(actions, "USM_LeftStick", "vector2");
+                changed |= AddAction(actions, "USM_RightStick", "vector2");
+                changed |= AddAction(actions, "USM_LeftPrimary", "boolean");
+                changed |= AddAction(actions, "USM_RightPrimary", "boolean");
+                if (changed) SaveJson(manifestPath, manifest);
+
+                foreach (string bindingName in new[] { "bindings_oculus_touch.json", "bindings_knuckles.json" })
+                {
+                    string bindingPath = Path.Combine(dir, bindingName);
+                    if (!File.Exists(bindingPath)) continue;
+                    var binding = JObject.Parse(File.ReadAllText(bindingPath));
+                    var sources = binding["bindings"]?["/actions/default"]?["sources"] as JArray;
+                    if (sources == null) continue;
+                    bool bindingChanged = false;
+                    bindingChanged |= AddStickBinding(sources, "left", "USM_LeftStick");
+                    bindingChanged |= AddStickBinding(sources, "right", "USM_RightStick");
+                    bindingChanged |= AddButtonBinding(sources, "left", "x", "USM_LeftPrimary");
+                    bindingChanged |= AddButtonBinding(sources, "right", "a", "USM_RightPrimary");
+                    if (bindingChanged) SaveJson(bindingPath, binding);
+                }
+                MelonLogger.Msg("[PcVrInput] SteamVR stick and A+X actions are present in the game bindings.");
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"[PcVrInput] Could not install SteamVR actions: {ex}");
+            }
+        }
+
+        private static bool AddAction(JArray actions, string name, string type)
+        {
+            string path = ActionPrefix + name;
+            if (actions.Any(item => string.Equals((string)item["name"], path,
+                StringComparison.OrdinalIgnoreCase))) return false;
+            actions.Add(new JObject { ["name"] = path, ["type"] = type, ["requirement"] = "optional" });
+            return true;
+        }
+
+        private static bool AddStickBinding(JArray sources, string hand, string action)
+        {
+            string path = $"/user/hand/{hand}/input/thumbstick";
+            var source = sources.OfType<JObject>().FirstOrDefault(item =>
+                string.Equals((string)item["path"], path, StringComparison.OrdinalIgnoreCase));
+            bool changed = false;
+            if (source == null)
+            {
+                source = new JObject { ["path"] = path, ["mode"] = "joystick",
+                    ["parameters"] = new JObject(), ["inputs"] = new JObject() };
+                sources.Add(source);
+                changed = true;
+            }
+            if ((string)source["mode"] != "joystick")
+            {
+                source["mode"] = "joystick";
+                changed = true;
+            }
+            var inputs = source["inputs"] as JObject;
+            if (inputs == null) { inputs = new JObject(); source["inputs"] = inputs; changed = true; }
+            string output = ActionPrefix + action.ToLowerInvariant();
+            if ((string)inputs["position"]?["output"] != output)
+            {
+                inputs["position"] = new JObject { ["output"] = output };
+                changed = true;
+            }
+            return changed;
+        }
+
+        private static bool AddButtonBinding(JArray sources, string hand, string button, string action)
+        {
+            string output = ActionPrefix + action.ToLowerInvariant();
+            if (sources.Any(item => string.Equals((string)item["inputs"]?["click"]?["output"],
+                output, StringComparison.OrdinalIgnoreCase))) return false;
+            sources.Add(new JObject
+            {
+                ["path"] = $"/user/hand/{hand}/input/{button}",
+                ["mode"] = "button",
+                ["parameters"] = new JObject(),
+                ["inputs"] = new JObject { ["click"] = new JObject { ["output"] = output } }
+            });
+            return true;
+        }
+
+        private static void SaveJson(string path, JObject document)
+        {
+            string backup = path + ".usm-original";
+            if (!File.Exists(backup)) File.Copy(path, backup);
+            string temporary = path + ".usm-writing";
+            File.WriteAllText(temporary, document.ToString(Newtonsoft.Json.Formatting.Indented));
+            File.Copy(temporary, path, true);
+            File.Delete(temporary);
+        }
+
+        private static bool ResolveActions()
+        {
+            if (handlesReady) return true;
+            if (Time.unscaledTime < nextHandleAttempt) return false;
+            nextHandleAttempt = Time.unscaledTime + 1f;
+            var input = OpenVR.Input;
+            if (input == null) return false;
+            bool ok = input.GetActionHandle(ActionPrefix + "USM_LeftStick", ref leftStickHandle) == EVRInputError.None
+                && input.GetActionHandle(ActionPrefix + "USM_RightStick", ref rightStickHandle) == EVRInputError.None
+                && input.GetActionHandle(ActionPrefix + "USM_LeftPrimary", ref leftPrimaryHandle) == EVRInputError.None
+                && input.GetActionHandle(ActionPrefix + "USM_RightPrimary", ref rightPrimaryHandle) == EVRInputError.None;
+            handlesReady = ok;
+            if (ok) MelonLogger.Msg("[PcVrInput] SteamVR stick and A+X action handles acquired.");
+            else if (!warnedMissingBindings && Time.unscaledTime > 10f)
+            {
+                warnedMissingBindings = true;
+                MelonLogger.Warning("[PcVrInput] Custom SteamVR actions unavailable; check the game's active controller binding.");
+            }
+            return ok;
+        }
+
+        private static float ReadStickAction(ulong handle)
+        {
+            var data = default(InputAnalogActionData_t);
+            return OpenVR.Input.GetAnalogActionData(handle, ref data,
+                (uint)Marshal.SizeOf(typeof(InputAnalogActionData_t)), 0) == EVRInputError.None && data.bActive
+                ? data.x : 0f;
+        }
+
+        private static bool ReadButtonAction(ulong handle)
+        {
+            var data = default(InputDigitalActionData_t);
+            return OpenVR.Input.GetDigitalActionData(handle, ref data,
+                (uint)Marshal.SizeOf(typeof(InputDigitalActionData_t)), 0) == EVRInputError.None &&
+                data.bActive && data.bState;
+        }
 
         public static float HorizontalStick()
         {
             float x = 0f;
+            if (ResolveActions())
+            {
+                float left = ReadStickAction(leftStickHandle);
+                float right = ReadStickAction(rightStickHandle);
+                x = Mathf.Abs(left) >= Mathf.Abs(right) ? left : right;
+            }
             ReadXrStick(XRNode.LeftHand, ref x);
             ReadXrStick(XRNode.RightHand, ref x);
             ReadOpenVrStick(ETrackedControllerRole.LeftHand, ref x);
@@ -52,6 +206,8 @@ namespace UnpluggedCustomSongs
 
         public static bool BothPrimaryButtons()
         {
+            if (ResolveActions() && ReadButtonAction(leftPrimaryHandle) &&
+                ReadButtonAction(rightPrimaryHandle)) return true;
             bool left = ReadXrPrimary(XRNode.LeftHand);
             bool right = ReadXrPrimary(XRNode.RightHand);
             if (left && right) return true;
@@ -347,6 +503,7 @@ namespace UnpluggedCustomSongs
 #if !QUEST_IL2CPP
             PrefDebugMode = PrefsCategory.CreateEntry("EnableDebugMode", false, "Enable Desktop WASD/Mouse Look & Testing Controls");
             DebugMode = PrefDebugMode?.Value ?? false;
+            PcVrInput.EnsureBindings();
 #else
             // The desktop camera, mouse and simulated note controls can interfere with
             // Quest's tracked hands and controller input. Never activate that path on IL2CPP.
