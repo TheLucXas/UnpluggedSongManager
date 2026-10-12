@@ -18,6 +18,9 @@ using SimpleJSON;
 #if !QUEST_IL2CPP
 using TMPro;
 using Unplugged.Model;
+using UnityEngine.XR;
+using Valve.VR;
+using System.Runtime.InteropServices;
 using CultureInfo = System.Globalization.CultureInfo;
 #endif
 #if QUEST_IL2CPP
@@ -32,6 +35,79 @@ using CultureInfo = Il2CppSystem.Globalization.CultureInfo;
 
 namespace UnpluggedCustomSongs
 {
+#if !QUEST_IL2CPP
+    internal static class PcVrInput
+    {
+        private static readonly List<InputDevice> Devices = new List<InputDevice>();
+
+        public static float HorizontalStick()
+        {
+            float x = 0f;
+            ReadXrStick(XRNode.LeftHand, ref x);
+            ReadXrStick(XRNode.RightHand, ref x);
+            ReadOpenVrStick(ETrackedControllerRole.LeftHand, ref x);
+            ReadOpenVrStick(ETrackedControllerRole.RightHand, ref x);
+            return x;
+        }
+
+        public static bool BothPrimaryButtons()
+        {
+            bool left = ReadXrPrimary(XRNode.LeftHand);
+            bool right = ReadXrPrimary(XRNode.RightHand);
+            if (left && right) return true;
+            return ReadOpenVrPrimary(ETrackedControllerRole.LeftHand) &&
+                   ReadOpenVrPrimary(ETrackedControllerRole.RightHand);
+        }
+
+        private static void ReadXrStick(XRNode hand, ref float x)
+        {
+            InputDevices.GetDevicesAtXRNode(hand, Devices);
+            foreach (var device in Devices)
+                if (device.TryGetFeatureValue(CommonUsages.primary2DAxis, out Vector2 axis) &&
+                    Mathf.Abs(axis.x) > Mathf.Abs(x)) x = axis.x;
+            Devices.Clear();
+        }
+
+        private static bool ReadXrPrimary(XRNode hand)
+        {
+            InputDevices.GetDevicesAtXRNode(hand, Devices);
+            bool pressed = false;
+            foreach (var device in Devices)
+                if (device.TryGetFeatureValue(CommonUsages.primaryButton, out bool value) && value)
+                    pressed = true;
+            Devices.Clear();
+            return pressed;
+        }
+
+        private static bool TryGetOpenVrState(ETrackedControllerRole role, out VRControllerState_t state)
+        {
+            state = default;
+            try
+            {
+                var system = OpenVR.System;
+                if (system == null) return false;
+                uint index = system.GetTrackedDeviceIndexForControllerRole(role);
+                return index != 0xFFFFFFFF && system.GetControllerState(index, ref state,
+                    (uint)Marshal.SizeOf(typeof(VRControllerState_t)));
+            }
+            catch { return false; }
+        }
+
+        private static void ReadOpenVrStick(ETrackedControllerRole role, ref float x)
+        {
+            if (!TryGetOpenVrState(role, out var state)) return;
+            float axis = Mathf.Abs(state.rAxis3.x) > Mathf.Abs(state.rAxis0.x)
+                ? state.rAxis3.x : state.rAxis0.x;
+            if (Mathf.Abs(axis) > Mathf.Abs(x)) x = axis;
+        }
+
+        private static bool ReadOpenVrPrimary(ETrackedControllerRole role)
+        {
+            return TryGetOpenVrState(role, out var state) &&
+                (state.ulButtonPressed & (1UL << (int)EVRButtonId.k_EButton_A)) != 0;
+        }
+    }
+#endif
     // Mono exposes the game's storage as fields. IL2CPP wrappers expose the
     // same native storage as managed properties; Traverse.Field silently misses
     // those properties. Use the actual member representation on each platform.
@@ -635,6 +711,19 @@ namespace UnpluggedCustomSongs
                 if (Mathf.Abs(ovrR.x) > Mathf.Abs(stickX)) stickX = ovrR.x;
             }
             catch { }
+
+#if !QUEST_IL2CPP
+            // The SteamVR build does not send Touch axes through OVRInput.
+            try
+            {
+                float pcStickX = PcVrInput.HorizontalStick();
+                if (Mathf.Abs(pcStickX) > Mathf.Abs(stickX)) stickX = pcStickX;
+            }
+            catch (Exception ex)
+            {
+                if (ConfigVerbose) MelonLogger.Warning($"[MenuInput] PC VR stick read failed: {ex.Message}");
+            }
+#endif
 
             // 2. Keyboard keys: Arrow keys (Left/Right) and Z/X
             if (Input.GetKey(KeyCode.RightArrow) || Input.GetKey(KeyCode.X))
@@ -4202,6 +4291,35 @@ namespace UnpluggedCustomSongs
             return false;
         }
     }
+
+    // A PC save can contain no selected guitar (or a guitar whose DLC prefab is
+    // unavailable). Vanilla SetGuitar dereferences it during Awake, leaving the
+    // instrument space half initialized and the entire song impossible to play.
+    [HarmonyPatch(typeof(GuitarPlaterSpaceController), "SetGuitar")]
+    public static class Patch_GuitarPlaterSpaceController_SetGuitar
+    {
+        public static void Prefix(ref GuitarData guitar)
+        {
+            if (guitar != null && guitar.GuitarModelPrefab != null) return;
+            try
+            {
+                var fallback = GuitarList.GetList(GuitarList.GuitarLists.SchecterGuitarList)?.Guitars;
+                if (fallback == null) return;
+                foreach (var candidate in fallback)
+                {
+                    if (candidate == null || candidate.GuitarModelPrefab == null) continue;
+                    MelonLogger.Warning($"[GuitarDiag] Saved guitar was unavailable; restoring '{candidate.Name}'.");
+                    guitar = candidate;
+                    GamePreferences.Save(UnpluggedInfo.GuitarPosition, Params.Global.InitialGuitarPosition);
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"[GuitarDiag] Could not restore default guitar: {ex}");
+            }
+        }
+    }
 #endif
 
     [HarmonyPatch(typeof(SongMapping), "Load", new Type[] { typeof(SongMappingMetaData), typeof(bool) })]
@@ -4918,6 +5036,17 @@ namespace UnpluggedCustomSongs
                 return true;
             }
 
+#if !QUEST_IL2CPP
+            try
+            {
+                if (PcVrInput.BothPrimaryButtons()) return true;
+            }
+            catch (Exception ex)
+            {
+                if (ModMain.ConfigVerbose) MelonLogger.Warning($"[IntroSkip] PC VR button read failed: {ex.Message}");
+            }
+#endif
+
             // Touch face buttons: A on the right controller, X on the left.
             // Grabbing the pick/guitar must never request an intro skip.
             try
@@ -5456,10 +5585,7 @@ namespace UnpluggedCustomSongs
         {
             try
             {
-                if (__instance == null || AlbumsManager.SelectedAlbum?.AlbumID != "CustomSongsAlbum")
-                    return;
-                if (CustomSongLoader.CustomAlbumInstance?.builtInSongsMetadata == null ||
-                    CustomSongLoader.CustomAlbumInstance.builtInSongsMetadata.Count == 0)
+                if (__instance == null || AlbumsManager.SelectedAlbum == null || __instance.SelectedSong == null)
                     return;
 
                 // The native options panel hides on album/menu changes and only
@@ -5471,7 +5597,7 @@ namespace UnpluggedCustomSongs
                 // the notification until the newly selected song has settled.
                 __instance.CheckIfCarouselHasStoped();
                 if (ModMain.ConfigVerbose)
-                    MelonLogger.Msg("[MenuDiag] Scheduled native selection-settled notification on custom menu entry; difficulty and venue selectors refresh without rotating the disc.");
+                    MelonLogger.Msg($"[MenuDiag] Scheduled native selection-settled notification on '{AlbumsManager.SelectedAlbum.AlbumID}' menu entry; difficulty and venue selectors refresh without rotating the disc.");
             }
             catch (Exception ex)
             {

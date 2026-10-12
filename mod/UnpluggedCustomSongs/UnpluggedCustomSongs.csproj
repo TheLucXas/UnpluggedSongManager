@@ -70,6 +70,14 @@
       <HintPath>C:\SteamLibrary\steamapps\common\Unplugged\Unplugged_Data\Managed\Oculus.VR.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.XRModule">
+      <HintPath>C:\SteamLibrary\steamapps\common\Unplugged\Unplugged_Data\Managed\UnityEngine.XRModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Unity.XR.OpenVR">
+      <HintPath>C:\SteamLibrary\steamapps\common\Unplugged\Unplugged_Data\Managed\Unity.XR.OpenVR.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
 </Project>
