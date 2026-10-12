@@ -49,6 +49,7 @@ if os.path.exists(vr_path):
             # VR Normal (Headset Quest / SteamVR)
             data["steamvr"]["requireHmd"] = True
             data["steamvr"]["forcedDriver"] = ""
+            data["steamvr"]["activateMultipleDrivers"] = False
             data["driver_null"]["enable"] = False
             
             # Restaurar Dashboard de SteamVR
