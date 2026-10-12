@@ -208,6 +208,9 @@ namespace USM.ViewModels
                 }
                 catch { }
 
+                if (GameDetector.IsModInstalled() && !string.IsNullOrEmpty(GameDetector.GamePath))
+                    PcSteamVrBindings.Prepare(GameDetector.GamePath);
+
                 Notify("Launching Unplugged VR via Steam...");
 
                 // 1. Try launching through Steam URL protocol (App ID 1623390)

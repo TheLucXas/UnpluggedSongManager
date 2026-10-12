@@ -309,9 +309,18 @@ namespace USM.Core.Services
 
             if (srcDll != null)
             {
-                File.Copy(srcDll, dest, overwrite: true);
-                message = "UnpluggedCustomSongs.dll successfully installed into Mods folder!";
-                return true;
+                try
+                {
+                    PcSteamVrBindings.Prepare(GamePath);
+                    File.Copy(srcDll, dest, overwrite: true);
+                    message = "UnpluggedCustomSongs.dll and SteamVR controller bindings installed!";
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    message = $"PC mod installation failed: {ex.Message}";
+                    return false;
+                }
             }
 
             message = "UnpluggedCustomSongs.dll source file not found in application package.";

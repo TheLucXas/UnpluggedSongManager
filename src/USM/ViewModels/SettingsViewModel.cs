@@ -505,6 +505,14 @@ namespace USM.ViewModels
 
             if (success)
             {
+                try { PcSteamVrBindings.Prepare(_gameDetector.GamePath!); }
+                catch (Exception ex)
+                {
+                    UpdateStatusMessage = ex.Message;
+                    _notifyCallback?.Invoke(ex.Message);
+                    MessageBox.Show(ex.Message, "SteamVR bindings", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
                 RefreshStatus();
                 MessageBox.Show(msg, "USM Mod Update", MessageBoxButton.OK, MessageBoxImage.Information);
             }
@@ -564,6 +572,7 @@ namespace USM.ViewModels
                         }
                     }
                 }
+                PcSteamVrBindings.Prepare(GamePath);
                 File.Move(pendingPath, target, true);
                 bool success = string.Equals(expectedHash, ModAssemblyMetadata.GetHash(target), StringComparison.OrdinalIgnoreCase);
                 string message = LocalizationService.T(success ? "Settings_ModUpdatedSuccess" : "Nav_ModUpdateFailed");
