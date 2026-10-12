@@ -1156,8 +1156,8 @@ namespace USM.ViewModels
             }
 
             var res = MessageBox.Show(
-                $"Are you sure you want to delete {selected.Count} selected song(s)? This will remove them from your VR turntable.",
-                "Confirm Deletion",
+                LocalizationService.T("Ui_DeleteSelectedConfirm", selected.Count),
+                LocalizationService.T("Ui_DeleteTitle"),
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Question
             );
@@ -1185,8 +1185,8 @@ namespace USM.ViewModels
                 if (failedSongs.Count > 0)
                 {
                     MessageBox.Show(
-                        $"Could not delete the following song(s) because they may be in use by another program:\n{string.Join("\n", failedSongs)}",
-                        "Deletion Warning",
+                        LocalizationService.T("Ui_DeleteInUse", string.Join("\n", failedSongs)),
+                        LocalizationService.T("Ui_DeleteTitle"),
                         MessageBoxButton.OK,
                         MessageBoxImage.Warning
                     );
@@ -1194,7 +1194,7 @@ namespace USM.ViewModels
 
                 if (deletedCount > 0)
                 {
-                    _notifyCallback?.Invoke($"Deleted {deletedCount} song(s) from CustomSongs.");
+                    _notifyCallback?.Invoke(LocalizationService.T("Ui_DeletedCount", deletedCount));
                 }
             }
         }
@@ -1204,8 +1204,8 @@ namespace USM.ViewModels
             if (param is not InstalledSong song) return;
 
             var res = MessageBox.Show(
-                $"Delete '{song.Artist} - {song.Title}'?",
-                "Confirm Deletion",
+                LocalizationService.T("Ui_DeleteSingleConfirm", song.Artist, song.Title),
+                LocalizationService.T("Ui_DeleteTitle"),
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Question
             );
@@ -1216,13 +1216,13 @@ namespace USM.ViewModels
                 if (DeleteDirectorySafe(song.FolderPath))
                 {
                     RefreshLibrary();
-                    _notifyCallback?.Invoke($"Deleted: {song.Title}");
+                    _notifyCallback?.Invoke(LocalizationService.T("Ui_DeletedSong", song.Title));
                 }
                 else
                 {
                     MessageBox.Show(
-                        $"Could not delete '{song.Title}'. The folder or files may be in use by another program.",
-                        "Deletion Failed",
+                        LocalizationService.T("Ui_DeleteSingleFailed", song.Title),
+                        LocalizationService.T("Ui_DeleteTitle"),
                         MessageBoxButton.OK,
                         MessageBoxImage.Warning
                     );

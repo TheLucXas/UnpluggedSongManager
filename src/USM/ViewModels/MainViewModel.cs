@@ -188,7 +188,7 @@ namespace USM.ViewModels
                 var processes = Process.GetProcessesByName("Unplugged");
                 if (processes.Length > 0)
                 {
-                    Notify("Unplugged VR is already running!");
+                    Notify(LocalizationService.T("Ui_AlreadyRunning"));
                     MessageBox.Show(LocalizationService.T("Ui_AlreadyRunning"), LocalizationService.T("Nav_LaunchGame"), MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
@@ -211,7 +211,7 @@ namespace USM.ViewModels
                 if (GameDetector.IsModInstalled() && !string.IsNullOrEmpty(GameDetector.GamePath))
                     PcSteamVrBindings.Prepare(GameDetector.GamePath);
 
-                Notify("Launching Unplugged VR via Steam...");
+                Notify(LocalizationService.T("Ui_GameLaunchStarting"));
 
                 // 1. Try launching through Steam URL protocol (App ID 1623390)
                 try
@@ -220,7 +220,7 @@ namespace USM.ViewModels
                     {
                         UseShellExecute = true
                     });
-                    Notify("Unplugged VR launched via Steam!");
+                    Notify(LocalizationService.T("Ui_GameLaunchDone"));
                     return;
                 }
                 catch { }
@@ -245,7 +245,7 @@ namespace USM.ViewModels
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Failed to launch game: {ex.Message}", "Launch Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(LocalizationService.T("Ui_GameLaunchError", ex.Message), LocalizationService.T("Nav_LaunchGame"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
