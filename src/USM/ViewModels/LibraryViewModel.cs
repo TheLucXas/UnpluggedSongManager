@@ -1151,7 +1151,7 @@ namespace USM.ViewModels
             var selected = DisplayedSongs.Where(s => s.IsSelected).ToList();
             if (selected.Count == 0)
             {
-                MessageBox.Show("No songs selected! Click on any song card to select it first.", "USM", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(USM.Core.Services.Localization.LocalizationService.T("Ui_SelectSongsFirst"), "USM", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 

@@ -132,12 +132,18 @@
                                    Foreground="{StaticResource BrushTextPrimary}"
                                    VerticalAlignment="Center" />
 
-                        <Button ContentTemplate="{StaticResource WrappingButtonContent}" Grid.Column="1"
-                                Content="{DynamicResource Loc_Settings_InstallModButton}"
-                                Command="{Binding InstallModCommand}"
-                                Background="{StaticResource BrushAccentGreen}"
-                                Foreground="#000000"
-                                FontWeight="Bold" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <Button ContentTemplate="{StaticResource WrappingButtonContent}"
+                                    Content="{Binding PcModActionText}"
+                                    Command="{Binding InstallModCommand}"
+                                    Background="{StaticResource BrushAccentGreen}"
+                                    Foreground="#000000"
+                                    FontWeight="Bold" />
+                            <Button Content="{DynamicResource Loc_Settings_UninstallModButton}"
+                                    Command="{Binding UninstallModCommand}" Style="{StaticResource DangerButton}"
+                                    Visibility="{Binding IsModInstalled, Converter={StaticResource BoolToVis}}"
+                                    Margin="8,0,0,0" />
+                        </StackPanel>
                     </Grid>
 
                     <!-- Status Rows -->
@@ -147,7 +153,7 @@
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" Text="{DynamicResource Loc_Settings_GameExecLabel}" Foreground="{StaticResource BrushTextSecondary}" />
-                        <TextBlock Grid.Column="1" Text="{Binding IsGameFound, Converter={StaticResource StatusTextConv}}" Foreground="{Binding IsGameFound, Converter={StaticResource StatusColorConv}}" FontWeight="Bold" />
+                        <TextBlock Grid.Column="1" Text="{Binding GameExecutableStatus}" Foreground="{Binding IsGameFound, Converter={StaticResource StatusColorConv}}" FontWeight="Bold" />
                     </Grid>
 
                     <Grid Margin="0,4">
@@ -162,7 +168,7 @@
                         </Grid.RowDefinitions>
                         <TextBlock Grid.Column="0" Text="{DynamicResource Loc_Settings_MelonLabel}" Foreground="{StaticResource BrushTextSecondary}" VerticalAlignment="Center" />
                         <StackPanel Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center">
-                            <TextBlock Text="{Binding IsMelonInstalled, Converter={StaticResource StatusTextConv}}" Foreground="{Binding IsMelonInstalled, Converter={StaticResource StatusColorConv}}" FontWeight="Bold" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding MelonStatus}" Foreground="{Binding IsMelonInstalled, Converter={StaticResource StatusColorConv}}" FontWeight="Bold" VerticalAlignment="Center" />
                             <TextBlock Text="{Binding MelonInstallStatusMessage}" Foreground="{StaticResource BrushAccentYellow}" FontSize="11" Margin="10,0,0,0" VerticalAlignment="Center" Visibility="{Binding IsInstallingMelon, Converter={StaticResource BoolToVis}}" />
                         </StackPanel>
                         <WrapPanel Grid.Row="1" Grid.ColumnSpan="3" HorizontalAlignment="Right" Margin="0,8,0,0">
@@ -185,7 +191,7 @@
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" Text="{DynamicResource Loc_Settings_ModLabel}" Foreground="{StaticResource BrushTextSecondary}" />
-                        <TextBlock Grid.Column="1" Text="{Binding IsModInstalled, Converter={StaticResource StatusTextConv}}" Foreground="{Binding IsModInstalled, Converter={StaticResource StatusColorConv}}" FontWeight="Bold" />
+                        <TextBlock Grid.Column="1" Text="{Binding PcModStatus}" Foreground="{Binding IsModInstalled, Converter={StaticResource StatusColorConv}}" FontWeight="Bold" />
                     </Grid>
 
                     <Grid Margin="0,4">
@@ -194,7 +200,7 @@
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" Text="{DynamicResource Loc_Settings_CustomSongsFolderLabel}" Foreground="{StaticResource BrushTextSecondary}" />
-                        <TextBlock Grid.Column="1" Text="{Binding IsCustomSongsReady, Converter={StaticResource StatusTextConv}}" Foreground="{Binding IsCustomSongsReady, Converter={StaticResource StatusColorConv}}" FontWeight="Bold" />
+                        <TextBlock Grid.Column="1" Text="{Binding SongsFolderStatus}" Foreground="{Binding IsCustomSongsReady, Converter={StaticResource StatusColorConv}}" FontWeight="Bold" />
                     </Grid>
                 </StackPanel>
             </Border>

@@ -121,7 +121,7 @@ namespace USM.ViewModels
         {
             var dlg = new OpenFileDialog
             {
-                Title = "Select Chart Packages (.zip or .sng)",
+                Title = USM.Core.Services.Localization.LocalizationService.T("Ui_SelectChartFiles"),
                 Filter = "Supported Chart Packages (*.zip;*.sng)|*.zip;*.sng|Clone Hero SNG (*.sng)|*.sng|Zip Archives (*.zip)|*.zip",
                 Multiselect = true
             };
@@ -136,7 +136,7 @@ namespace USM.ViewModels
         {
             var dlg = new OpenFolderDialog
             {
-                Title = "Select Uncompressed Song Folder",
+                Title = USM.Core.Services.Localization.LocalizationService.T("Ui_SelectSongFolder"),
                 Multiselect = false
             };
 

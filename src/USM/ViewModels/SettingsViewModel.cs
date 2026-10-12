@@ -28,6 +28,12 @@ namespace USM.ViewModels
 
         public bool HasPcModUpdate => IsModInstalled && (_packagedPcUpdateAvailable ||
             HasNewReleaseBuild(_modAsset, InstalledModVersion));
+        public string PcModActionText => LocalizationService.T(!IsModInstalled
+            ? "Settings_ModInstallBtn" : HasPcModUpdate ? "Settings_ModUpdateBtn" : "Settings_ModReinstallBtn");
+        public string GameExecutableStatus => LocalizationService.T(IsGameFound ? "Settings_StatusReady" : "Settings_StatusMissing");
+        public string MelonStatus => LocalizationService.T(IsMelonInstalled ? "Settings_StatusReady" : "Settings_StatusMissing");
+        public string PcModStatus => LocalizationService.T(IsModInstalled ? "Settings_StatusReady" : "Settings_StatusMissing");
+        public string SongsFolderStatus => LocalizationService.T(IsCustomSongsReady ? "Settings_StatusReady" : "Settings_StatusMissing");
         public bool HasQuestModUpdate => _questViewModel?.IsModdedInstalled == true &&
             (_questViewModel.IsModUpdateAvailable || HasNewReleaseBuild(_questModAsset, _questViewModel.InstalledModInfo?.Version));
 
@@ -43,6 +49,12 @@ namespace USM.ViewModels
             OnPropertyChanged(nameof(HasQuestModUpdate));
             OnPropertyChanged(nameof(InstalledPcModVersionText));
             OnPropertyChanged(nameof(InstalledQuestModVersion));
+            OnPropertyChanged(nameof(PcModActionText));
+            OnPropertyChanged(nameof(GameExecutableStatus));
+            OnPropertyChanged(nameof(MelonStatus));
+            OnPropertyChanged(nameof(PcModStatus));
+            OnPropertyChanged(nameof(SongsFolderStatus));
+            OnPropertyChanged(nameof(MelonActionButtonText));
         }
 
         public string CurrentAppVersion => _updateService.CurrentAppVersion;
@@ -92,6 +104,7 @@ namespace USM.ViewModels
         }
 
         private string _updateStatusMessage = string.Empty;
+        private string? _lastUpdateStatusKey;
         public string UpdateStatusMessage
         {
             get => _updateStatusMessage;
@@ -288,6 +301,7 @@ namespace USM.ViewModels
 
         public ICommand BrowseGamePathCommand { get; }
         public ICommand InstallModCommand { get; }
+        public ICommand UninstallModCommand { get; }
         public ICommand InstallMelonCommand { get; }
         public ICommand UninstallMelonCommand { get; }
         public ICommand IncrementDownloadsCommand { get; }
@@ -308,6 +322,7 @@ namespace USM.ViewModels
 
             BrowseGamePathCommand = new RelayCommand(BrowseGamePath);
             InstallModCommand = new RelayCommand(_ => InstallMod(), _ => !IsUpdatingMod);
+            UninstallModCommand = new RelayCommand(_ => UninstallMod(), _ => !IsUpdatingMod && IsModInstalled);
             InstallMelonCommand = new AsyncRelayCommand(InstallMelonAsync);
             UninstallMelonCommand = new RelayCommand(UninstallMelon);
             IncrementDownloadsCommand = new RelayCommand(IncrementDownloads);
@@ -319,7 +334,14 @@ namespace USM.ViewModels
             UpdateAppCommand = new AsyncRelayCommand(UpdateAppAsync);
 
             RefreshStatus();
-            LocalizationService.Instance.LanguageChanged += _ => RefreshUpdateNotices();
+            LocalizationService.Instance.LanguageChanged += _ =>
+            {
+                RefreshUpdateNotices();
+                if (_lastUpdateStatusKey != null)
+                    UpdateStatusMessage = LocalizationService.T(_lastUpdateStatusKey);
+                if (LatestReleaseVersion == "—" || _lastUpdateStatusKey == "Settings_NoReleasesFound")
+                    LatestReleaseVersion = LocalizationService.T("Settings_NoReleasesFound");
+            };
             _ = CheckForUpdatesAsync();
         }
 
@@ -364,7 +386,12 @@ namespace USM.ViewModels
             InstalledModVersion = _gameDetector.GetInstalledModVersion() ?? "N/A";
             string? packagedPc = PackagedModAssemblyProvider.ExtractPcModAssembly();
             string? packagedVersion = ModAssemblyMetadata.GetVersion(packagedPc ?? "");
-            _packagedPcUpdateAvailable = IsModInstalled && ModAssemblyMetadata.IsNewPackagedVersion(packagedVersion, InstalledModVersion);
+            string installedPath = Path.Combine(GamePath, "Mods", "UnpluggedCustomSongs.dll");
+            _packagedPcUpdateAvailable = IsModInstalled &&
+                (ModAssemblyMetadata.IsNewPackagedVersion(packagedVersion, InstalledModVersion) ||
+                 (ModAssemblyMetadata.CanInstallPackagedVersion(packagedVersion, InstalledModVersion) &&
+                  !string.Equals(ModAssemblyMetadata.GetHash(packagedPc), ModAssemblyMetadata.GetHash(installedPath),
+                      StringComparison.OrdinalIgnoreCase)));
             RefreshUpdateNotices();
             IsCustomSongsReady = Directory.Exists(_gameDetector.GetCustomSongsDir() ?? "");
 
@@ -392,6 +419,8 @@ namespace USM.ViewModels
                 var result = await _updateService.CheckForUpdatesAsync();
                 IsUpdateAvailable = result.IsUpdateAvailable;
                 UpdateStatusMessage = result.Message;
+                _lastUpdateStatusKey = result.Release == null ? "Settings_NoReleasesFound"
+                    : result.IsUpdateAvailable ? null : "Settings_UpToDate";
 
                 if (result.Release != null)
                 {
@@ -510,15 +539,15 @@ namespace USM.ViewModels
                 {
                     UpdateStatusMessage = ex.Message;
                     _notifyCallback?.Invoke(ex.Message);
-                    MessageBox.Show(ex.Message, "SteamVR bindings", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show(ex.Message, LocalizationService.T("Settings_ModInstallFailed"), MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
                 }
                 RefreshStatus();
-                MessageBox.Show(msg, "USM Mod Update", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(msg, LocalizationService.T("Settings_ModUpdateBtn"), MessageBoxButton.OK, MessageBoxImage.Information);
             }
             else
             {
-                MessageBox.Show(msg, "USM Mod Update Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(msg, LocalizationService.T("Settings_ModUpdateBtn"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -599,7 +628,7 @@ namespace USM.ViewModels
         {
             var dlg = new OpenFolderDialog
             {
-                Title = "Select Unplugged VR Installation Folder (contains Unplugged.exe)",
+                Title = LocalizationService.T("Settings_GameFolderPicker"),
                 Multiselect = false
             };
 
@@ -608,11 +637,11 @@ namespace USM.ViewModels
                 if (_gameDetector.SetGamePath(dlg.FolderName))
                 {
                     RefreshStatus();
-                    _notifyCallback?.Invoke("Unplugged game folder updated successfully!");
+                    _notifyCallback?.Invoke(LocalizationService.T("Settings_GameFolderUpdated"));
                 }
                 else
                 {
-                    MessageBox.Show("Selected directory does not appear to contain Unplugged.exe or Unplugged_Data.", "Invalid Folder", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show(LocalizationService.T("Settings_GameFolderInvalid"), LocalizationService.T("Settings_GameFolderTitle"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
             }
         }
@@ -623,14 +652,46 @@ namespace USM.ViewModels
             {
                 ModStatusMessage = msg;
                 RefreshStatus();
-                _notifyCallback?.Invoke("UnpluggedCustomSongs.dll mod plugin installed!");
-                MessageBox.Show(msg, "Mod Installation Successful", MessageBoxButton.OK, MessageBoxImage.Information);
+                _notifyCallback?.Invoke(LocalizationService.T("Settings_ModInstallDone"));
+                MessageBox.Show(LocalizationService.T("Settings_ModInstallDone"), LocalizationService.T("Settings_ModStatusTitle"), MessageBoxButton.OK, MessageBoxImage.Information);
             }
             else
             {
                 ModStatusMessage = msg;
-                MessageBox.Show(msg, "Mod Installation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(msg, LocalizationService.T("Settings_ModInstallFailed"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        private void UninstallMod()
+        {
+            if (!IsModInstalled || string.IsNullOrEmpty(GamePath)) return;
+            if (MessageBox.Show(LocalizationService.T("Settings_ModUninstallConfirm"),
+                LocalizationService.T("Settings_ModUninstallBtn"), MessageBoxButton.YesNo,
+                MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+
+            string expectedExe = Path.GetFullPath(Path.Combine(GamePath, "Unplugged.exe"));
+            foreach (var process in System.Diagnostics.Process.GetProcessesByName("Unplugged"))
+            {
+                using (process)
+                {
+                    try
+                    {
+                        if (string.Equals(process.MainModule?.FileName, expectedExe, StringComparison.OrdinalIgnoreCase))
+                        {
+                            MessageBox.Show(LocalizationService.T("Settings_ModCloseGame"),
+                                LocalizationService.T("Settings_ModUninstallBtn"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                            return;
+                        }
+                    }
+                    catch { }
+                }
+            }
+            bool success = _gameDetector.UninstallModPlugin(out string error);
+            RefreshStatus();
+            string message = success ? LocalizationService.T("Settings_ModUninstallDone") : error;
+            _notifyCallback(message);
+            MessageBox.Show(message, LocalizationService.T("Settings_ModUninstallBtn"), MessageBoxButton.OK,
+                success ? MessageBoxImage.Information : MessageBoxImage.Error);
         }
 
         public async Task InstallMelonAsync()
@@ -639,8 +700,8 @@ namespace USM.ViewModels
             if (string.IsNullOrEmpty(_gameDetector.GamePath) || !Directory.Exists(_gameDetector.GamePath))
             {
                 MessageBox.Show(
-                    "Please select a valid Unplugged game folder first.",
-                    "Game Folder Missing",
+                    LocalizationService.T("Settings_GameFolderMissing"),
+                    LocalizationService.T("Settings_GameFolderTitle"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
                 return;

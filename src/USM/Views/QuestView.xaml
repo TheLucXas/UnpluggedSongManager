@@ -287,6 +287,9 @@
                                        Foreground="{StaticResource BrushTextSecondary}" Margin="0,0,0,12" />
                             <Button ContentTemplate="{StaticResource WrappingButtonContent}" Content="{Binding ModActionText}" Command="{Binding UpdateModCommand}"
                                     Style="{StaticResource PurpleButton}" FontWeight="Bold" />
+                            <Button Content="{DynamicResource Loc_Quest_ModUninstall}" Command="{Binding UninstallModCommand}"
+                                    Style="{StaticResource DangerButton}" Margin="0,8,0,0"
+                                    Visibility="{Binding IsQuestModDllInstalled, Converter={StaticResource BoolToVis}}" />
                         </StackPanel>
                     </StackPanel>
                 </Border>

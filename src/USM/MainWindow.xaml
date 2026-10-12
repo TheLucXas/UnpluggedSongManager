@@ -157,7 +157,7 @@
                                         SnapsToDevicePixels="True">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="3" />
+                                            <ColumnDefinition Width="10" />
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
                                         <Border x:Name="SelectionIndicator"

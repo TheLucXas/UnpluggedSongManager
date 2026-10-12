@@ -199,17 +199,21 @@ namespace USM.ViewModels
         }
         public bool IsModUpdateAvailable => IsModdedInstalled && InstalledModInfo != null &&
             (ModAssemblyMetadata.IsNewPackagedVersion(ModAssemblyMetadata.GetVersion(PackagedModAssemblyProvider.ExtractQuestModAssembly() ?? ""), InstalledModInfo.Version)
+            || (!InstalledModInfo.MatchesPackagedBuild && ModAssemblyMetadata.CanInstallPackagedVersion(
+                ModAssemblyMetadata.GetVersion(PackagedModAssemblyProvider.ExtractQuestModAssembly() ?? ""), InstalledModInfo.Version))
             || (AvailableModRelease?.ModVersion != null && UpdateService.CompareVersions(AvailableModRelease.ModVersion, InstalledModInfo.Version) > 0));
         public string ModActionText => LocalizationService.T(InstalledModInfo == null
             ? "Quest_ModInstall" : IsModUpdateAvailable ? "Quest_ModUpdate" : "Quest_ModReinstall");
         public string ModStatusText => LocalizationService.T(InstalledModInfo == null
             ? "Quest_ModMissing" : IsModUpdateAvailable ? "Quest_ModOutdated" : "Quest_ModCurrent");
+        public bool IsQuestModDllInstalled => InstalledModInfo != null;
 
         private void RefreshModUpdateProperties()
         {
             OnPropertyChanged(nameof(IsModUpdateAvailable));
             OnPropertyChanged(nameof(ModActionText));
             OnPropertyChanged(nameof(ModStatusText));
+            OnPropertyChanged(nameof(IsQuestModDllInstalled));
             CommandManager.InvalidateRequerySuggested();
         }
 
@@ -263,6 +267,7 @@ namespace USM.ViewModels
         public ICommand ClearLogsCommand { get; }
         public ICommand DownloadQuestToolsCommand { get; }
         public ICommand UpdateModCommand { get; }
+        public ICommand UninstallModCommand { get; }
         public ICommand LaunchGameCommand { get; }
 
         public QuestViewModel(GameDetector gameDetector, Action<string> notifyCallback)
@@ -285,6 +290,7 @@ namespace USM.ViewModels
             ImportPcSaveCommand = new AsyncRelayCommand(_ => ImportPcSaveAsync(), _ => !IsBusy && IsDeviceConnected && IsModdedInstalled);
             ClearLogsCommand = new RelayCommand(ClearLogs);
             UpdateModCommand = new AsyncRelayCommand(_ => UpdateModAsync(), _ => !IsBusy && IsDeviceConnected && IsModdedInstalled);
+            UninstallModCommand = new AsyncRelayCommand(_ => UninstallModAsync(), _ => !IsBusy && IsDeviceConnected && InstalledModInfo != null);
             LaunchGameCommand = new AsyncRelayCommand(LaunchGameAsync, _ => !IsBusy && CanLaunchGame);
             DownloadQuestToolsCommand = new AsyncRelayCommand(_ => DownloadQuestToolsAsync(), _ => !IsBusy);
 
@@ -319,9 +325,12 @@ namespace USM.ViewModels
             finally { IsBusy = false; }
         }
 
-        public async Task<bool> UpdateModAsync()
+        public async Task<bool> UpdateModAsync(bool showDialog = true)
         {
             if (IsBusy || SelectedDevice == null || !IsModdedInstalled) return false;
+            if (showDialog && MessageBox.Show(LocalizationService.T("Quest_ModInstallConfirm"),
+                LocalizationService.T("Quest_ModMaintenanceTitle"), MessageBoxButton.YesNo,
+                MessageBoxImage.Question) != MessageBoxResult.Yes) return false;
             string serial = SelectedDevice.Serial;
             IsBusy = true;
             ProgressPercent = 0;
@@ -334,6 +343,9 @@ namespace USM.ViewModels
                 AppendLog(result.Message);
                 _notifyCallback(result.Message);
                 await CheckInstalledPackagesAsync();
+                if (showDialog)
+                    MessageBox.Show(result.Message, LocalizationService.T("Quest_ModMaintenanceTitle"),
+                        MessageBoxButton.OK, result.Success ? MessageBoxImage.Information : MessageBoxImage.Error);
                 return result.Success;
             }
             catch (Exception ex)
@@ -341,6 +353,31 @@ namespace USM.ViewModels
                 AppendLog(ex.Message);
                 _notifyCallback(LocalizationService.T("Quest_ModUpdateFailed"));
                 return false;
+            }
+            finally { IsBusy = false; }
+        }
+
+        private async Task UninstallModAsync()
+        {
+            if (IsBusy || SelectedDevice == null || InstalledModInfo == null) return;
+            if (MessageBox.Show(LocalizationService.T("Quest_ModUninstallConfirm"),
+                LocalizationService.T("Quest_ModMaintenanceTitle"), MessageBoxButton.YesNo,
+                MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+            IsBusy = true;
+            try
+            {
+                var result = await _questService.UninstallModOnlyAsync(SelectedDevice.Serial, AppendLog);
+                AppendLog(result.Message);
+                _notifyCallback(result.Message);
+                await CheckInstalledPackagesAsync();
+                MessageBox.Show(result.Message, LocalizationService.T("Quest_ModMaintenanceTitle"),
+                    MessageBoxButton.OK, result.Success ? MessageBoxImage.Information : MessageBoxImage.Error);
+            }
+            catch (Exception ex)
+            {
+                AppendLog(ex.Message);
+                MessageBox.Show(ex.Message, LocalizationService.T("Quest_ModMaintenanceTitle"),
+                    MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally { IsBusy = false; }
         }
@@ -366,7 +403,7 @@ namespace USM.ViewModels
             {
                 IsBusy = false;
                 ProgressPercent = 0;
-                ProgressStatus = "Ready";
+                ProgressStatus = LocalizationService.T("Ui_Ready");
             }
         }
 
@@ -624,7 +661,7 @@ namespace USM.ViewModels
         {
             var dlg = new OpenFileDialog
             {
-                Title = "Select Unplugged APK",
+                Title = LocalizationService.T("Ui_SelectApk"),
                 Filter = "Android Package (*.apk)|*.apk|All Files (*.*)|*.*"
             };
 
@@ -662,8 +699,8 @@ namespace USM.ViewModels
 
             IsBusy = true;
             ProgressPercent = 0;
-            ProgressStatus = "Starting...";
-            _notifyCallback("Quest modding pipeline in progress...");
+            ProgressStatus = LocalizationService.T("Ui_Starting");
+            _notifyCallback(LocalizationService.T("Ui_QuestPatching"));
 
             var progress = new Progress<(int Percent, string Status)>(report =>
             {
@@ -687,8 +724,8 @@ namespace USM.ViewModels
                 {
                     QuestSongsChanged?.Invoke(this, EventArgs.Empty);
                     ProgressPercent = 100;
-                    ProgressStatus = "Done!";
-                    _notifyCallback("Unplugged Modded successfully deployed to Quest!");
+                    ProgressStatus = LocalizationService.T("Ui_Done");
+                    _notifyCallback(LocalizationService.T("Ui_QuestPatched"));
                     string introNote = SkipIntroAndUnlockCampaign ? LocalizationService.T("Quest_Dialog_PatchCompleteIntroNote") : "";
                     MessageBox.Show(
                         LocalizationService.T("Quest_Dialog_PatchCompleteMsg", introNote),
@@ -700,15 +737,15 @@ namespace USM.ViewModels
                 }
                 else
                 {
-                    ProgressStatus = "Failed.";
-                    _notifyCallback("Quest modding pipeline failed. Check logs.");
+                    ProgressStatus = LocalizationService.T("Ui_Failed");
+                    _notifyCallback(LocalizationService.T("Ui_QuestPatchFailed"));
                     MessageBox.Show(LocalizationService.T("Quest_Dialog_PatchErrorMsg"), LocalizationService.T("Quest_Dialog_PatchErrorTitle"), MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
             catch (Exception ex)
             {
                 AppendLog($"FATAL ERROR: {ex.Message}");
-                ProgressStatus = "Fatal Error";
+                ProgressStatus = LocalizationService.T("Ui_FatalError");
                 _notifyCallback($"Error: {ex.Message}");
             }
             finally
@@ -732,8 +769,8 @@ namespace USM.ViewModels
 
             IsBusy = true;
             ProgressPercent = 0;
-            ProgressStatus = "Uninstalling...";
-            _notifyCallback("Uninstalling Unplugged Modded...");
+            ProgressStatus = LocalizationService.T("Ui_Uninstalling");
+            _notifyCallback(LocalizationService.T("Ui_QuestUninstalling"));
 
             try
             {
@@ -741,14 +778,14 @@ namespace USM.ViewModels
                 if (ok)
                 {
                     ProgressPercent = 100;
-                    ProgressStatus = "Uninstall Complete";
-                    _notifyCallback("Unplugged Modded uninstalled.");
+                    ProgressStatus = LocalizationService.T("Ui_UninstallDone");
+                    _notifyCallback(LocalizationService.T("Ui_QuestUninstalled"));
                     MessageBox.Show(LocalizationService.T("Quest_Dialog_UninstallCompleteMsg"), LocalizationService.T("Quest_Dialog_UninstallCompleteTitle"), MessageBoxButton.OK, MessageBoxImage.Information);
                     await CheckInstalledPackagesAsync();
                 }
                 else
                 {
-                    ProgressStatus = "Uninstall Failed";
+                    ProgressStatus = LocalizationService.T("Ui_UninstallFailed");
                     _notifyCallback($"Error: {msg}");
                     MessageBox.Show(LocalizationService.T("Quest_Dialog_UninstallErrorMsg", msg), LocalizationService.T("Quest_Dialog_UninstallErrorTitle"), MessageBoxButton.OK, MessageBoxImage.Error);
                 }
@@ -866,20 +903,20 @@ namespace USM.ViewModels
             string? songsDir = _gameDetector.GetCustomSongsDir();
             if (string.IsNullOrEmpty(songsDir) || !Directory.Exists(songsDir))
             {
-                MessageBox.Show("No custom songs directory found in USM.", LocalizationService.T("Quest_CustomSongsSyncTitle"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(LocalizationService.T("Ui_NoSongsFolder"), LocalizationService.T("Quest_CustomSongsSyncTitle"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             var allSongDirs = Directory.GetFiles(songsDir, "*.usm");
             if (allSongDirs.Length == 0)
             {
-                MessageBox.Show("No custom songs found to transfer.", LocalizationService.T("Quest_CustomSongsSyncTitle"), MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(LocalizationService.T("Ui_NoSongs"), LocalizationService.T("Quest_CustomSongsSyncTitle"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
             IsBusy = true;
-            ProgressStatus = "Preparing Quest hand charts...";
-            _notifyCallback("Preparing songs for Quest hand mode...");
+            ProgressStatus = LocalizationService.T("Ui_PreparingQuestCharts");
+            _notifyCallback(LocalizationService.T("Ui_QuestPreparingSongs"));
 
             // An older .usm may have the same filename on both devices but lack the
             // native hand mapping required by the current Quest mod. Prepare the
@@ -899,16 +936,16 @@ namespace USM.ViewModels
                 catch (Exception ex)
                 {
                     AppendLog($"Could not prepare Quest hand charts for {Path.GetFileName(songPath)}: {ex.Message}");
-                    MessageBox.Show($"Could not prepare {Path.GetFileName(songPath)} for Quest hand mode: {ex.Message}",
+                    MessageBox.Show(LocalizationService.T("Ui_QuestPreparingSongFailed", Path.GetFileName(songPath), ex.Message),
                         LocalizationService.T("Quest_CustomSongsSyncTitle"), MessageBoxButton.OK, MessageBoxImage.Error);
                     IsBusy = false;
-                    ProgressStatus = "Ready";
+                    ProgressStatus = LocalizationService.T("Ui_Ready");
                     return;
                 }
             }
 
-            ProgressStatus = "Checking Quest songs...";
-            _notifyCallback("Checking installed songs on Quest...");
+            ProgressStatus = LocalizationService.T("Ui_CheckingQuestSongs");
+            _notifyCallback(LocalizationService.T("Ui_QuestCheckingSongs"));
 
             List<string> songsToSync;
             try
@@ -958,7 +995,7 @@ namespace USM.ViewModels
                     {
                         AppendLog(LocalizationService.T("Log_SyncAllUpToDate", allSongDirs.Length, QuestService.ModdedSongsPath));
                         IsBusy = false;
-                        ProgressStatus = "Ready";
+                        ProgressStatus = LocalizationService.T("Ui_Ready");
                         return;
                     }
                 }
@@ -973,7 +1010,7 @@ namespace USM.ViewModels
                     if (confirm != MessageBoxResult.Yes)
                     {
                         IsBusy = false;
-                        ProgressStatus = "Ready";
+                        ProgressStatus = LocalizationService.T("Ui_Ready");
                         return;
                     }
                     AppendLog(LocalizationService.T("Log_SyncIncremental", existingOnQuest.Count, songsToSync.Count));
@@ -989,7 +1026,7 @@ namespace USM.ViewModels
                     if (confirm != MessageBoxResult.Yes)
                     {
                         IsBusy = false;
-                        ProgressStatus = "Ready";
+                        ProgressStatus = LocalizationService.T("Ui_Ready");
                         return;
                     }
                 }
@@ -1001,13 +1038,13 @@ namespace USM.ViewModels
             }
 
             ProgressPercent = 0;
-            ProgressStatus = "Syncing Songs...";
+            ProgressStatus = LocalizationService.T("Ui_SyncingSongs");
             _notifyCallback($"Transferring {songsToSync.Count} song(s) to Quest...");
 
             var progress = new Progress<(int Current, int Total)>(report =>
             {
                 ProgressPercent = (int)((double)report.Current / report.Total * 100);
-                ProgressStatus = $"Transferring song {report.Current}/{report.Total}...";
+                ProgressStatus = LocalizationService.T("Ui_QuestTransferringSong", report.Current, report.Total);
             });
 
             try
@@ -1025,7 +1062,7 @@ namespace USM.ViewModels
                 QuestSongsChanged?.Invoke(this, EventArgs.Empty);
 
                 ProgressPercent = 100;
-                ProgressStatus = $"Sync Complete! ({transferred} songs)";
+                ProgressStatus = LocalizationService.T("Ui_QuestSyncDone", transferred);
                 _notifyCallback($"Successfully synced {transferred} songs to Quest!");
                 MessageBox.Show(
                     LocalizationService.T("Quest_Dialog_SyncCompleteMsg", transferred),

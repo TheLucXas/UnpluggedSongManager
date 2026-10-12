@@ -172,7 +172,7 @@ namespace USM.ViewModels
                 if (updatePc)
                     results.Add("PC: " + LocalizationService.T(await SettingsVM.UpdatePcModAsync() ? "Nav_ModUpdateDone" : "Nav_ModUpdateFailed"));
                 if (updateQuest)
-                    results.Add("Quest: " + LocalizationService.T(await QuestVM.UpdateModAsync() ? "Nav_ModUpdateDone" : "Nav_ModUpdateFailed"));
+                    results.Add("Quest: " + LocalizationService.T(await QuestVM.UpdateModAsync(showDialog: false) ? "Nav_ModUpdateDone" : "Nav_ModUpdateFailed"));
                 string summary = string.Join(Environment.NewLine, results);
                 Notify(summary);
                 MessageBox.Show(summary, LocalizationService.T("Nav_UpdateModsTitle"), MessageBoxButton.OK,
@@ -189,7 +189,7 @@ namespace USM.ViewModels
                 if (processes.Length > 0)
                 {
                     Notify("Unplugged VR is already running!");
-                    MessageBox.Show("Unplugged VR is already running on your PC.", "Game Already Running", MessageBoxButton.OK, MessageBoxImage.Information);
+                    MessageBox.Show(LocalizationService.T("Ui_AlreadyRunning"), LocalizationService.T("Nav_LaunchGame"), MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
 
@@ -241,7 +241,7 @@ namespace USM.ViewModels
                     }
                 }
 
-                MessageBox.Show("Could not launch Unplugged VR. Ensure Steam is running or check the game folder path in Settings.", "Launch Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(LocalizationService.T("Ui_LaunchFailed"), LocalizationService.T("Nav_LaunchGame"), MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             catch (Exception ex)
             {

@@ -327,6 +327,32 @@ namespace USM.Core.Services
             return false;
         }
 
+        public bool UninstallModPlugin(out string message)
+        {
+            if (string.IsNullOrEmpty(GamePath) || !IsValidGamePath(GamePath))
+            {
+                message = "Game location not set.";
+                return false;
+            }
+            try
+            {
+                string target = Path.Combine(GamePath, "Mods", "UnpluggedCustomSongs.dll");
+                if (!File.Exists(target))
+                {
+                    message = "The PC mod is not installed.";
+                    return false;
+                }
+                File.Delete(target);
+                message = "PC mod removed.";
+                return true;
+            }
+            catch (Exception ex)
+            {
+                message = ex.Message;
+                return false;
+            }
+        }
+
         private static IEnumerable<string> GetPcModAssemblyCandidates()
         {
             string? embeddedMod = PackagedModAssemblyProvider.ExtractPcModAssembly();

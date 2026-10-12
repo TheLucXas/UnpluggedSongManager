@@ -1463,6 +1463,46 @@ namespace USM.Core.Services.Quest
             finally { if (releasePath != null) try { File.Delete(releasePath); } catch { } }
         }
 
+        public async Task<(bool Success, string Message)> UninstallModOnlyAsync(string serial, Action<string>? log = null)
+        {
+            if (!await IsPackageInstalledAsync(serial, ModdedPackage))
+                return (false, LocalizationService.T("Quest_ModNeedsApp"));
+            var (stopCode, _, stopError) = await RunProcessAsync(GetAdbPath(),
+                $"-s {serial} shell am force-stop {ModdedPackage}");
+            if (stopCode != 0) return (false, stopError);
+
+            // Remove only our assembly. Keep the APK, LemonLoader, songs and save.
+            string activeDirectory = await ResolveQuestModDirectoryAsync(serial, ModdedPackage);
+            string activePath = $"{activeDirectory}/UnpluggedCustomSongs.Quest.dll";
+            var (activeCode, activeOut, activeErr) = await RunProcessAsync(GetAdbPath(),
+                $"-s {serial} shell rm -f \"{activePath}\"");
+            if (activeCode != 0)
+                return (false, $"{activePath}: {(activeOut + " " + activeErr).Trim()}");
+            var (verifyCode, _, _) = await RunProcessAsync(GetAdbPath(),
+                $"-s {serial} shell test -f \"{activePath}\"");
+            if (verifyCode == 0)
+                return (false, $"Could not remove {activePath}.");
+            log?.Invoke($"Removed {activePath}");
+
+            // Old installs may have a duplicate in another known location.
+            // Android/data can deny access on some firmware, so that cleanup
+            // does not turn a successful removal of the active DLL into failure.
+            foreach (string directory in GetQuestModDirectories(ModdedPackage))
+            {
+                foreach (string name in new[] { "UnpluggedCustomSongs.Quest.dll", "UnpluggedCustomSongs.dll" })
+                {
+                    string path = $"{directory}/{name}";
+                    if (path == activePath) continue;
+                    var (code, stdout, stderr) = await RunProcessAsync(GetAdbPath(),
+                        $"-s {serial} shell rm -f \"{path}\"");
+                    if (code != 0)
+                        log?.Invoke($"Could not clean old copy {path}: {(stdout + " " + stderr).Trim()}");
+                    else log?.Invoke($"Removed old copy {path}");
+                }
+            }
+            return (true, LocalizationService.T("Quest_ModUninstallDone"));
+        }
+
         public async Task<bool> DeployModDllAsync(string serial, string packageName, Action<string>? log = null, string? modOverridePath = null)
         {
             try
