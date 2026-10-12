@@ -66,21 +66,34 @@ namespace UnpluggedCustomSongs
                 changed |= AddAction(actions, "USM_RightPrimary", "boolean");
                 if (changed) SaveJson(manifestPath, manifest);
 
-                foreach (string bindingName in new[] { "bindings_oculus_touch.json", "bindings_knuckles.json" })
+                // Steam Link and Virtual Desktop can expose the same Quest
+                // controllers through different SteamVR controller profiles.
+                var profiles = new[]
                 {
-                    string bindingPath = Path.Combine(dir, bindingName);
+                    (File: "bindings_oculus_touch.json", Axis: "thumbstick", Mode: "joystick", LeftPrimary: "x"),
+                    (File: "bindings_knuckles.json", Axis: "thumbstick", Mode: "joystick", LeftPrimary: "a"),
+                    (File: "bindings_holographic_controller.json", Axis: "trackpad", Mode: "trackpad", LeftPrimary: "x"),
+                    (File: "bindings_vive_cosmos_controller.json", Axis: "joystick", Mode: "joystick", LeftPrimary: "x"),
+                    (File: "bindings_vive_controller.json", Axis: "trackpad", Mode: "trackpad", LeftPrimary: (string)null)
+                };
+                foreach (var profile in profiles)
+                {
+                    string bindingPath = Path.Combine(dir, profile.File);
                     if (!File.Exists(bindingPath)) continue;
                     var binding = JObject.Parse(File.ReadAllText(bindingPath));
                     var sources = binding["bindings"]?["/actions/default"]?["sources"] as JArray;
                     if (sources == null) continue;
                     bool bindingChanged = false;
-                    bindingChanged |= AddStickBinding(sources, "left", "USM_LeftStick");
-                    bindingChanged |= AddStickBinding(sources, "right", "USM_RightStick");
-                    bindingChanged |= AddButtonBinding(sources, "left", "x", "USM_LeftPrimary");
-                    bindingChanged |= AddButtonBinding(sources, "right", "a", "USM_RightPrimary");
+                    bindingChanged |= AddStickBinding(sources, "left", profile.Axis, profile.Mode, "USM_LeftStick");
+                    bindingChanged |= AddStickBinding(sources, "right", profile.Axis, profile.Mode, "USM_RightStick");
+                    if (profile.LeftPrimary != null)
+                    {
+                        bindingChanged |= AddButtonBinding(sources, "left", profile.LeftPrimary, "USM_LeftPrimary");
+                        bindingChanged |= AddButtonBinding(sources, "right", "a", "USM_RightPrimary");
+                    }
                     if (bindingChanged) SaveJson(bindingPath, binding);
                 }
-                MelonLogger.Msg("[PcVrInput] SteamVR stick and A+X actions are present in the game bindings.");
+                MelonLogger.Msg("[PcVrInput] SteamVR navigation and primary-button actions are present in supported controller bindings.");
             }
             catch (Exception ex)
             {
@@ -97,22 +110,22 @@ namespace UnpluggedCustomSongs
             return true;
         }
 
-        private static bool AddStickBinding(JArray sources, string hand, string action)
+        private static bool AddStickBinding(JArray sources, string hand, string axisName, string mode, string action)
         {
-            string path = $"/user/hand/{hand}/input/thumbstick";
+            string path = $"/user/hand/{hand}/input/{axisName}";
             var source = sources.OfType<JObject>().FirstOrDefault(item =>
                 string.Equals((string)item["path"], path, StringComparison.OrdinalIgnoreCase));
             bool changed = false;
             if (source == null)
             {
-                source = new JObject { ["path"] = path, ["mode"] = "joystick",
+                source = new JObject { ["path"] = path, ["mode"] = mode,
                     ["parameters"] = new JObject(), ["inputs"] = new JObject() };
                 sources.Add(source);
                 changed = true;
             }
-            if ((string)source["mode"] != "joystick")
+            if ((string)source["mode"] != mode)
             {
-                source["mode"] = "joystick";
+                source["mode"] = mode;
                 changed = true;
             }
             var inputs = source["inputs"] as JObject;
