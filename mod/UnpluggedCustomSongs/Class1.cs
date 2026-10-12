@@ -45,6 +45,7 @@ namespace UnpluggedCustomSongs
         private static float nextHandleAttempt;
         private static bool handlesReady;
         private static bool warnedMissingBindings;
+        private static float nextInputDiagnostic;
 
         public static void EnsureBindings()
         {
@@ -70,7 +71,7 @@ namespace UnpluggedCustomSongs
                 // controllers through different SteamVR controller profiles.
                 var profiles = new[]
                 {
-                    (File: "bindings_oculus_touch.json", Axis: "thumbstick", Mode: "joystick", LeftPrimary: "x"),
+                    (File: "bindings_oculus_touch.json", Axis: "joystick", Mode: "joystick", LeftPrimary: "x"),
                     (File: "bindings_knuckles.json", Axis: "thumbstick", Mode: "joystick", LeftPrimary: "a"),
                     (File: "bindings_holographic_controller.json", Axis: "trackpad", Mode: "trackpad", LeftPrimary: "x"),
                     (File: "bindings_vive_cosmos_controller.json", Axis: "joystick", Mode: "joystick", LeftPrimary: "x"),
@@ -84,6 +85,13 @@ namespace UnpluggedCustomSongs
                     var sources = binding["bindings"]?["/actions/default"]?["sources"] as JArray;
                     if (sources == null) continue;
                     bool bindingChanged = false;
+                    if (profile.File == "bindings_oculus_touch.json")
+                    {
+                        // SteamVR's Oculus Touch profile calls this source /input/joystick.
+                        // Remove the invalid path written by previous USM builds.
+                        bindingChanged |= RemoveObsoleteStickBinding(sources, "left");
+                        bindingChanged |= RemoveObsoleteStickBinding(sources, "right");
+                    }
                     bindingChanged |= AddStickBinding(sources, "left", profile.Axis, profile.Mode, "USM_LeftStick");
                     bindingChanged |= AddStickBinding(sources, "right", profile.Axis, profile.Mode, "USM_RightStick");
                     if (profile.LeftPrimary != null)
@@ -137,6 +145,18 @@ namespace UnpluggedCustomSongs
                 changed = true;
             }
             return changed;
+        }
+
+        private static bool RemoveObsoleteStickBinding(JArray sources, string hand)
+        {
+            string path = $"/user/hand/{hand}/input/thumbstick";
+            string output = ActionPrefix + $"usm_{hand}stick";
+            var obsolete = sources.OfType<JObject>().Where(item =>
+                string.Equals((string)item["path"], path, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals((string)item["inputs"]?["position"]?["output"], output,
+                    StringComparison.OrdinalIgnoreCase)).ToList();
+            foreach (var item in obsolete) item.Remove();
+            return obsolete.Count > 0;
         }
 
         private static bool AddButtonBinding(JArray sources, string hand, string button, string action)
@@ -214,11 +234,13 @@ namespace UnpluggedCustomSongs
             ReadXrStick(XRNode.RightHand, ref x);
             ReadOpenVrStick(ETrackedControllerRole.LeftHand, ref x);
             ReadOpenVrStick(ETrackedControllerRole.RightHand, ref x);
+            LogInputState();
             return x;
         }
 
         public static bool BothPrimaryButtons()
         {
+            LogInputState();
             if (ResolveActions() && ReadButtonAction(leftPrimaryHandle) &&
                 ReadButtonAction(rightPrimaryHandle)) return true;
             bool left = ReadXrPrimary(XRNode.LeftHand);
@@ -226,6 +248,30 @@ namespace UnpluggedCustomSongs
             if (left && right) return true;
             return ReadOpenVrPrimary(ETrackedControllerRole.LeftHand) &&
                    ReadOpenVrPrimary(ETrackedControllerRole.RightHand);
+        }
+
+        private static void LogInputState()
+        {
+            if (!ResolveActions() || Time.unscaledTime < nextInputDiagnostic)
+                return;
+            // One compact line every 20 seconds makes inactive bindings visible
+            // in the normal MelonLoader log without flooding it each frame.
+            nextInputDiagnostic = Time.unscaledTime + 20f;
+            var input = OpenVR.Input;
+            var leftAxis = default(InputAnalogActionData_t);
+            var rightAxis = default(InputAnalogActionData_t);
+            var leftButton = default(InputDigitalActionData_t);
+            var rightButton = default(InputDigitalActionData_t);
+            var axisSize = (uint)Marshal.SizeOf(typeof(InputAnalogActionData_t));
+            var buttonSize = (uint)Marshal.SizeOf(typeof(InputDigitalActionData_t));
+            var leftAxisError = input.GetAnalogActionData(leftStickHandle, ref leftAxis, axisSize, 0);
+            var rightAxisError = input.GetAnalogActionData(rightStickHandle, ref rightAxis, axisSize, 0);
+            var leftButtonError = input.GetDigitalActionData(leftPrimaryHandle, ref leftButton, buttonSize, 0);
+            var rightButtonError = input.GetDigitalActionData(rightPrimaryHandle, ref rightButton, buttonSize, 0);
+            MelonLogger.Msg($"[PcVrInput] LStick={leftAxisError}/{leftAxis.bActive}/{leftAxis.x:F2}, " +
+                $"RStick={rightAxisError}/{rightAxis.bActive}/{rightAxis.x:F2}, " +
+                $"X={leftButtonError}/{leftButton.bActive}/{leftButton.bState}, " +
+                $"A={rightButtonError}/{rightButton.bActive}/{rightButton.bState}.");
         }
 
         private static void ReadXrStick(XRNode hand, ref float x)
