@@ -69,7 +69,7 @@
 
 ## 🚀 Install from a release
 
-Download the ready-to-run USM app and separate PC/Quest mod DLLs from [GitHub Releases](https://github.com/TheLucXas/USM/releases). The first public release will accompany the initial public `main` branch.
+Download the ready-to-run USM app and separate PC/Quest mod DLLs from [GitHub Releases](https://github.com/TheLucXas/USM/releases). Each release provides the three builds; the Windows app still requires the .NET 8 Desktop Runtime listed above.
 
 ### Windows PC · through USM
 
