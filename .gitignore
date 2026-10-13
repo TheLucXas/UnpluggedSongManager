@@ -31,3 +31,31 @@ Thumbs.db
 *.log
 .idea/
 .vscode/
+
+# Local credentials, device data and personal captures
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.jks
+*.apk
+*.aab
+*.obb
+*.usm
+*.bak
+full_save.json
+logcat.txt
+CustomSongLoaderDump.txt
+tools/notify_whatsapp.py
+QuestCaptures/
+
+# Quest Tools Scratch / Work
+tools/quest_work/
+tools/quest/lemon_patcher/
+tools/quest/*.zip
+tools/quest/Il2CppAssemblies/
+tools/quest/MelonNet/
