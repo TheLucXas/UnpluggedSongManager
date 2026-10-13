@@ -54,7 +54,7 @@ namespace USM.Core.Services
         };
 
         public const string DefaultOwner = "TheLucXas";
-        public const string DefaultRepo = "USM";
+        public const string DefaultRepo = "UnpluggedSongManager";
 
         public string CurrentAppVersion
         {
@@ -614,7 +614,7 @@ namespace USM.Core.Services
 
                 if (string.IsNullOrEmpty(downloadUrl))
                 {
-                    downloadUrl = "https://github.com/TheLucXas/USM/releases/download/v2.0.0/quest-tools.zip";
+                    downloadUrl = "https://github.com/TheLucXas/UnpluggedSongManager/releases/download/v2.0.0/quest-tools.zip";
                 }
 
                 progress?.Report((5, LocalizationService.T("Log_QuestToolsDownloading", 5)));

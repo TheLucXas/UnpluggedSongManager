@@ -181,18 +181,18 @@ namespace USM.Tests
                 string sampleJson = "{\n" +
                     "  \"tag_name\": \"v2.1.0\",\n" +
                     "  \"name\": \"USM 2.1.0 Release\",\n" +
-                    "  \"html_url\": \"https://github.com/TheLucXas/USM/releases/tag/v2.1.0\",\n" +
+                    "  \"html_url\": \"https://github.com/TheLucXas/UnpluggedSongManager/releases/tag/v2.1.0\",\n" +
                     "  \"body\": \"Fixed bugs and added Quest patcher.\",\n" +
                     "  \"published_at\": \"2026-10-06T12:00:00Z\",\n" +
                     "  \"assets\": [\n" +
                     "    {\n" +
                     "      \"name\": \"USM-v2.1.0.zip\",\n" +
-                    "      \"browser_download_url\": \"https://github.com/TheLucXas/USM/releases/download/v2.1.0/USM-v2.1.0.zip\",\n" +
+                    "      \"browser_download_url\": \"https://github.com/TheLucXas/UnpluggedSongManager/releases/download/v2.1.0/USM-v2.1.0.zip\",\n" +
                     "      \"size\": 15000000\n" +
                     "    },\n" +
                     "    {\n" +
                     "      \"name\": \"UnpluggedCustomSongs.dll\",\n" +
-                    "      \"browser_download_url\": \"https://github.com/TheLucXas/USM/releases/download/v2.1.0/UnpluggedCustomSongs.dll\",\n" +
+                    "      \"browser_download_url\": \"https://github.com/TheLucXas/UnpluggedSongManager/releases/download/v2.1.0/UnpluggedCustomSongs.dll\",\n" +
                     "      \"size\": 25000\n" +
                     "    }\n" +
                     "  ]\n" +

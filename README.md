@@ -5,7 +5,7 @@
 > [!IMPORTANT]
 > USM is a community project, independent of the game and the services it uses. You need your own copy of _Unplugged_ and the right to use any charts or audio you import. The repository and releases do not include the game, commercial songs, or Quest APKs.
 >
-> This project was developed with generative AI and may contain bugs. Please report problems in [GitHub Issues](https://github.com/TheLucXas/USM/issues).
+> This project was developed with generative AI and may contain bugs. Please report problems in [GitHub Issues](https://github.com/TheLucXas/UnpluggedSongManager/issues).
 
 ## ✨ What's included?
 
@@ -69,7 +69,7 @@
 
 ## 🚀 Install from a release
 
-Download the ready-to-run USM app and separate PC/Quest mod DLLs from [GitHub Releases](https://github.com/TheLucXas/USM/releases). Each release provides the three builds; the Windows app still requires the .NET 8 Desktop Runtime listed above.
+Download the ready-to-run USM app and separate PC/Quest mod DLLs from [GitHub Releases](https://github.com/TheLucXas/UnpluggedSongManager/releases). Each release provides the three builds; the Windows app still requires the .NET 8 Desktop Runtime listed above.
 
 ### Windows PC · through USM
 

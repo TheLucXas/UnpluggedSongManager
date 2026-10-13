@@ -140,7 +140,7 @@ namespace USM.ViewModels
             set => SetProperty(ref _updateProgress, value);
         }
 
-        private string _releaseUrl = "https://github.com/TheLucXas/USM/releases";
+        private string _releaseUrl = "https://github.com/TheLucXas/UnpluggedSongManager/releases";
         public string ReleaseUrl
         {
             get => _releaseUrl;
