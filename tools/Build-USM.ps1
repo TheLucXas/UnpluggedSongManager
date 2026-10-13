@@ -54,7 +54,7 @@ $QuestReferencesDir = (Resolve-Path $QuestReferencesDir).Path
 $env:UNPLUGGED_GAME_DIR = $GameDir
 $projectFile = Join-Path $repoRoot 'src\USM\USM.csproj'
 $outputDir = Join-Path $repoRoot 'dist\USM-CSharp'
-& dotnet publish $projectFile -c Release -r win-x64 -o $outputDir /p:UseSharedCompilation=false "/p:QuestReferencesDir=$QuestReferencesDir"
+& dotnet publish $projectFile -c Release -r win-x64 -o $outputDir /p:UseSharedCompilation=false /p:DebugType=none /p:DebugSymbols=false "/p:QuestReferencesDir=$QuestReferencesDir"
 if ($LASTEXITCODE -ne 0) { throw "USM build failed with exit code $LASTEXITCODE." }
 
 Write-Host "USM ready: $(Join-Path $outputDir 'USM.exe')"

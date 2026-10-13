@@ -45,8 +45,6 @@
     <ProjectReference Include="$(PcModProject)" Condition="Exists('$(PcGameAssembly)')" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained" />
   </ItemGroup>
 
-  <ItemGroup><None Include="Resources\**\*"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></None></ItemGroup>
-
   <Target Name="CopyQuestModToBuildOutput" AfterTargets="Build">
     <Copy SourceFiles="$(QuestModAssembly)" DestinationFiles="$(OutputPath)UnpluggedCustomSongs.Quest.dll" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(PcModAssembly)" DestinationFiles="$(OutputPath)UnpluggedCustomSongs.PC.dll" SkipUnchangedFiles="true" Condition="Exists('$(PcModAssembly)')" />
