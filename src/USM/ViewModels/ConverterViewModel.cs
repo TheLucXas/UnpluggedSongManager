@@ -8,6 +8,7 @@ using System.Windows.Input;
 using Microsoft.Win32;
 using USM.Core.Models;
 using USM.Core.Services;
+using USM.Core.Services.Localization;
 
 namespace USM.ViewModels
 {
@@ -18,7 +19,9 @@ namespace USM.ViewModels
 
         private bool _isConverting;
         private double _overallProgress;
-        private string _statusText = "Status: Ready (Drop or select files to convert automatically)";
+        private string _statusText = LocalizationService.T("Converter_StatusReady");
+        private string _statusKey = "Converter_StatusReady";
+        private object[] _statusArgs = Array.Empty<object>();
         private string _logText = string.Empty;
         private CancellationTokenSource? _cts;
         public bool IsConverting
@@ -37,6 +40,13 @@ namespace USM.ViewModels
         {
             get => _statusText;
             set => SetProperty(ref _statusText, value);
+        }
+
+        private void SetLocalizedStatus(string key, params object[] args)
+        {
+            _statusKey = key;
+            _statusArgs = args;
+            StatusText = LocalizationService.T(key, args);
         }
 
         public string LogText
@@ -61,6 +71,7 @@ namespace USM.ViewModels
             BrowseFolderCommand = new RelayCommand(BrowseFolder);
             ClearQueueCommand = new RelayCommand(ClearQueue);
             CancelCommand = new RelayCommand(CancelConversion);
+            LocalizationService.Instance.LanguageChanged += _ => StatusText = LocalizationService.T(_statusKey, _statusArgs);
         }
 
         private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -122,7 +133,7 @@ namespace USM.ViewModels
             var dlg = new OpenFileDialog
             {
                 Title = USM.Core.Services.Localization.LocalizationService.T("Ui_SelectChartFiles"),
-                Filter = "Supported Chart Packages (*.zip;*.sng)|*.zip;*.sng|Clone Hero SNG (*.sng)|*.sng|Zip Archives (*.zip)|*.zip",
+                Filter = LocalizationService.T("Converter_FileFilter"),
                 Multiselect = true
             };
 
@@ -151,7 +162,7 @@ namespace USM.ViewModels
             if (!IsConverting)
             {
                 Queue.Clear();
-                StatusText = "Queue cleared. Ready for new files.";
+                SetLocalizedStatus("Converter_StatusCleared");
             }
         }
 
@@ -194,7 +205,7 @@ namespace USM.ViewModels
                     string itemName = Path.GetFileName(currentItem);
                     if (string.IsNullOrEmpty(itemName)) itemName = currentItem;
 
-                    StatusText = $"Converting ({completed + 1}/{total}): {itemName}...";
+                    SetLocalizedStatus("Converter_StatusConverting", completed + 1, total, itemName);
                     AppendLog($"\n>>> Processing: {itemName}");
 
                     var progress = new Progress<ConversionProgress>(cp =>
@@ -216,19 +227,20 @@ namespace USM.ViewModels
 
                     if (success)
                     {
-                        _notifyCallback?.Invoke($"Converted: {itemName}");
+                        _notifyCallback?.Invoke(LocalizationService.T("Converter_ConvertedToast", itemName));
                     }
                 }
 
-                StatusText = _cts.IsCancellationRequested
-                    ? "Conversion stopped by user."
-                    : $"Completed! {completed} songs converted and ready in Unplugged VR.";
+                if (_cts.IsCancellationRequested)
+                    SetLocalizedStatus("Converter_StatusStopped");
+                else
+                    SetLocalizedStatus("Converter_StatusCompleted", completed);
                 OverallProgress = 1.0;
             }
             catch (Exception ex)
             {
                 AppendLog($"[FATAL ERROR] {ex.Message}");
-                StatusText = "Conversion error occurred.";
+                SetLocalizedStatus("Converter_StatusError");
             }
             finally
             {

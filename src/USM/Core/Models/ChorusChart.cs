@@ -254,10 +254,10 @@ namespace USM.Core.Models
             set => SetProperty(ref _downloadProgress, value);
         }
 
-        private string _statusText = "📥 Download";
+        private string _statusText = USM.Core.Services.Localization.LocalizationService.T("Search_Download");
         public string StatusText
         {
-            get => string.IsNullOrEmpty(_statusText) ? "📥 Download" : _statusText;
+            get => string.IsNullOrEmpty(_statusText) ? USM.Core.Services.Localization.LocalizationService.T("Search_Download") : _statusText;
             set => SetProperty(ref _statusText, value);
         }
     }

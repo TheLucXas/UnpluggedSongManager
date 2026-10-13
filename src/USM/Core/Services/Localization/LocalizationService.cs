@@ -23,7 +23,12 @@ namespace USM.Core.Services.Localization
         {
             new LanguageItem { Code = "en", DisplayName = "English (Default)" },
             new LanguageItem { Code = "es", DisplayName = "Español" },
-            new LanguageItem { Code = "pt", DisplayName = "Português" }
+            new LanguageItem { Code = "pt", DisplayName = "Português" },
+            new LanguageItem { Code = "fr", DisplayName = "Français" },
+            new LanguageItem { Code = "de", DisplayName = "Deutsch" },
+            new LanguageItem { Code = "it", DisplayName = "Italiano" },
+            new LanguageItem { Code = "ja", DisplayName = "日本語" },
+            new LanguageItem { Code = "zh-CN", DisplayName = "简体中文" }
         };
 
         private string _currentLanguage = "en";
@@ -52,7 +57,7 @@ namespace USM.Core.Services.Localization
 
         public void Initialize(string? savedLanguage)
         {
-            if (!string.IsNullOrEmpty(savedLanguage) && (savedLanguage == "es" || savedLanguage == "en" || savedLanguage == "pt"))
+            if (!string.IsNullOrEmpty(savedLanguage) && SupportedLanguages.Exists(language => language.Code == savedLanguage))
             {
                 _currentLanguage = savedLanguage;
             }
@@ -204,6 +209,14 @@ namespace USM.Core.Services.Localization
                 ["Converter_SelectFolder"] = "📂 Select Folder",
                 ["Converter_ClearQueue"] = "Clear Queue",
                 ["Converter_StopCancel"] = "⏹ Stop / Cancel",
+                ["Converter_StatusReady"] = "Ready. Drop or select files to convert automatically.",
+                ["Converter_StatusCleared"] = "Queue cleared. Ready for new files.",
+                ["Converter_StatusConverting"] = "Converting ({0}/{1}): {2}...",
+                ["Converter_StatusStopped"] = "Conversion stopped.",
+                ["Converter_StatusCompleted"] = "Completed: {0} songs converted and ready in Unplugged VR.",
+                ["Converter_StatusError"] = "Conversion failed.",
+                ["Converter_ConvertedToast"] = "Converted: {0}",
+                ["Converter_FileFilter"] = "Supported chart packages (*.zip;*.sng)|*.zip;*.sng|Clone Hero SNG (*.sng)|*.sng|ZIP archives (*.zip)|*.zip",
                 ["Quest_StatusLabel"] = "Status:",
                 ["Settings_IncreaseTooltip"] = "Increase",
                 ["Settings_DecreaseTooltip"] = "Decrease",
@@ -660,6 +673,14 @@ namespace USM.Core.Services.Localization
                 ["Converter_SelectFolder"] = "📂 Seleccionar carpeta",
                 ["Converter_ClearQueue"] = "Vaciar cola",
                 ["Converter_StopCancel"] = "⏹ Detener / cancelar",
+                ["Converter_StatusReady"] = "Listo. Arrastra o selecciona archivos para convertirlos automáticamente.",
+                ["Converter_StatusCleared"] = "Cola vaciada. Listo para nuevos archivos.",
+                ["Converter_StatusConverting"] = "Convirtiendo ({0}/{1}): {2}...",
+                ["Converter_StatusStopped"] = "Conversión detenida.",
+                ["Converter_StatusCompleted"] = "Listo: {0} canciones convertidas y disponibles en Unplugged VR.",
+                ["Converter_StatusError"] = "La conversión falló.",
+                ["Converter_ConvertedToast"] = "Convertido: {0}",
+                ["Converter_FileFilter"] = "Paquetes de charts compatibles (*.zip;*.sng)|*.zip;*.sng|SNG de Clone Hero (*.sng)|*.sng|Archivos ZIP (*.zip)|*.zip",
                 ["Quest_StatusLabel"] = "Estado:",
                 ["Settings_IncreaseTooltip"] = "Aumentar",
                 ["Settings_DecreaseTooltip"] = "Disminuir",
@@ -1116,6 +1137,14 @@ namespace USM.Core.Services.Localization
                 ["Converter_SelectFolder"] = "📂 Selecionar pasta",
                 ["Converter_ClearQueue"] = "Limpar fila",
                 ["Converter_StopCancel"] = "⏹ Parar / cancelar",
+                ["Converter_StatusReady"] = "Pronto. Arraste ou selecione arquivos para convertê-los automaticamente.",
+                ["Converter_StatusCleared"] = "Fila limpa. Pronto para novos arquivos.",
+                ["Converter_StatusConverting"] = "Convertendo ({0}/{1}): {2}...",
+                ["Converter_StatusStopped"] = "Conversão interrompida.",
+                ["Converter_StatusCompleted"] = "Concluído: {0} músicas convertidas e prontas no Unplugged VR.",
+                ["Converter_StatusError"] = "Falha na conversão.",
+                ["Converter_ConvertedToast"] = "Convertido: {0}",
+                ["Converter_FileFilter"] = "Pacotes de charts compatíveis (*.zip;*.sng)|*.zip;*.sng|SNG do Clone Hero (*.sng)|*.sng|Arquivos ZIP (*.zip)|*.zip",
                 ["Quest_StatusLabel"] = "Status:",
                 ["Settings_IncreaseTooltip"] = "Aumentar",
                 ["Settings_DecreaseTooltip"] = "Diminuir",
@@ -1484,7 +1513,12 @@ namespace USM.Core.Services.Localization
                 ["Log_QuestToolsExtracting"] = "Extraindo ferramentas do Quest para o cache local...",
                 ["Log_QuestToolsCached"] = "Ferramentas de patch do Quest prontas no cache local ({0}).",
                 ["Log_QuestToolsFailed"] = "Falha ao baixar as ferramentas de patch do Quest: {0}"
-            }
+            },
+            ["fr"] = LocalizationFrench.Items,
+            ["de"] = LocalizationGerman.Items,
+            ["it"] = LocalizationItalian.Items,
+            ["ja"] = LocalizationJapanese.Items,
+            ["zh-CN"] = LocalizationChineseSimplified.Items
         };
     }
 }

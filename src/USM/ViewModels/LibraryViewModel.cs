@@ -56,7 +56,7 @@ namespace USM.ViewModels
 
         private string _filterQuery = string.Empty;
         private int _selectedTrackTypeFilterIndex;
-        private string _songCountText = "0 songs";
+        private string _songCountText = LocalizationService.T("Library_SongsCount", 0, 0);
         private bool _allSelected;
         private InstalledSong? _currentlyPreviewingSong;
         private bool _isQuestSongsAvailable;
