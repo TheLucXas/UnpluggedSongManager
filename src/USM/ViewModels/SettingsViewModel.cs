@@ -58,6 +58,7 @@ namespace USM.ViewModels
         }
 
         public string CurrentAppVersion => _updateService.CurrentAppVersion;
+        public string CurrentAppVersionText => $"{CurrentAppVersion} · {LocalizationService.T(IsUpdateAvailable ? "Settings_ModOutdated" : "Settings_ModCurrent")}";
 
         private string? _installedModVersion;
         public string InstalledModVersion
@@ -93,7 +94,11 @@ namespace USM.ViewModels
         public bool IsUpdateAvailable
         {
             get => _isUpdateAvailable;
-            private set => SetProperty(ref _isUpdateAvailable, value);
+            private set
+            {
+                if (SetProperty(ref _isUpdateAvailable, value))
+                    OnPropertyChanged(nameof(CurrentAppVersionText));
+            }
         }
 
         private bool _isCheckingUpdates;
@@ -337,6 +342,7 @@ namespace USM.ViewModels
             LocalizationService.Instance.LanguageChanged += _ =>
             {
                 RefreshUpdateNotices();
+                OnPropertyChanged(nameof(CurrentAppVersionText));
                 if (_lastUpdateStatusKey != null)
                     UpdateStatusMessage = LocalizationService.T(_lastUpdateStatusKey);
                 if (LatestReleaseVersion == "—" || _lastUpdateStatusKey == "Settings_NoReleasesFound")
@@ -397,6 +403,7 @@ namespace USM.ViewModels
             _maxDownloadsText = _gameDetector.MaxConcurrentDownloads.ToString();
             CanDownloadModAsset = _modAsset != null && IsGameFound;
             OnPropertyChanged(nameof(CurrentAppVersion));
+            OnPropertyChanged(nameof(CurrentAppVersionText));
             OnPropertyChanged(nameof(InstalledQuestModVersion));
             OnPropertyChanged(nameof(EnableDiscordRpc));
             OnPropertyChanged(nameof(EnableVerboseDebug));

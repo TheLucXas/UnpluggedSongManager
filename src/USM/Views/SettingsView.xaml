@@ -242,7 +242,7 @@
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" Text="{DynamicResource Loc_Settings_CurrentAppVersion}" Foreground="{StaticResource BrushTextSecondary}" />
-                        <TextBlock Grid.Column="1" Text="{Binding CurrentAppVersion}" Foreground="{StaticResource BrushTextPrimary}" FontWeight="Bold" />
+                        <TextBlock Grid.Column="1" Text="{Binding CurrentAppVersionText}" Foreground="{StaticResource BrushTextPrimary}" FontWeight="Bold" />
                     </Grid>
 
                     <Grid Margin="0,4">
