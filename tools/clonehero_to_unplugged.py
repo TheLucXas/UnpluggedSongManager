@@ -6,7 +6,8 @@ import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-CUSTOM_SONGS_DIR = r"C:\SteamLibrary\steamapps\common\Unplugged\CustomSongs"
+CUSTOM_SONGS_DIR = os.environ.get("USM_CUSTOM_SONGS_DIR") or os.path.join(
+    os.environ.get("UNPLUGGED_GAME_DIR", os.getcwd()), "CustomSongs")
 
 FINGER_MAP = {
     # Clone Hero Lane -> (Tier, [Fingers])

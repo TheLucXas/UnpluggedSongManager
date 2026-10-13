@@ -18,16 +18,19 @@ namespace USM.Core.Services
             ".unplugged_studio_config.json"
         );
 
-        private static readonly string[] CommonPaths =
+        private static IEnumerable<string> GetCommonPaths()
         {
-            @"C:\Program Files (x86)\Steam\steamapps\common\Unplugged",
-            @"C:\SteamLibrary\steamapps\common\Unplugged",
-            @"C:\Steam\steamapps\common\Unplugged",
-            @"D:\SteamLibrary\steamapps\common\Unplugged",
-            @"E:\SteamLibrary\steamapps\common\Unplugged",
-            @"F:\SteamLibrary\steamapps\common\Unplugged",
-            @"C:\SteamLibrary\steamapps\common\Unplugged"
-        };
+            string programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+            if (!string.IsNullOrEmpty(programFilesX86))
+                yield return Path.Combine(programFilesX86, "Steam", "steamapps", "common", "Unplugged");
+
+            foreach (DriveInfo drive in DriveInfo.GetDrives())
+            {
+                string root = drive.RootDirectory.FullName;
+                yield return Path.Combine(root, "SteamLibrary", "steamapps", "common", "Unplugged");
+                yield return Path.Combine(root, "Steam", "steamapps", "common", "Unplugged");
+            }
+        }
 
         private Dictionary<string, object> _config;
 
@@ -183,7 +186,7 @@ namespace USM.Core.Services
         public string? AutoDetectGamePath()
         {
             // 1. Check common drives
-            foreach (var path in CommonPaths)
+            foreach (var path in GetCommonPaths())
             {
                 if (IsValidGamePath(path))
                     return Path.GetFullPath(path);

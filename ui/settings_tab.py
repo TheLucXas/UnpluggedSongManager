@@ -246,8 +246,7 @@ class SettingsTab(ctk.CTkFrame):
             os.path.join(meipass, "_internal", "UnpluggedCustomSongs.dll"),
             os.path.join(exe_dir, "UnpluggedCustomSongs.dll"),
             os.path.join(exe_dir, "_internal", "UnpluggedCustomSongs.dll"),
-            os.path.join(os.path.dirname(__file__), "..", "UnpluggedCustomSongs.dll"),
-            r"C:\SteamLibrary\steamapps\common\Unplugged\Mods\UnpluggedCustomSongs.dll"
+            os.path.join(os.path.dirname(__file__), "..", "UnpluggedCustomSongs.dll")
         ]
 
         found = next((p for p in dll_candidates if os.path.isfile(p)), None)

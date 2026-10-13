@@ -21,7 +21,7 @@ namespace USM.Tests
             try
             {
                 // Test 1: MIDI & Multitrack Conversion
-                string nirvanaDir = @"C:/REDACTED\.gemini\antigravity\scratch\nirvana_extracted";
+                string nirvanaDir = Environment.GetEnvironmentVariable("USM_TEST_MIDI_DIR") ?? string.Empty;
                 if (Directory.Exists(nirvanaDir))
                 {
                     Console.WriteLine("\n[TEST 1] Testing MIDI & Multitrack conversion (nirvana_extracted)...");
@@ -60,7 +60,7 @@ namespace USM.Tests
                 }
 
                 // Test 2: .chart (Clone Hero) Conversion
-                string metalliDir = @"C:/REDACTED\.gemini\antigravity\scratch\metalli_extracted";
+                string metalliDir = Environment.GetEnvironmentVariable("USM_TEST_CHART_DIR") ?? string.Empty;
                 if (Directory.Exists(metalliDir))
                 {
                     Console.WriteLine("\n[TEST 2] Testing .chart (Clone Hero) conversion (metalli_extracted)...");
@@ -115,7 +115,7 @@ namespace USM.Tests
                 }
 
                 // Test 4: .sng binary decoding and conversion
-                string realSng = @"C:/REDACTED\AppData\Local\Temp\tmpcuqw0idj.sng";
+                string realSng = Environment.GetEnvironmentVariable("USM_TEST_SNG_FILE") ?? string.Empty;
                 if (File.Exists(realSng))
                 {
                     Console.WriteLine("\n[TEST 4] Testing real .sng binary decoding & conversion...");

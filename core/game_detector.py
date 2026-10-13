@@ -1,18 +1,16 @@
 import os
 import json
 import winreg
+import string
 from pathlib import Path
 
 CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".unplugged_studio_config.json")
 
 COMMON_PATHS = [
-    r"C:\Program Files (x86)\Steam\steamapps\common\Unplugged",
-    r"C:\SteamLibrary\steamapps\common\Unplugged",
-    r"C:\Steam\steamapps\common\Unplugged",
-    r"D:\SteamLibrary\steamapps\common\Unplugged",
-    r"E:\SteamLibrary\steamapps\common\Unplugged",
-    r"F:\SteamLibrary\steamapps\common\Unplugged",
-    r"C:\SteamLibrary\steamapps\common\Unplugged",
+    os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+                 "Steam", "steamapps", "common", "Unplugged"),
+    *[f"{drive}:\\SteamLibrary\\steamapps\\common\\Unplugged" for drive in string.ascii_uppercase],
+    *[f"{drive}:\\Steam\\steamapps\\common\\Unplugged" for drive in string.ascii_uppercase],
 ]
 
 class GameDetector:

@@ -1,46 +1,34 @@
-# USM (Unplugged Song Manager) & Custom Songs Mod
+# USM · Unplugged Song Manager
 
-**USM** is an all-in-one desktop companion and modding suite for **Unplugged VR** (by Anotherway / Vertigo Games). It allows players to effortlessly convert, manage, and download custom songs from Chorus / Clone Hero directly into Unplugged VR with full hand tracking and controller support.
+USM converts Clone Hero/Chorus charts into `.usm` songs, manages the PC and Quest libraries, and installs the companion mods for Unplugged. The current desktop application is the C# WPF project in `src/USM/`. The Python application in `app.py`, `core/`, and `ui/` is legacy source.
 
----
+## Build the complete Windows application
 
-## 🎸 Features
+You need Windows, the .NET 8 SDK, an installed copy of Unplugged for PC, and MelonLoader 0.5.7 installed in that game folder. The PC mod compiles against assemblies from your own game installation; they are intentionally not included in Git.
 
-- **In-Game Custom Song Loader (`UnpluggedCustomSongs.dll`):**
-  - Native integration with Unplugged's vinyl carousel UI.
-  - Multi-track stem audio mixing (Guitar, Bass, Drums, Vocals, Other/Backing).
-  - Both **Hand Tracking** (gesture recognition) and **VR Controllers** (grip/trigger mapping).
-  - Real-time vinyl record cover updates matching each song's artwork.
-  - FileSystemWatcher hot-reload: drop new songs into `CustomSongs` and they appear in-game automatically.
-  - Discord Rich Presence integration showing current song, artist, and difficulty.
+The Quest mod also needs the locally generated IL2CPP interop assemblies from your own Quest installation and the matching MelonLoader reference assemblies. Place them under `tools/quest/Il2CppAssemblies/` and `tools/quest/MelonNet/net8/`, respectively, or pass their parent folder with `-QuestReferencesDir`. These generated DLLs are ignored by Git.
 
-- **Desktop Manager (`USM.exe`):**
-  - **Local Converter:** Drag and drop `.zip`, `.sng`, `.chart`, or `.mid` files for instant automatic conversion.
-  - **Song Library:** View installed songs, play 25s audio previews, filter/search by title or artist, and batch delete.
-  - **Chorus Integration:** Search and download thousands of community charts with one click.
-  - **Multi-threaded Audio & Image Pipeline:** Parallel FFmpeg stem transcoding and in-memory cover processing.
-  - Embedded FFmpeg: No external terminal windows or messy manual installations required.
+From the repository root, run:
 
----
+```powershell
+./tools/Build-USM.ps1 -GameDir 'D:\SteamLibrary\steamapps\common\Unplugged'
+```
 
-## 🚀 Quick Start
+`-GameDir` may be omitted when `UNPLUGGED_GAME_DIR` is set, USM has saved the game location, or the script finds a standard Steam library. The script checks the required references before compiling both mods and publishing the WPF application to `dist/USM-CSharp/USM.exe`. It replaces the previous output in that same folder.
 
-1. Install [MelonLoader](https://melonwiki.xyz/#/) (v0.5.7) for `Unplugged.exe`.
-2. Place `UnpluggedCustomSongs.dll` inside your `Unplugged/Mods/` folder.
-3. Launch `USM.exe`, drag & drop your charts or download from the Chorus tab.
-4. Put on your VR headset and enjoy your custom tracks!
+For Quest references stored elsewhere:
 
----
+```powershell
+./tools/Build-USM.ps1 -GameDir 'D:\Games\Unplugged' -QuestReferencesDir 'D:\QuestBuildReferences'
+```
 
-## 🛠️ Project Structure
+The `apktool.jar` and `uber-apk-signer.jar` files in `tools/quest/` are **runtime Quest patching tools**. They are not compiler references. The patcher can use them from the source checkout, or download its tool bundle into USM's local cache when a compatible bundle is available. FFmpeg is downloaded on first use and is not embedded in the application.
 
-- `core/` - Conversion engine, Chorus API client, audio stem mixing, and game detection.
-- `ui/` - Modern CustomTkinter desktop interface.
-- `mod/` - C# MelonLoader mod source code with Harmony runtime patches.
-- `assets/` - Theme configurations and default vinyl artwork.
+## Source layout
 
----
+- `src/USM/` — WPF desktop application, song converter, library, and Quest patcher.
+- `mod/UnpluggedCustomSongs/` — PC and Quest mod projects.
+- `tools/` — build helper and Quest patching utilities.
+- `tests/` — optional development checks using local chart fixtures.
 
-## 📜 License
-
-MIT License. Developed for the Unplugged VR community by Luc & Antigravity.
+Local game files, generated Quest assemblies, saves, device logs, APKs, and credentials must stay outside Git. `.gitignore` excludes them. Never add an API key or personal account data to the repository.

@@ -1,5 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
+from pathlib import Path
 
 datas = []
 binaries = []
@@ -13,9 +14,10 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('tkinterdnd2')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
-ffmpeg_bin = r'C:/REDACTED\AppData\Local\ffmpegio\ffmpeg-downloader\ffmpeg\bin\ffmpeg.exe'
-binaries += [(ffmpeg_bin, '.')]
-datas += [('UnpluggedCustomSongs.dll', '.'), ('assets', 'assets')]
+mod_dll = Path('UnpluggedCustomSongs.dll')
+if mod_dll.is_file():
+    datas.append((str(mod_dll), '.'))
+datas.append(('assets', 'assets'))
 
 
 a = Analysis(

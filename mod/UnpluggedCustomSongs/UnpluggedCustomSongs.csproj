@@ -6,6 +6,7 @@
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Nullable>disable</Nullable>
     <LangVersion>latest</LangVersion>
+    <UnpluggedGameDir Condition="'$(UnpluggedGameDir)' == ''">$(UNPLUGGED_GAME_DIR)</UnpluggedGameDir>
   </PropertyGroup>
 
   <ItemGroup>
@@ -15,71 +16,71 @@
 
   <ItemGroup>
     <Reference Include="MelonLoader">
-      <HintPath>C:\SteamLibrary\steamapps\common\Unplugged\MelonLoader\MelonLoader.dll</HintPath>
+      <HintPath>$(UnpluggedGameDir)\MelonLoader\MelonLoader.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="0Harmony">
-      <HintPath>C:\SteamLibrary\steamapps\common\Unplugged\MelonLoader\0Harmony.dll</HintPath>
+      <HintPath>$(UnpluggedGameDir)\MelonLoader\0Harmony.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Assembly-CSharp">
-      <HintPath>C:\SteamLibrary\steamapps\common\Unplugged\Unplugged_Data\Managed\Assembly-CSharp.dll</HintPath>
+      <HintPath>$(UnpluggedGameDir)\Unplugged_Data\Managed\Assembly-CSharp.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine">
-      <HintPath>C:\SteamLibrary\steamapps\common\Unplugged\Unplugged_Data\Managed\UnityEngine.dll</HintPath>
+      <HintPath>$(UnpluggedGameDir)\Unplugged_Data\Managed\UnityEngine.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
-      <HintPath>C:\SteamLibrary\steamapps\common\Unplugged\Unplugged_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+      <HintPath>$(UnpluggedGameDir)\Unplugged_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.AudioModule">
-      <HintPath>C:\SteamLibrary\steamapps\common\Unplugged\Unplugged_Data\Managed\UnityEngine.AudioModule.dll</HintPath>
+      <HintPath>$(UnpluggedGameDir)\Unplugged_Data\Managed\UnityEngine.AudioModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.UI">
-      <HintPath>C:\SteamLibrary\steamapps\common\Unplugged\Unplugged_Data\Managed\UnityEngine.UI.dll</HintPath>
+      <HintPath>$(UnpluggedGameDir)\Unplugged_Data\Managed\UnityEngine.UI.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Unity.TextMeshPro">
-      <HintPath>C:\SteamLibrary\steamapps\common\Unplugged\Unplugged_Data\Managed\Unity.TextMeshPro.dll</HintPath>
+      <HintPath>$(UnpluggedGameDir)\Unplugged_Data\Managed\Unity.TextMeshPro.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.ImageConversionModule">
-      <HintPath>C:\SteamLibrary\steamapps\common\Unplugged\Unplugged_Data\Managed\UnityEngine.ImageConversionModule.dll</HintPath>
+      <HintPath>$(UnpluggedGameDir)\Unplugged_Data\Managed\UnityEngine.ImageConversionModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.UnityWebRequestWWWModule">
-      <HintPath>C:\SteamLibrary\steamapps\common\Unplugged\Unplugged_Data\Managed\UnityEngine.UnityWebRequestWWWModule.dll</HintPath>
+      <HintPath>$(UnpluggedGameDir)\Unplugged_Data\Managed\UnityEngine.UnityWebRequestWWWModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.InputLegacyModule">
-      <HintPath>C:\SteamLibrary\steamapps\common\Unplugged\Unplugged_Data\Managed\UnityEngine.InputLegacyModule.dll</HintPath>
+      <HintPath>$(UnpluggedGameDir)\Unplugged_Data\Managed\UnityEngine.InputLegacyModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.IMGUIModule">
-      <HintPath>C:\SteamLibrary\steamapps\common\Unplugged\Unplugged_Data\Managed\UnityEngine.IMGUIModule.dll</HintPath>
+      <HintPath>$(UnpluggedGameDir)\Unplugged_Data\Managed\UnityEngine.IMGUIModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.PhysicsModule">
-      <HintPath>C:\SteamLibrary\steamapps\common\Unplugged\Unplugged_Data\Managed\UnityEngine.PhysicsModule.dll</HintPath>
+      <HintPath>$(UnpluggedGameDir)\Unplugged_Data\Managed\UnityEngine.PhysicsModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Oculus.VR">
-      <HintPath>C:\SteamLibrary\steamapps\common\Unplugged\Unplugged_Data\Managed\Oculus.VR.dll</HintPath>
+      <HintPath>$(UnpluggedGameDir)\Unplugged_Data\Managed\Oculus.VR.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.XRModule">
-      <HintPath>C:\SteamLibrary\steamapps\common\Unplugged\Unplugged_Data\Managed\UnityEngine.XRModule.dll</HintPath>
+      <HintPath>$(UnpluggedGameDir)\Unplugged_Data\Managed\UnityEngine.XRModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Unity.XR.OpenVR">
-      <HintPath>C:\SteamLibrary\steamapps\common\Unplugged\Unplugged_Data\Managed\Unity.XR.OpenVR.dll</HintPath>
+      <HintPath>$(UnpluggedGameDir)\Unplugged_Data\Managed\Unity.XR.OpenVR.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Newtonsoft.Json">
-      <HintPath>C:\SteamLibrary\steamapps\common\Unplugged\Unplugged_Data\Managed\Newtonsoft.Json.dll</HintPath>
+      <HintPath>$(UnpluggedGameDir)\Unplugged_Data\Managed\Newtonsoft.Json.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>

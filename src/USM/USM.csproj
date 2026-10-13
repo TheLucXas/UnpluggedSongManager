@@ -17,7 +17,8 @@
     <EnableCompressionInSingleFile Condition="'$(SelfContained)' == 'true'">true</EnableCompressionInSingleFile>
     <PcModProject>$(MSBuildProjectDirectory)\..\..\mod\UnpluggedCustomSongs\UnpluggedCustomSongs.csproj</PcModProject>
     <PcModAssembly>$(MSBuildProjectDirectory)\..\..\mod\UnpluggedCustomSongs\bin\$(Configuration)\netstandard2.0\UnpluggedCustomSongs.dll</PcModAssembly>
-    <PcGameAssembly>C:\SteamLibrary\steamapps\common\Unplugged\Unplugged_Data\Managed\Assembly-CSharp.dll</PcGameAssembly>
+    <UnpluggedGameDir Condition="'$(UnpluggedGameDir)' == ''">$(UNPLUGGED_GAME_DIR)</UnpluggedGameDir>
+    <PcGameAssembly>$(UnpluggedGameDir)\Unplugged_Data\Managed\Assembly-CSharp.dll</PcGameAssembly>
     <QuestModProject>$(MSBuildProjectDirectory)\..\..\mod\UnpluggedCustomSongs\UnpluggedCustomSongs.Quest.csproj</QuestModProject>
     <QuestModAssembly>$(MSBuildProjectDirectory)\..\..\mod\UnpluggedCustomSongs\bin\$(Configuration)\net8.0\UnpluggedCustomSongs.Quest.dll</QuestModAssembly>
   </PropertyGroup>

@@ -10,7 +10,16 @@ except Exception:
     pass
 
 # 1. Update MelonPreferences.cfg
-prefs_path = r"C:\SteamLibrary\steamapps\common\Unplugged\UserData\MelonPreferences.cfg"
+game_dir = os.environ.get("UNPLUGGED_GAME_DIR")
+if not game_dir:
+    config_path = os.path.join(os.path.expanduser("~"), ".unplugged_studio_config.json")
+    if os.path.isfile(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                game_dir = json.load(f).get("game_path")
+        except (OSError, ValueError):
+            pass
+prefs_path = os.path.join(game_dir, "UserData", "MelonPreferences.cfg") if game_dir else ""
 if os.path.exists(prefs_path):
     with open(prefs_path, "r", encoding="utf-8") as f:
         content = f.read()
@@ -23,7 +32,9 @@ if os.path.exists(prefs_path):
     print(f"MelonPreferences actualizado: EnableDebugMode = {enable_debug}")
 
 # 2. Update steamvr.vrsettings
-vr_path = r"C:\Program Files (x86)\Steam\config\steamvr.vrsettings"
+steam_dir = os.environ.get("STEAM_INSTALL_DIR") or os.path.join(
+    os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"), "Steam")
+vr_path = os.path.join(steam_dir, "config", "steamvr.vrsettings")
 if os.path.exists(vr_path):
     try:
         with open(vr_path, "r", encoding="utf-8") as f:
