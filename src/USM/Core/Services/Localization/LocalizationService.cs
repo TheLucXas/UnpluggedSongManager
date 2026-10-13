@@ -28,7 +28,15 @@ namespace USM.Core.Services.Localization
             new LanguageItem { Code = "de", DisplayName = "Deutsch" },
             new LanguageItem { Code = "it", DisplayName = "Italiano" },
             new LanguageItem { Code = "ja", DisplayName = "日本語" },
-            new LanguageItem { Code = "zh-CN", DisplayName = "简体中文" }
+            new LanguageItem { Code = "zh-CN", DisplayName = "简体中文" },
+            new LanguageItem { Code = "ar", DisplayName = "العربية" },
+            new LanguageItem { Code = "hi", DisplayName = "हिन्दी" },
+            new LanguageItem { Code = "id", DisplayName = "Bahasa Indonesia" },
+            new LanguageItem { Code = "ko", DisplayName = "한국어" },
+            new LanguageItem { Code = "pl", DisplayName = "Polski" },
+            new LanguageItem { Code = "ru", DisplayName = "Русский" },
+            new LanguageItem { Code = "tr", DisplayName = "Türkçe" },
+            new LanguageItem { Code = "vi", DisplayName = "Tiếng Việt" }
         };
 
         private string _currentLanguage = "en";
@@ -41,11 +49,16 @@ namespace USM.Core.Services.Localization
                 {
                     _currentLanguage = value;
                     OnPropertyChanged();
+                    OnPropertyChanged(nameof(UiFlowDirection));
                     UpdateApplicationResources();
                     LanguageChanged?.Invoke(value);
                 }
             }
         }
+
+        public FlowDirection UiFlowDirection => _currentLanguage == "ar"
+            ? FlowDirection.RightToLeft
+            : FlowDirection.LeftToRight;
 
         public event Action<string>? LanguageChanged;
         public event PropertyChangedEventHandler? PropertyChanged;
@@ -1518,7 +1531,15 @@ namespace USM.Core.Services.Localization
             ["de"] = LocalizationGerman.Items,
             ["it"] = LocalizationItalian.Items,
             ["ja"] = LocalizationJapanese.Items,
-            ["zh-CN"] = LocalizationChineseSimplified.Items
+            ["zh-CN"] = LocalizationChineseSimplified.Items,
+            ["ar"] = LocalizationArabic.Items,
+            ["hi"] = LocalizationHindi.Items,
+            ["id"] = LocalizationIndonesian.Items,
+            ["ko"] = LocalizationKorean.Items,
+            ["pl"] = LocalizationPolish.Items,
+            ["ru"] = LocalizationRussian.Items,
+            ["tr"] = LocalizationTurkish.Items,
+            ["vi"] = LocalizationVietnamese.Items
         };
     }
 }

@@ -5,6 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="clr-namespace:USM.ViewModels"
         xmlns:views="clr-namespace:USM.Views"
+        xmlns:loc="clr-namespace:USM.Core.Services.Localization"
         mc:Ignorable="d"
         Title="USM • Unplugged Song Manager"
         Icon="assets/icon.png"
@@ -13,6 +14,7 @@
         MinWidth="1040"
         MinHeight="660"
         FontFamily="{StaticResource FontGlory}"
+        FlowDirection="{Binding UiFlowDirection, Source={x:Static loc:LocalizationService.Instance}}"
         WindowStartupLocation="CenterScreen"
         Foreground="{StaticResource BrushTextPrimary}"
         Background="{StaticResource BrushBgMain}">
