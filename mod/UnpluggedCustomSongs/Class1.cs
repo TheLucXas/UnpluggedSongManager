@@ -670,6 +670,7 @@ namespace UnpluggedCustomSongs
         public static void PerformSongRefresh()
         {
             if (CustomSongLoader.CustomAlbumInstance == null) return;
+            InGameSongSearch.ResetForLibraryReload();
             MelonLogger.Msg("[CustomSongs] Refreshing custom songs in real time...");
             CustomSongLoader.PopulateCustomSongs(CustomSongLoader.CustomAlbumInstance);
             int newCount = CustomSongLoader.CustomAlbumInstance.SongFiles != null ? CustomSongLoader.CustomAlbumInstance.SongFiles.Count : 0;
@@ -723,6 +724,7 @@ namespace UnpluggedCustomSongs
             // VR Thumbstick & Keyboard song carousel navigation (with hold-acceleration)
             HandleSongMenuNavigation();
             UpdateCustomSongPreview();
+            InGameSongSearch.Update();
             HideBetaBadges();
 
 #if !QUEST_IL2CPP
@@ -736,7 +738,7 @@ namespace UnpluggedCustomSongs
             IntroSkipManager.Update();
 
 #if !QUEST_IL2CPP
-            if (!DebugMode) return;
+            if (!DebugMode || InGameSongSearch.IsOpen) return;
 
             HandleCameraAndMovement();
             RefreshClickTargets();
@@ -815,7 +817,8 @@ namespace UnpluggedCustomSongs
                 var album = AlbumsManager.SelectedAlbum;
                 if (startSpace == null || !startSpace.gameObject.activeInHierarchy ||
                     startSpace.songMenu == null || !startSpace.songMenu.gameObject.activeInHierarchy ||
-                    album == null || album.AlbumID != "CustomSongsAlbum" || GameManager.IsPlaying)
+                    album == null || album.AlbumID != "CustomSongsAlbum" || GameManager.IsPlaying ||
+                    InGameSongSearch.IsChangingAlbum)
                 {
                     CustomSongLoader.StopCustomAudioPreview();
                     _lastMenuPreviewSongKey = null;
@@ -875,6 +878,13 @@ namespace UnpluggedCustomSongs
 
         private void HandleSongMenuNavigation()
         {
+            if (InGameSongSearch.IsOpen)
+            {
+                _navHoldDir = 0;
+                _arrowHoldDir = 0;
+                SetCarouselArrowsVisible(false);
+                return;
+            }
             if (StartSpace.I == null || !StartSpace.I.gameObject.activeInHierarchy)
             {
                 _navHoldDir = 0;
@@ -4348,23 +4358,24 @@ namespace UnpluggedCustomSongs
                     return;
 
                 var metadata = CustomSongLoader.CustomAlbumInstance?.builtInSongsMetadata;
-                int songCount = metadata?.Count ?? 0;
-                if (songCount <= 0) return;
 #if QUEST_IL2CPP
                 var songList = GameFieldAccess.Get<Il2CppSystem.Collections.Generic.List<SongMappingMetaData>>(__instance, "songList");
 #else
                 var songList = GameFieldAccess.Get<List<SongMappingMetaData>>(__instance, "songList");
 #endif
-                if (songList == null || songList.Count != songCount) return;
+                int songCount = songList?.Count ?? 0;
+                if (songCount <= 0) return;
 
-                int targetIndex = CustomSongLoader.ConsumeDirectSelectionIndex(songCount);
+                bool isFullAlbum = metadata != null && metadata.Count == songCount;
+                int targetIndex = isFullAlbum ? CustomSongLoader.ConsumeDirectSelectionIndex(songCount) : 0;
+                SongMappingMetaData targetSong = isFullAlbum ? metadata[targetIndex] : songList[0];
                 int maxVisible = Mathf.Min(__instance.MaxItems, songCount);
                 int centerIndex = Mathf.CeilToInt(maxVisible / 2f) - 1;
                 int targetPosition = targetIndex;
                 for (int i = 0; i < songList.Count; i++)
                 {
-                    if (songList[i] != null && metadata[targetIndex] != null &&
-                        string.Equals(songList[i].SongID, metadata[targetIndex].SongID, StringComparison.Ordinal))
+                    if (songList[i] != null && targetSong != null &&
+                        string.Equals(songList[i].SongID, targetSong.SongID, StringComparison.Ordinal))
                     {
                         targetPosition = i;
                         break;
@@ -4374,7 +4385,7 @@ namespace UnpluggedCustomSongs
                 // Rotate the menu's private list before it creates any cards. The
                 // saved song is therefore already in the center slot; neither
                 // CreateAlbum nor Update needs to walk through the songs.
-                bool alreadyCentered = songList[centerIndex].SongID == metadata[targetIndex].SongID;
+                bool alreadyCentered = songList[centerIndex].SongID == targetSong?.SongID;
                 if (!alreadyCentered)
                 {
 #if QUEST_IL2CPP
@@ -4395,7 +4406,7 @@ namespace UnpluggedCustomSongs
                 GameFieldAccess.Set(__instance, "Index", 0);
                 GameFieldAccess.Set(__instance, "CumulativeOffset", 0f);
                 GameFieldAccess.Set(__instance, "selectedIndex", centerIndex);
-                MelonLogger.Msg($"[CustomSongs] Direct album selection prepared: index={targetIndex}, song='{metadata[targetIndex].SongName}', centerSlot={centerIndex}, animatedSteps=0.");
+                MelonLogger.Msg($"[CustomSongs] Direct album selection prepared: index={targetIndex}, song='{targetSong?.SongName}', filtered={!isFullAlbum}, centerSlot={centerIndex}, animatedSteps=0.");
             }
             catch (Exception ex)
             {

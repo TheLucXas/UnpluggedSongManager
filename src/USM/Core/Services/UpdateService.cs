@@ -131,9 +131,10 @@ namespace USM.Core.Services
 
                 result.UsmAsset = release.Assets.FirstOrDefault(a =>
                     (a.Name.Contains("USM", StringComparison.OrdinalIgnoreCase) || a.Name.Contains("Unplugged", StringComparison.OrdinalIgnoreCase)) &&
-                    (a.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) &&
-                    !a.Name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
-                    ?? release.Assets.FirstOrDefault(a => a.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase));
+                    a.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                    ?? release.Assets.FirstOrDefault(a =>
+                        a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) &&
+                        a.Name.Contains("USM", StringComparison.OrdinalIgnoreCase));
 
                 result.QuestToolsAsset = release.Assets.FirstOrDefault(a =>
                     a.Name.Contains("quest-tools", StringComparison.OrdinalIgnoreCase) ||
@@ -143,7 +144,8 @@ namespace USM.Core.Services
                 await Task.WhenAll(ReadReleaseModVersionAsync(result.ModAsset, cancellationToken),
                     ReadReleaseModVersionAsync(result.QuestModAsset, cancellationToken));
 
-                result.IsUpdateAvailable = CompareVersions(result.LatestVersion, result.CurrentVersion) > 0;
+                result.IsUpdateAvailable = result.UsmAsset != null &&
+                    CompareVersions(result.LatestVersion, result.CurrentVersion) > 0;
 
                 if (result.IsUpdateAvailable)
                 {
@@ -300,22 +302,30 @@ namespace USM.Core.Services
                     }
                 }
 
-                // If standalone installer .exe
-                if (ext.Equals(".exe", StringComparison.OrdinalIgnoreCase))
-                {
-                    var psiInstaller = new ProcessStartInfo
-                    {
-                        FileName = tempFile,
-                        UseShellExecute = true
-                    };
-                    Process.Start(psiInstaller);
-                    return (true, "Installer launched.", null);
-                }
-
-                // If .zip archive
                 stagingDir = Path.Combine(Path.GetTempPath(), $"USM_Extracted_{Guid.NewGuid():N}");
                 Directory.CreateDirectory(stagingDir);
-                ZipFile.ExtractToDirectory(tempFile, stagingDir, overwriteFiles: true);
+                string exeName = "USM.exe";
+                try
+                {
+                    string? runningName = Process.GetCurrentProcess().MainModule?.ModuleName;
+                    if (!string.IsNullOrEmpty(runningName)) exeName = runningName;
+                }
+                catch { }
+
+                if (ext.Equals(".exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    // The portable executable is the update payload, not an installer.
+                    // Stage it for the same replace-and-restart flow as a ZIP release.
+                    File.Copy(tempFile, Path.Combine(stagingDir, exeName));
+                }
+                else if (ext.Equals(".zip", StringComparison.OrdinalIgnoreCase))
+                {
+                    ZipFile.ExtractToDirectory(tempFile, stagingDir, overwriteFiles: true);
+                }
+                else
+                {
+                    throw new InvalidDataException($"Unsupported USM update file: {fileName}");
+                }
 
                 string sourceDir = stagingDir;
                 var subDirs = Directory.GetDirectories(stagingDir);
@@ -326,13 +336,8 @@ namespace USM.Core.Services
                 }
 
                 string targetAppDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                string exeName = "USM.exe";
-                try
-                {
-                    string? mod = Process.GetCurrentProcess().MainModule?.ModuleName;
-                    if (!string.IsNullOrEmpty(mod)) exeName = mod;
-                }
-                catch { }
+                if (!File.Exists(Path.Combine(sourceDir, exeName)))
+                    throw new InvalidDataException($"USM update does not contain {exeName}.");
 
                 string batchFile = Path.Combine(Path.GetTempPath(), $"usm_updater_{Guid.NewGuid():N}.bat");
                 int pid = Environment.ProcessId;
