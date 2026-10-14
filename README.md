@@ -44,7 +44,7 @@
 - **Single Track** = one mixed audio track; **Half Track** = backing/instrumental plus vocals; **Multi Track** = multiple separate stems. The mod uses available stems for its in-game audio behavior.
 - Skip a long silent introduction to shortly before the first note: **A + X** with controllers or the in-game button with hands.
 - Navigate songs with controller sticks, or use the hand-tracked carousel gesture and side buttons.
-- Search the Custom Songs album by title or artist with an in-game keyboard, then show only matching songs in the carousel. The PC build also accepts a physical keyboard.
+- Filter installed songs in the Custom Songs album by title or artist with an in-game keyboard, then show only matching songs in the carousel. The PC build also accepts a physical keyboard.
 - Optional PC Discord Rich Presence and verbose diagnostics.
 
 ![Custom Songs album with a converted song selected](docs/images/custom-songs-album.png)
@@ -136,6 +136,7 @@ Local game files, Quest references, saves, captures, APKs, credentials, and devi
 
 ## 🗺️ Roadmap
 
+- Browse and search Chorus Encore inside the game on PC and Quest, then download and convert charts to `.usm` without opening the Windows app. Keep the installed-song filter as a separate convenience feature.
 - Create and edit charts specifically for _Unplugged_, including hand and controller difficulties.
 - Edit song titles, artists, covers, and other `.usm` metadata without reconverting audio.
 - Create playlists and mark favorite songs in the library and game.
