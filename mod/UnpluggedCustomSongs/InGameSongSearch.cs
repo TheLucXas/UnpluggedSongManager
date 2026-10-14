@@ -170,12 +170,26 @@ namespace UnpluggedCustomSongs
 
             // Symmetric offsets from the venue title keep both buttons in the
             // same visible row across menu animation and headset recentering.
-            float distance = Mathf.Clamp(difficultySpan * 1.35f, 0.26f, 0.42f);
-            _chorusButton.transform.position = anchor - axis * distance;
-            _searchButton.transform.position = anchor + axis * distance;
+            float distance = difficultySpan * 0.95f;
+            PositionButtonVisualCenter(_chorusButton, anchor - axis * distance);
+            PositionButtonVisualCenter(_searchButton, anchor + axis * distance);
             _buttonsAnchored = true;
             MelonLogger.Msg($"[CustomSongs][Search] Buttons anchored beside venue '{label.text}': " +
-                $"center={anchor}, left={_chorusButton.transform.position}, right={_searchButton.transform.position}.");
+                $"center={anchor}, distance={distance:F3}, " +
+                $"left={GetButtonVisualCenter(_chorusButton)}, right={GetButtonVisualCenter(_searchButton)}.");
+        }
+
+        private static Vector3 GetButtonVisualCenter(PressableButton button)
+        {
+            var collider = button.GetComponentInChildren<BoxCollider>(true);
+            return collider == null ? button.transform.position :
+                collider.transform.TransformPoint(collider.center);
+        }
+
+        private static void PositionButtonVisualCenter(PressableButton button, Vector3 target)
+        {
+            button.transform.position = target;
+            button.transform.position += target - GetButtonVisualCenter(button);
         }
 
         private static void CreateKeyboard(PressableButton template)
