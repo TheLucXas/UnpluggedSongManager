@@ -33,6 +33,7 @@ namespace UnpluggedCustomSongs
         private static bool _isOpen;
         private static bool _isFiltered;
         private static bool _isChangingAlbum;
+        private static bool _buttonsAnchored;
         private static float _changeStartedAt;
         private static string _query = string.Empty;
         private static string _message = string.Empty;
@@ -96,6 +97,7 @@ namespace UnpluggedCustomSongs
 
             if (_searchButton == null)
                 CreateControls(start);
+            PositionLauncherButtons(start);
             if (_isOpen && KeyboardButtons.Count == 0)
             {
                 CreateKeyboard(start.StartButton);
@@ -107,7 +109,7 @@ namespace UnpluggedCustomSongs
                 _searchButton.IsDisabled = _isChangingAlbum;
             if (_chorusButton != null)
                 _chorusButton.IsDisabled = _isChangingAlbum;
-            SetControlsVisible(true);
+            SetControlsVisible(_buttonsAnchored);
             if (_isOpen)
                 ReadPhysicalKeyboard();
         }
@@ -135,15 +137,45 @@ namespace UnpluggedCustomSongs
 
             _searchButton = CreateButton(template, "USM_SearchToggle", "SEARCH", 0.42f, 0.72f, Toggle);
             if (_searchButton == null) return;
-            _searchButton.transform.position = template.transform.position + right * (width * 0.90f)
-                + up * (height * 0.7f) + towardPlayer * 0.025f;
 
             _chorusButton = CreateButton(template, "USM_ChorusToggle", "CHORUS", 0.42f, 0.72f, ToggleChorus);
-            if (_chorusButton != null)
-                _chorusButton.transform.position = template.transform.position - right * (width * 0.90f)
-                    + up * (height * 0.7f) + towardPlayer * 0.025f;
 
             MelonLogger.Msg($"[CustomSongs][Search] Search button created for {CustomSongLoader.CustomAlbumInstance?.builtInSongsMetadata?.Count ?? 0} songs.");
+        }
+
+        private static void PositionLauncherButtons(StartSpace start)
+        {
+            if (_buttonsAnchored || _searchButton == null || _chorusButton == null ||
+                !ModMain.IsCustomCarouselSettled) return;
+
+            var venue = start.GetComponentInChildren<VenueSelectionController>(true);
+            if (venue == null)
+                venue = UnityEngine.Object.FindObjectOfType<VenueSelectionController>();
+            var label = venue?.VenueNameLabel;
+            var difficulty = start.difficultyPanel;
+            if (label == null || difficulty?.PrevButton == null || difficulty.NextButtton == null)
+                return;
+
+            Vector3 axis = difficulty.NextButtton.transform.position - difficulty.PrevButton.transform.position;
+            axis.y = 0f;
+            float difficultySpan = axis.magnitude;
+            if (difficultySpan < 0.05f) return;
+            axis /= difficultySpan;
+
+            var labelRenderer = label.GetComponent<Renderer>();
+            Vector3 anchor = labelRenderer != null ? labelRenderer.bounds.center : label.transform.position;
+            var camera = CameraManager.Main;
+            if (camera != null)
+                anchor += (camera.transform.position - anchor).normalized * 0.08f;
+
+            // Symmetric offsets from the venue title keep both buttons in the
+            // same visible row across menu animation and headset recentering.
+            float distance = Mathf.Clamp(difficultySpan * 1.35f, 0.26f, 0.42f);
+            _chorusButton.transform.position = anchor - axis * distance;
+            _searchButton.transform.position = anchor + axis * distance;
+            _buttonsAnchored = true;
+            MelonLogger.Msg($"[CustomSongs][Search] Buttons anchored beside venue '{label.text}': " +
+                $"center={anchor}, left={_chorusButton.transform.position}, right={_searchButton.transform.position}.");
         }
 
         private static void CreateKeyboard(PressableButton template)
@@ -605,6 +637,7 @@ namespace UnpluggedCustomSongs
             _chorusMode = false;
             _isFiltered = false;
             _isChangingAlbum = false;
+            _buttonsAnchored = false;
             _query = string.Empty;
             _message = string.Empty;
         }
