@@ -45,6 +45,7 @@
 - Skip a long silent introduction to shortly before the first note: **A + X** with controllers or the in-game button with hands.
 - Navigate songs with controller sticks, or use the hand-tracked carousel gesture and side buttons.
 - Filter installed songs in the Custom Songs album by title or artist with an in-game keyboard, then show only matching songs in the carousel. The PC build also accepts a physical keyboard.
+- On the `develop` branch, open **CHORUS** from the Custom Songs album to search and page through charts, download one, parse it with USM's shared chart logic, and add its `.usm` to the album without opening the Windows app. PC imports use the normal FFmpeg audio pipeline. Quest imports currently accept charts with directly playable OGG Vorbis or MP3 audio and no stem mixing; unsupported audio is reported before installation.
 - Optional PC Discord Rich Presence and verbose diagnostics.
 
 ![Custom Songs album with a converted song selected](docs/images/custom-songs-album.png)
@@ -136,7 +137,7 @@ Local game files, Quest references, saves, captures, APKs, credentials, and devi
 
 ## 🗺️ Roadmap
 
-- Browse and search Chorus Encore inside the game on PC and Quest, then download and convert charts to `.usm` without opening the Windows app. Keep the installed-song filter as a separate convenience feature.
+- Complete the Quest in-game audio conversion path for Chorus charts with Opus, FLAC, WAV, M4A, or stems that need mixing, and refine the VR search interface after device testing.
 - Create and edit charts specifically for _Unplugged_, including hand and controller difficulties.
 - Edit song titles, artists, covers, and other `.usm` metadata without reconverting audio.
 - Create playlists and mark favorite songs in the library and game.

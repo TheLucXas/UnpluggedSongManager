@@ -13,6 +13,11 @@ namespace USM.Core.Parsers
     /// </summary>
     public static class JsonGenerator
     {
+        private static double Clamp(double value, double minimum, double maximum) =>
+            Math.Max(minimum, Math.Min(maximum, value));
+        private static int Clamp(int value, int minimum, int maximum) =>
+            Math.Max(minimum, Math.Min(maximum, value));
+
         // Bump when chart parsing or generated note semantics change. Stored in
         // meta.json so the PC library can selectively regenerate outdated charts.
         public const int ParserVersion = 9;
@@ -444,7 +449,7 @@ namespace USM.Core.Parsers
                             double fraction = upperNps > lowerNps
                                 ? (OfficialDifficultyMedianNps[targetRank] - lowerNps) / (upperNps - lowerNps)
                                 : (targetRank - lower.TargetRank) / (double)(upper.TargetRank - lower.TargetRank);
-                            fraction = Math.Clamp(fraction, 0.0, 1.0);
+                            fraction = Clamp(fraction, 0.0, 1.0);
                             selectedNotes = BlendNotes(lower.Notes, upper.Notes, fraction);
                             origin = $"interpolated between {lower.SourceName} and {upper.SourceName} by vanilla NPS profile ({fraction:P0})";
                         }
@@ -501,7 +506,7 @@ namespace USM.Core.Parsers
             // A target NPS is a ceiling: if the only source chart is already
             // easier than the vanilla profile, keep it intact rather than
             // generating fake notes to make a higher tier appear harder.
-            return Math.Clamp(OfficialDifficultyMedianNps[targetRank] / sourceNps, 0.0, 1.0);
+            return Clamp(OfficialDifficultyMedianNps[targetRank] / sourceNps, 0.0, 1.0);
         }
 
         private static bool HasNotes(SortedDictionary<long, List<ChartParser.NoteEvent>>? notes) =>
@@ -519,7 +524,7 @@ namespace USM.Core.Parsers
                     var notes = difficulties[name];
                     var populated = notes.Where(entry => entry.Value != null && entry.Value.Count > 0).ToList();
                     double first = tickToSec(populated[0].Key);
-                    double last = tickToSec(populated[^1].Key);
+                    double last = tickToSec(populated[populated.Count - 1].Key);
                     return (Name: name, Groups: populated.Count, Span: Math.Max(0, last - first));
                 })
                 .ToList();
@@ -582,7 +587,7 @@ namespace USM.Core.Parsers
                 .OrderBy(entry => entry.Key)
                 .ToList();
 
-            int countToAdd = Math.Clamp((int)Math.Round(additions.Count * harderFraction), 0, additions.Count);
+            int countToAdd = Clamp((int)Math.Round(additions.Count * harderFraction), 0, additions.Count);
             foreach (int index in GetEvenlySpacedIndices(additions.Count, countToAdd))
             {
                 var addition = additions[index];
@@ -604,7 +609,7 @@ namespace USM.Core.Parsers
             if (groups.Count < 2 || keepRatio >= 1.0)
                 return CloneNotes(source);
 
-            int keepCount = Math.Clamp((int)Math.Round(groups.Count * keepRatio), 1, groups.Count - 1);
+            int keepCount = Clamp((int)Math.Round(groups.Count * keepRatio), 1, groups.Count - 1);
             var result = new SortedDictionary<long, List<ChartParser.NoteEvent>>();
             foreach (int index in GetEvenlySpacedIndices(groups.Count, keepCount))
             {

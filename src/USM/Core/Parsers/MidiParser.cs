@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 
 namespace USM.Core.Parsers
@@ -243,10 +244,10 @@ namespace USM.Core.Parsers
 
             MidiTrack? guitarTrack = tracks
                 .Where(track => !string.IsNullOrWhiteSpace(track.Name) &&
-                    (track.Name.Contains("GUITAR", StringComparison.OrdinalIgnoreCase) ||
-                     track.Name.Contains("PART GUITAR", StringComparison.OrdinalIgnoreCase)))
+                    (track.Name.IndexOf("GUITAR", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                     track.Name.IndexOf("PART GUITAR", StringComparison.OrdinalIgnoreCase) >= 0))
                 .OrderByDescending(PlayableMidiNoteCount)
-                .ThenByDescending(track => track.Name.Contains("PART GUITAR", StringComparison.OrdinalIgnoreCase))
+                .ThenByDescending(track => track.Name.IndexOf("PART GUITAR", StringComparison.OrdinalIgnoreCase) >= 0)
                 .FirstOrDefault();
 
             if (guitarTrack == null || PlayableMidiNoteCount(guitarTrack) == 0)

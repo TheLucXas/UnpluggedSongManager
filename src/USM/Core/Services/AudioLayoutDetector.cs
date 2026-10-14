@@ -133,7 +133,7 @@ namespace USM.Core.Services
                     || (value.StartsWith(stem, StringComparison.OrdinalIgnoreCase)
                         && value.Length > stem.Length
                         && char.IsDigit(value[stem.Length]))
-                    || (stem.EndsWith('s') && value.StartsWith(stem, StringComparison.OrdinalIgnoreCase)))
+                    || (stem.EndsWith("s", StringComparison.Ordinal) && value.StartsWith(stem, StringComparison.OrdinalIgnoreCase)))
                     return true;
             }
             return false;

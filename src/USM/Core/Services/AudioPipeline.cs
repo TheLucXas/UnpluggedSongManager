@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -60,7 +61,7 @@ namespace USM.Core.Services
             if (File.Exists(ffmpegIoPath)) return _cachedFfmpegPath = ffmpegIoPath;
 
             string? pathValue = Environment.GetEnvironmentVariable("PATH");
-            foreach (string pathPart in (pathValue ?? string.Empty).Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+            foreach (string pathPart in (pathValue ?? string.Empty).Split(new[] { Path.PathSeparator }, StringSplitOptions.RemoveEmptyEntries))
             {
                 try
                 {
@@ -92,7 +93,11 @@ namespace USM.Core.Services
                 string extractedPath = exePath + $".{Guid.NewGuid():N}.tmp";
                 try
                 {
+#if IN_GAME_CHORUS
+                    string checksumText = await Http.GetStringAsync(FfmpegSha256Url);
+#else
                     string checksumText = await Http.GetStringAsync(FfmpegSha256Url, ct);
+#endif
                     Match checksumMatch = Regex.Match(checksumText, @"\b[0-9a-fA-F]{64}\b");
                     if (!checksumMatch.Success)
                         throw new InvalidDataException("The FFmpeg download did not provide a valid SHA-256 checksum.");
@@ -103,15 +108,25 @@ namespace USM.Core.Services
                         if (response.Content.Headers.ContentLength is long length && length > 500L * 1024 * 1024)
                             throw new InvalidDataException("The FFmpeg archive is larger than expected.");
 
+#if IN_GAME_CHORUS
+                        using var input = await response.Content.ReadAsStreamAsync();
+#else
                         await using var input = await response.Content.ReadAsStreamAsync(ct);
-                        await using var output = new FileStream(downloadPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, useAsync: true);
+#endif
+                        using var output = new FileStream(downloadPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, useAsync: true);
                         await input.CopyToAsync(output, 1024 * 1024, ct);
                     }
 
-                    await using (var archiveStream = File.OpenRead(downloadPath))
+                    using (var archiveStream = File.OpenRead(downloadPath))
                     {
+#if IN_GAME_CHORUS
+                        byte[] hash;
+                        using (var sha = SHA256.Create()) hash = sha.ComputeHash(archiveStream);
+                        string actualHash = BitConverter.ToString(hash).Replace("-", "");
+#else
                         byte[] hash = await SHA256.HashDataAsync(archiveStream, ct);
                         string actualHash = Convert.ToHexString(hash);
+#endif
                         string expectedHash = checksumMatch.Value;
                         if (!actualHash.Equals(expectedHash, StringComparison.OrdinalIgnoreCase))
                             throw new InvalidDataException("The downloaded FFmpeg archive failed its SHA-256 check.");
@@ -124,12 +139,17 @@ namespace USM.Core.Services
                         if (entry == null)
                             throw new InvalidDataException("The FFmpeg archive did not contain bin/ffmpeg.exe.");
 
-                        await using var source = entry.Open();
-                        await using var target = new FileStream(extractedPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, useAsync: true);
+                        using var source = entry.Open();
+                        using var target = new FileStream(extractedPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, useAsync: true);
                         await source.CopyToAsync(target, 1024 * 1024, ct);
                     }
 
+#if IN_GAME_CHORUS
+                    if (File.Exists(exePath)) File.Delete(exePath);
+                    File.Move(extractedPath, exePath);
+#else
                     File.Move(extractedPath, exePath, overwrite: true);
+#endif
                     _cachedFfmpegPath = exePath;
                     return exePath;
                 }
@@ -168,15 +188,28 @@ namespace USM.Core.Services
             using var process = new Process { StartInfo = psi };
             process.Start();
 
+#if IN_GAME_CHORUS
+            Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync();
+            Task<string> stderrTask = process.StandardError.ReadToEndAsync();
+#else
             Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
             Task<string> stderrTask = process.StandardError.ReadToEndAsync(ct);
+#endif
             try
             {
+#if IN_GAME_CHORUS
+                await Task.Run(() => process.WaitForExit(), ct);
+#else
                 await process.WaitForExitAsync(ct);
+#endif
             }
             catch (OperationCanceledException)
             {
+#if IN_GAME_CHORUS
+                try { process.Kill(); } catch { }
+#else
                 try { process.Kill(entireProcessTree: true); } catch { }
+#endif
                 throw;
             }
 
@@ -189,10 +222,21 @@ namespace USM.Core.Services
         public static async Task EncodeOrCopyAsync(string srcFile, string outFile, CancellationToken ct = default)
         {
             if (!File.Exists(srcFile)) return;
-            if (srcFile.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase))
+            if (srcFile.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase) && IsVorbisOgg(srcFile))
                 File.Copy(srcFile, outFile, overwrite: true);
             else
                 await RunFfmpegAsync($"-y -threads 0 -i \"{srcFile}\" -b:a 192k \"{outFile}\"", ct);
+        }
+
+        private static bool IsVorbisOgg(string path)
+        {
+            byte[] header = new byte[128];
+            using var source = File.OpenRead(path);
+            int count = source.Read(header, 0, header.Length);
+            if (count < 32 || header[0] != 'O' || header[1] != 'g' ||
+                header[2] != 'g' || header[3] != 'S') return false;
+            return System.Text.Encoding.ASCII.GetString(header, 0, count)
+                .IndexOf("vorbis", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         public static async Task<(bool HasMultiTrack, bool IsHalfTrack)> ProcessAudioAsync(
@@ -203,10 +247,10 @@ namespace USM.Core.Services
             CancellationToken ct = default)
         {
             var stems = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-            foreach (var (stem, names) in StemNames)
+            foreach (var stemEntry in StemNames)
             {
-                List<string> files = FindAudioFiles(srcDir, names);
-                if (files.Count > 0) stems[stem] = files;
+                List<string> files = FindAudioFiles(srcDir, stemEntry.Value);
+                if (files.Count > 0) stems[stemEntry.Key] = files;
             }
 
             var drums = Directory.GetFiles(srcDir)
@@ -335,7 +379,7 @@ namespace USM.Core.Services
                 string samplePath = Path.Combine(outDir, "sample.ogg");
                 try
                 {
-                    await RunFfmpegAsync($"-y -threads 0 -ss {previewStart:F1} -t 25 -i \"{masterPath}\" -b:a 192k \"{samplePath}\"", ct);
+                    await RunFfmpegAsync($"-y -threads 0 -ss {previewStart.ToString("F1", CultureInfo.InvariantCulture)} -t 25 -i \"{masterPath}\" -b:a 192k \"{samplePath}\"", ct);
                 }
                 catch
                 {
@@ -375,7 +419,7 @@ namespace USM.Core.Services
                         || (fileStem.StartsWith(name, StringComparison.OrdinalIgnoreCase)
                             && fileStem.Length > name.Length
                             && char.IsDigit(fileStem[name.Length]))
-                        || (name.EndsWith('s') && fileStem.StartsWith(name, StringComparison.OrdinalIgnoreCase)));
+                        || (name.EndsWith("s", StringComparison.Ordinal) && fileStem.StartsWith(name, StringComparison.OrdinalIgnoreCase)));
                 })
                 .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
                 .ToList();

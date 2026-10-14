@@ -6,13 +6,20 @@
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Nullable>disable</Nullable>
     <LangVersion>latest</LangVersion>
-    <DefineConstants>QUEST_IL2CPP</DefineConstants>
+    <DefineConstants>QUEST_IL2CPP;IN_GAME_CHORUS</DefineConstants>
     <QuestReferencesDir Condition="'$(QuestReferencesDir)' == ''">$(MSBuildProjectDirectory)\..\..\tools\quest</QuestReferencesDir>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Remove="obj/**/*.cs" />
     <Compile Remove="bin/**/*.cs" />
+    <Compile Include="../../src/USM/Core/Parsers/ChartParser.cs" Link="Shared/ChartParser.cs" />
+    <Compile Include="../../src/USM/Core/Parsers/MidiParser.cs" Link="Shared/MidiParser.cs" />
+    <Compile Include="../../src/USM/Core/Parsers/JsonGenerator.cs" Link="Shared/JsonGenerator.cs" />
+    <Compile Include="../../src/USM/Core/Parsers/ChartConversion.cs" Link="Shared/ChartConversion.cs" />
+    <Compile Include="../../src/USM/Core/Parsers/SngDecoder.cs" Link="Shared/SngDecoder.cs" />
+    <Compile Include="../../src/USM/Core/Services/AudioLayoutDetector.cs" Link="Shared/AudioLayoutDetector.cs" />
+    <Compile Include="../../src/USM/Core/Parsers/XmlGenerator.cs" Link="Shared/XmlGenerator.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -26,6 +33,10 @@
     </Reference>
     <Reference Include="Il2CppInterop.Runtime">
       <HintPath>$(QuestReferencesDir)\MelonNet\net8\Il2CppInterop.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(QuestReferencesDir)\MelonNet\net8\Newtonsoft.Json.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Il2Cppmscorlib">

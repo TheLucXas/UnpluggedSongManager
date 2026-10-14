@@ -15,6 +15,9 @@ namespace USM.Core.Parsers
 {
     public class SngDecoder
     {
+        private static bool IsFinite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
+        private static double Clamp(double value, double minimum, double maximum) =>
+            Math.Max(minimum, Math.Min(maximum, value));
         private const int InitialRangeSize = 64 * 1024;
         private const int MaximumIndexSize = 8 * 1024 * 1024;
         private static readonly HttpClient HttpClient = new()
@@ -36,24 +39,24 @@ namespace USM.Core.Parsers
 
         private sealed class SngPackageIndex
         {
-            public byte[] XorMask { get; init; } = Array.Empty<byte>();
-            public Dictionary<string, string> Metadata { get; init; } = new(StringComparer.OrdinalIgnoreCase);
-            public List<SngFileEntry> Files { get; init; } = new();
+            public byte[] XorMask { get; set; } = Array.Empty<byte>();
+            public Dictionary<string, string> Metadata { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+            public List<SngFileEntry> Files { get; set; } = new();
         }
 
         public sealed class RemoteSongProfile
         {
-            public AudioTrackLayout TrackLayout { get; init; } = AudioTrackLayout.Unknown;
-            public int AudioStemCount { get; init; }
-            public bool HasVocalsStem { get; init; }
-            public bool HasGuitarStem { get; init; }
-            public bool HasLeadGuitarChart { get; init; }
-            public bool HasChartProfile { get; init; }
-            public int SourceDifficultyCount { get; init; }
-            public int ChartNoteCount { get; init; }
-            public double SongDurationSeconds { get; init; }
-            public double ChartCoverageRatio { get; init; }
-            public HashSet<string> StemGroups { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+            public AudioTrackLayout TrackLayout { get; set; } = AudioTrackLayout.Unknown;
+            public int AudioStemCount { get; set; }
+            public bool HasVocalsStem { get; set; }
+            public bool HasGuitarStem { get; set; }
+            public bool HasLeadGuitarChart { get; set; }
+            public bool HasChartProfile { get; set; }
+            public int SourceDifficultyCount { get; set; }
+            public int ChartNoteCount { get; set; }
+            public double SongDurationSeconds { get; set; }
+            public double ChartCoverageRatio { get; set; }
+            public HashSet<string> StemGroups { get; set; } = new(StringComparer.OrdinalIgnoreCase);
             public bool IsIdealForUnplugged => TrackLayout == AudioTrackLayout.MultiTrack
                 && new[] { "guitar", "bass", "drums", "vocals" }.All(StemGroups.Contains)
                 && HasLeadGuitarChart
@@ -80,6 +83,21 @@ namespace USM.Core.Parsers
                 return AudioTrackLayout.Unknown;
 
             return AudioLayoutDetector.Detect(index.Files.Select(entry => entry.FileName));
+        }
+
+        /// <summary>Reads the package directory without fetching any media payload.</summary>
+        public static async Task<IReadOnlyList<string>> ListRemoteFileNamesAsync(
+            string sngUrl, CancellationToken ct = default)
+        {
+            if (!Uri.TryCreate(sngUrl, UriKind.Absolute, out var uri) ||
+                uri.Scheme != Uri.UriSchemeHttps ||
+                !uri.Host.Equals("files.enchor.us", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Only HTTPS SNG downloads from files.enchor.us are supported.");
+
+            SngPackageIndex? index = await ReadRemotePackageIndexAsync(uri, ct);
+            if (index == null)
+                throw new NotSupportedException("The chart server did not support ranged SNG downloads.");
+            return index.Files.Select(entry => Path.GetFileName(entry.FileName)).ToArray();
         }
 
         /// <summary>
@@ -153,7 +171,8 @@ namespace USM.Core.Parsers
 
                     string name = Path.GetFileName(entry.FileName);
                     string path = Path.Combine(tempDir, name);
-                    await File.WriteAllBytesAsync(path, chartBytes, ct);
+                    ct.ThrowIfCancellationRequested();
+                    File.WriteAllBytes(path, chartBytes);
                     try
                     {
                         int difficultyCount;
@@ -169,7 +188,7 @@ namespace USM.Core.Parsers
                             noteCount = parsed.Difficulties.Values.Sum(notes => notes.Values.Sum(group => group.Count));
                             hasLeadGuitarChart = noteCount > 0;
                             noteTimes = parsed.Difficulties.Values.SelectMany(notes => notes.Keys)
-                                .Select(parsed.TickToSec).Where(time => double.IsFinite(time) && time >= 0).ToList();
+                                .Select(parsed.TickToSec).Where(time => IsFinite(time) && time >= 0).ToList();
                         }
                         else
                         {
@@ -179,7 +198,7 @@ namespace USM.Core.Parsers
                             noteCount = parsed.Difficulties.Values.Sum(notes => notes.Values.Sum(group => group.Count));
                             hasLeadGuitarChart = MidiParser.IsLeadGuitarTrack(parsed.SelectedTrackName);
                             noteTimes = parsed.Difficulties.Values.SelectMany(notes => notes.Keys)
-                                .Select(parsed.TickToSec).Where(time => double.IsFinite(time) && time >= 0).ToList();
+                                .Select(parsed.TickToSec).Where(time => IsFinite(time) && time >= 0).ToList();
                         }
 
                         hasParsedChartProfile = true;
@@ -187,7 +206,7 @@ namespace USM.Core.Parsers
                         double firstNoteTime = noteTimes.Count > 0 ? noteTimes.Min() : 0;
                         double lastNoteTime = noteTimes.Count > 0 ? noteTimes.Max() : 0;
                         double candidateCoverage = durationSeconds > 0 && noteTimes.Count > 0
-                            ? Math.Clamp((lastNoteTime - firstNoteTime) / durationSeconds, 0, 1)
+                            ? Clamp((lastNoteTime - firstNoteTime) / durationSeconds, 0, 1)
                             : -1;
                         bool better = durationSeconds > 0
                             ? candidateCoverage > bestCoverageRatio
@@ -267,7 +286,8 @@ namespace USM.Core.Parsers
             string outputDir,
             IProgress<double>? progress = null,
             Func<string, bool>? includeFile = null,
-            CancellationToken ct = default)
+            CancellationToken ct = default,
+            bool allowFullDownloadFallback = true)
         {
             if (!Uri.TryCreate(sngUrl, UriKind.Absolute, out var uri) ||
                 uri.Scheme != Uri.UriSchemeHttps ||
@@ -280,6 +300,8 @@ namespace USM.Core.Parsers
             using var firstResponse = await GetRangeAsync(uri, 0, InitialRangeSize - 1, ct);
             if (firstResponse.StatusCode == HttpStatusCode.OK)
             {
+                if (!allowFullDownloadFallback)
+                    throw new NotSupportedException("The chart server did not support ranged SNG downloads; importing it could download a video background.");
                 await SaveFullResponseAndDecodeAsync(firstResponse, outputDir, progress, includeFile, ct);
                 return;
             }
@@ -291,7 +313,7 @@ namespace USM.Core.Parsers
                 ?? throw new InvalidDataException("The SNG server did not report the package length for its byte range.");
             if (firstResponse.Content.Headers.ContentRange?.From != 0)
                 throw new InvalidDataException("The SNG server returned an unexpected initial byte range.");
-            byte[] prefix = await firstResponse.Content.ReadAsByteArrayAsync(ct);
+            byte[] prefix = await firstResponse.Content.ReadAsByteArrayAsync();
             progress?.Report(0.01);
 
             SngPackageIndex index;
@@ -310,6 +332,8 @@ namespace USM.Core.Parsers
                     using var prefixResponse = await GetRangeAsync(uri, 0, requestedEnd, ct);
                     if (prefixResponse.StatusCode == HttpStatusCode.OK)
                     {
+                        if (!allowFullDownloadFallback)
+                            throw new NotSupportedException("The chart server did not support ranged SNG downloads; importing it could download a video background.");
                         await SaveFullResponseAndDecodeAsync(prefixResponse, outputDir, progress, includeFile, ct);
                         return;
                     }
@@ -319,7 +343,7 @@ namespace USM.Core.Parsers
                     long responseLength = prefixResponse.Content.Headers.ContentRange?.Length ?? packageLength;
                     if (responseLength != packageLength)
                         throw new InvalidDataException("The SNG package length changed during the ranged download.");
-                    prefix = await prefixResponse.Content.ReadAsByteArrayAsync(ct);
+                    prefix = await prefixResponse.Content.ReadAsByteArrayAsync();
                 }
             }
 
@@ -356,6 +380,8 @@ namespace USM.Core.Parsers
                 using var response = await GetRangeAsync(uri, start, end, ct);
                 if (response.StatusCode == HttpStatusCode.OK)
                 {
+                    if (!allowFullDownloadFallback)
+                        throw new NotSupportedException("The chart server stopped supporting ranged SNG downloads; importing it could download a video background.");
                     await SaveFullResponseAndDecodeAsync(response, outputDir, progress, includeFile, ct);
                     return;
                 }
@@ -367,14 +393,14 @@ namespace USM.Core.Parsers
                     throw new InvalidDataException($"The SNG server returned an unexpected range for '{safeName}'.");
 
                 string destination = Path.Combine(outputDir, safeName);
-                await using var input = await response.Content.ReadAsStreamAsync(ct);
-                await using var output = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None, 64 * 1024, useAsync: true);
+                using var input = await response.Content.ReadAsStreamAsync();
+                using var output = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None, 64 * 1024, useAsync: true);
                 byte[] buffer = new byte[64 * 1024];
                 ulong entryBytesRead = 0;
                 while (entryBytesRead < entry.ContentLength)
                 {
                     int wanted = (int)Math.Min((ulong)buffer.Length, entry.ContentLength - entryBytesRead);
-                    int read = await input.ReadAsync(buffer.AsMemory(0, wanted), ct);
+                    int read = await input.ReadAsync(buffer, 0, wanted, ct);
                     if (read <= 0)
                         throw new EndOfStreamException($"The SNG entry '{safeName}' ended unexpectedly.");
 
@@ -384,7 +410,7 @@ namespace USM.Core.Parsers
                         buffer[i] ^= (byte)(index.XorMask[(int)(fileBytePos % 16)] ^ (byte)(fileBytePos & 0xFF));
                     }
 
-                    await output.WriteAsync(buffer.AsMemory(0, read), ct);
+                    await output.WriteAsync(buffer, 0, read, ct);
                     entryBytesRead += (ulong)read;
                     bytesFetched += read;
                     if (bytesToFetch > 0)
@@ -477,7 +503,7 @@ namespace USM.Core.Parsers
                 throw new InvalidDataException($"The SNG server returned an unexpected range for '{Path.GetFileName(entry.FileName)}'.");
             }
 
-            byte[] bytes = await response.Content.ReadAsByteArrayAsync(ct);
+            byte[] bytes = await response.Content.ReadAsByteArrayAsync();
             if ((ulong)bytes.Length != entry.ContentLength)
                 throw new EndOfStreamException($"The SNG entry '{Path.GetFileName(entry.FileName)}' ended unexpectedly.");
 
@@ -499,7 +525,7 @@ namespace USM.Core.Parsers
             if (firstResponse.Content.Headers.ContentRange?.From != 0)
                 throw new InvalidDataException("The SNG server returned an unexpected initial byte range.");
 
-            byte[] prefix = await firstResponse.Content.ReadAsByteArrayAsync(ct);
+            byte[] prefix = await firstResponse.Content.ReadAsByteArrayAsync();
             int requestedPrefixSize = InitialRangeSize;
             while (true)
             {
@@ -520,7 +546,7 @@ namespace USM.Core.Parsers
                     var contentRange = prefixResponse.Content.Headers.ContentRange;
                     if (contentRange?.From != 0 || contentRange.Length != packageLength)
                         throw new InvalidDataException("The SNG package length changed while reading its index.");
-                    prefix = await prefixResponse.Content.ReadAsByteArrayAsync(ct);
+                    prefix = await prefixResponse.Content.ReadAsByteArrayAsync();
                 }
             }
         }
@@ -537,14 +563,14 @@ namespace USM.Core.Parsers
             try
             {
                 long totalBytes = response.Content.Headers.ContentLength ?? -1;
-                await using var input = await response.Content.ReadAsStreamAsync(ct);
-                await using var output = new FileStream(tempSng, FileMode.Create, FileAccess.Write, FileShare.None, 128 * 1024, useAsync: true);
+                using var input = await response.Content.ReadAsStreamAsync();
+                using var output = new FileStream(tempSng, FileMode.Create, FileAccess.Write, FileShare.None, 128 * 1024, useAsync: true);
                 byte[] buffer = new byte[128 * 1024];
                 long copied = 0;
                 int read;
-                while ((read = await input.ReadAsync(buffer.AsMemory(0, buffer.Length), ct)) > 0)
+                while ((read = await input.ReadAsync(buffer, 0, buffer.Length, ct)) > 0)
                 {
-                    await output.WriteAsync(buffer.AsMemory(0, read), ct);
+                    await output.WriteAsync(buffer, 0, read, ct);
                     copied += read;
                     if (totalBytes > 0) progress?.Report(Math.Min(1.0, (double)copied / totalBytes));
                 }

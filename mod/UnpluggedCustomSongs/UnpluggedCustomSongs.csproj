@@ -6,12 +6,21 @@
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Nullable>disable</Nullable>
     <LangVersion>latest</LangVersion>
+    <DefineConstants>IN_GAME_CHORUS</DefineConstants>
     <UnpluggedGameDir Condition="'$(UnpluggedGameDir)' == ''">$(UNPLUGGED_GAME_DIR)</UnpluggedGameDir>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Remove="obj/**/*.cs" />
     <Compile Remove="bin/**/*.cs" />
+    <Compile Include="../../src/USM/Core/Parsers/ChartParser.cs" Link="Shared/ChartParser.cs" />
+    <Compile Include="../../src/USM/Core/Parsers/MidiParser.cs" Link="Shared/MidiParser.cs" />
+    <Compile Include="../../src/USM/Core/Parsers/JsonGenerator.cs" Link="Shared/JsonGenerator.cs" />
+    <Compile Include="../../src/USM/Core/Parsers/ChartConversion.cs" Link="Shared/ChartConversion.cs" />
+    <Compile Include="../../src/USM/Core/Parsers/SngDecoder.cs" Link="Shared/SngDecoder.cs" />
+    <Compile Include="../../src/USM/Core/Services/AudioLayoutDetector.cs" Link="Shared/AudioLayoutDetector.cs" />
+    <Compile Include="../../src/USM/Core/Services/AudioPipeline.cs" Link="Shared/AudioPipeline.cs" />
+    <Compile Include="../../src/USM/Core/Parsers/XmlGenerator.cs" Link="Shared/XmlGenerator.cs" />
   </ItemGroup>
 
   <ItemGroup>

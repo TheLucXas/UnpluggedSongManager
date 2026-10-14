@@ -4,7 +4,11 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+#if IN_GAME_CHORUS
+using Newtonsoft.Json.Linq;
+#else
 using System.Text.Json;
+#endif
 using System.Xml.Linq;
 
 namespace USM.Core.Parsers
@@ -20,6 +24,52 @@ namespace USM.Core.Parsers
         // from the canonical JSON, so gameplay only deserializes game data.
         public static string BuildQuestHandXml(string chartJson)
         {
+#if IN_GAME_CHORUS
+            JObject chart = JObject.Parse(chartJson);
+            var root = new XElement(NsDefault + "SongLevel",
+                new XAttribute(XNamespace.Xmlns + "i", NsI.NamespaceName),
+                new XAttribute(XNamespace.Xmlns + "a", NsA.NamespaceName),
+                new XElement(NsDefault + "BPM", (string)chart["BPM"]));
+
+            var bpmGrid = new XElement(NsDefault + "BPMGrid");
+            foreach (JToken beat in chart["BPMGrid"] ?? new JArray())
+            {
+                bpmGrid.Add(new XElement(NsDefault + "BPMKey",
+                    new XElement(NsDefault + "Duration", "0"),
+                    new XElement(NsDefault + "Time", (string)beat["Time"]),
+                    new XElement(NsDefault + "BPM", (string)beat["BPM"])));
+            }
+            root.Add(bpmGrid,
+                new XElement(NsDefault + "BeatGrid", new XAttribute(NsI + "nil", "true")),
+                new XElement(NsDefault + "BeatGridFromFile", "false"));
+
+            var notes = new XElement(NsDefault + "Notes");
+            foreach (JToken note in chart["HandNotes"] ?? new JArray())
+            {
+                var tierNote = new XElement(NsDefault + "TierNote");
+                if ((bool?)note["IsPullOff"] == true)
+                    tierNote.Add(new XAttribute(NsI + "type", "PullOffGuitarNote"));
+                tierNote.Add(new XElement(NsDefault + "Duration", (string)note["Duration"]),
+                    new XElement(NsDefault + "Time", (string)note["Time"]),
+                    new XElement(NsDefault + "Tier", (string)note["StringLane"]),
+                    new XElement(NsDefault + "CursableProbability", "0"),
+                    new XElement(NsDefault + "IsBlind", "false"));
+                var fingers = new XElement(NsDefault + "Fingers");
+                foreach (JToken finger in note["Fingers"] ?? new JArray())
+                    fingers.Add(new XElement(NsDefault + "TierFinger", (string)finger));
+                tierNote.Add(fingers);
+                notes.Add(tierNote);
+            }
+
+            root.Add(new XElement(NsDefault + "Keys",
+                new XElement(NsDefault + "KeyTime",
+                    new XAttribute(NsI + "type", "GuitarGame"),
+                    new XElement(NsDefault + "Duration", (string)chart["Duration"]),
+                    new XElement(NsDefault + "Time", "0"),
+                    new XElement(NsDefault + "PrewarmTime", "4"),
+                    notes)));
+            return new XDocument(new XDeclaration("1.0", "utf-8", null), root).ToString();
+#else
             using JsonDocument document = JsonDocument.Parse(chartJson);
             JsonElement chart = document.RootElement;
             var root = new XElement(NsDefault + "SongLevel",
@@ -65,6 +115,7 @@ namespace USM.Core.Parsers
                     new XElement(NsDefault + "PrewarmTime", "4"),
                     notes)));
             return new XDocument(new XDeclaration("1.0", "utf-8", null), root).ToString();
+#endif
         }
 
         private static readonly Dictionary<int, (int Tier, string[] Fingers)> FingerMap = new()
