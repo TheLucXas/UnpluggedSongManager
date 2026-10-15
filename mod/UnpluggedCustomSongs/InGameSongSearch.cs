@@ -171,6 +171,10 @@ namespace UnpluggedCustomSongs
             // Symmetric offsets from the venue title keep both buttons in the
             // same visible row across menu animation and headset recentering.
             float distance = difficultySpan * 0.82f;
+            // Renderer bounds are only reliable once the cloned buttons are
+            // active. They become visible later in this same update frame.
+            _chorusButton.gameObject.SetActive(true);
+            _searchButton.gameObject.SetActive(true);
             PositionButtonVisualCenter(_chorusButton, anchor - axis * distance);
             PositionButtonVisualCenter(_searchButton, anchor + axis * distance);
             _buttonsAnchored = true;
@@ -181,12 +185,18 @@ namespace UnpluggedCustomSongs
 
         private static Vector3 GetButtonVisualCenter(PressableButton button)
         {
-            // The Start Gig button's visible frame/text is offset from its
-            // press collider. Anchor the clone by its label so the displayed
-            // buttons actually line up with the venue title.
+            // TMP's transform is its pivot, not the center of the visible
+            // glyphs. The Start Gig template places its glyphs below that
+            // pivot, so use rendered bounds to match the venue title's row.
             var text = button.GetComponentInChildren<TextMeshPro>(true);
             if (text != null)
+            {
+                text.ForceMeshUpdate();
+                var renderer = text.GetComponent<Renderer>();
+                if (renderer != null)
+                    return renderer.bounds.center;
                 return text.transform.position;
+            }
             var collider = button.GetComponentInChildren<BoxCollider>(true);
             return collider == null ? button.transform.position :
                 collider.transform.TransformPoint(collider.center);
