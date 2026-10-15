@@ -145,7 +145,7 @@ namespace UnpluggedCustomSongs
 
         private static void PositionLauncherButtons(StartSpace start)
         {
-            if (_buttonsAnchored || _searchButton == null || _chorusButton == null ||
+            if (_searchButton == null || _chorusButton == null ||
                 !ModMain.IsCustomCarouselSettled) return;
 
             var venue = start.GetComponentInChildren<VenueSelectionController>(true);
@@ -171,16 +171,25 @@ namespace UnpluggedCustomSongs
             // Symmetric offsets from the venue title keep both buttons in the
             // same visible row across menu animation and headset recentering.
             float distance = difficultySpan * 0.82f;
+            Vector3 left = anchor - axis * distance;
+            Vector3 right = anchor + axis * distance;
+            if (_buttonsAnchored &&
+                Vector3.Distance(GetButtonVisualCenter(_chorusButton), left) < 0.002f &&
+                Vector3.Distance(GetButtonVisualCenter(_searchButton), right) < 0.002f)
+                return;
+
             // Renderer bounds are only reliable once the cloned buttons are
             // active. They become visible later in this same update frame.
-            _chorusButton.gameObject.SetActive(true);
-            _searchButton.gameObject.SetActive(true);
-            PositionButtonVisualCenter(_chorusButton, anchor - axis * distance);
-            PositionButtonVisualCenter(_searchButton, anchor + axis * distance);
+            if (!_chorusButton.gameObject.activeSelf) _chorusButton.gameObject.SetActive(true);
+            if (!_searchButton.gameObject.activeSelf) _searchButton.gameObject.SetActive(true);
+            PositionButtonVisualCenter(_chorusButton, left);
+            PositionButtonVisualCenter(_searchButton, right);
+            bool firstAnchor = !_buttonsAnchored;
             _buttonsAnchored = true;
-            MelonLogger.Msg($"[CustomSongs][Search] Buttons anchored beside venue '{label.text}': " +
-                $"center={anchor}, distance={distance:F3}, " +
-                $"left={GetButtonVisualCenter(_chorusButton)}, right={GetButtonVisualCenter(_searchButton)}.");
+            if (firstAnchor)
+                MelonLogger.Msg($"[CustomSongs][Search] Buttons follow venue '{label.text}': " +
+                    $"center={anchor}, distance={distance:F3}, " +
+                    $"left={GetButtonVisualCenter(_chorusButton)}, right={GetButtonVisualCenter(_searchButton)}.");
         }
 
         private static Vector3 GetButtonVisualCenter(PressableButton button)
