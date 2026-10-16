@@ -1,0 +1,32 @@
+title: "[Question] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ask about using USM or the PC and Quest mods here. For a reproducible bug, please open an Issue instead. You can write in any language. Remove personal information from logs and screenshots before sharing them.
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Where do you need help?
+      options:
+        - USM on Windows
+        - PC mod
+        - Quest mod
+        - Song conversion or charts
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: What would you like to know?
+      placeholder: Describe what you are trying to do and where you got stuck.
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you tried?
+      description: Include relevant versions, error text, and steps if they help explain the question.
+    validations:
+      required: false

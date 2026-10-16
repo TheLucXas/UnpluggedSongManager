@@ -4,7 +4,7 @@ Custom songs for **Unplugged: Air Guitar** on Windows PC and Meta Quest. Find ch
 
 **Search charts · Convert songs · Play with hands or controllers · Sync to Quest · 16 interface languages**
 
-[Download the latest release](https://github.com/TheLucXas/UnpluggedSongManager/releases) · [Report a bug](https://github.com/TheLucXas/UnpluggedSongManager/issues)
+[Download the latest release](https://github.com/TheLucXas/UnpluggedSongManager/releases) · [Ask a question or share an idea](https://github.com/TheLucXas/UnpluggedSongManager/discussions) · [Report a bug](https://github.com/TheLucXas/UnpluggedSongManager/issues)
 
 ---
 

@@ -1,0 +1,33 @@
+title: "[Idea] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Share a feature or improvement idea for USM or its mods. You can write in any language. Check existing discussions first so related ideas can stay together.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - USM application
+        - PC mod
+        - Quest mod
+        - Chart conversion
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      placeholder: Explain the current difficulty or missing feature.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: How should it work?
+      placeholder: Describe your suggested behavior or interface.
+    validations:
+      required: true
