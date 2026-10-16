@@ -1,10 +1,23 @@
-# 🎸 Unplugged Song Manager
+<h1 align="center"><img src="src/USM/assets/icon.png" width="44" alt="USM guitar icon"> Unplugged Song Manager</h1>
 
-Custom songs for **Unplugged: Air Guitar** on Windows PC and Meta Quest. Find charts on [Chorus Encore](https://www.enchor.us/), convert them to `.usm`, manage your library, and install the PC or Quest mod from one Windows app.
+<p align="center">
+  <strong>Custom songs for Unplugged: Air Guitar on Windows PC and Meta Quest.</strong><br>
+  Search Chorus Encore · convert charts · manage your library · play with hands or controllers · sync to Quest · 16 interface languages
+</p>
 
-**Search charts · Convert songs · Play with hands or controllers · Sync to Quest · 16 interface languages**
+<p align="center">
+  <a href="LICENSE"><img alt="License: Unlicense" src="https://img.shields.io/badge/license-Unlicense-1684c2"></a>
+  <img alt="Platform: Windows" src="https://img.shields.io/badge/platform-Windows-1684c2">
+  <img alt="VR: PC and Meta Quest" src="https://img.shields.io/badge/VR-PC%20%26%20Meta%20Quest-0b997e">
+  <img alt="Status: community project" src="https://img.shields.io/badge/status-community%20project-e09628">
+  <img alt="Code: AI generated" src="https://img.shields.io/badge/code-AI%20generated-8d2ac2">
+</p>
 
-[Download the latest release](https://github.com/TheLucXas/UnpluggedSongManager/releases) · [Ask a question or share an idea](https://github.com/TheLucXas/UnpluggedSongManager/discussions) · [Report a bug](https://github.com/TheLucXas/UnpluggedSongManager/issues)
+<p align="center">
+  <a href="https://github.com/TheLucXas/UnpluggedSongManager/releases">Download</a> ·
+  <a href="https://github.com/TheLucXas/UnpluggedSongManager/discussions">Discussions</a> ·
+  <a href="https://github.com/TheLucXas/UnpluggedSongManager/issues">Report a bug</a>
+</p>
 
 ---
 
