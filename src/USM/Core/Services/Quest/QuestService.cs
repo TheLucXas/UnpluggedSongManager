@@ -14,6 +14,7 @@ using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using USM.Core.Services;
+using USM.Core.Services.Diagnostics;
 using USM.Core.Services.Localization;
 
 namespace USM.Core.Services.Quest
@@ -38,14 +39,19 @@ namespace USM.Core.Services.Quest
         private string? _adbPath;
         private string? _apktoolJar;
         private string? _signerJar;
-        private string? _lemonPatcherExe;
+        private string? _lemonPatcherDir;
         private string? _melonDataZip;
         private string? _modDllPath;
         private readonly UpdateService _updateService;
+        private readonly QuestToolsInstaller _installer;
 
-        public QuestService(UpdateService? updateService = null)
+        /// <summary>User-facing reason of the last failed tools install, or null.</summary>
+        public string? LastToolsError { get; private set; }
+
+        public QuestService(UpdateService? updateService = null, QuestToolsInstaller? installer = null)
         {
             _updateService = updateService ?? new UpdateService();
+            _installer = installer ?? QuestToolsInstaller.Default;
             FindToolPaths();
         }
 
@@ -163,13 +169,6 @@ namespace USM.Core.Services.Quest
             // 2. Locate Tools in AppData cache
             string cacheDir = GetQuestToolsCacheDirectory();
             ResolveToolPaths(cacheDir);
-
-            // If not complete in cache, check if local dev directories have tools to seed cache
-            if (!AreToolsReady())
-            {
-                SeedCacheFromLocalIfAvailable(cacheDir);
-                ResolveToolPaths(cacheDir);
-            }
         }
 
         public void ResolveToolPaths(string dir)
@@ -178,13 +177,13 @@ namespace USM.Core.Services.Quest
 
             string apktool = Path.Combine(dir, "apktool.jar");
             string signer = Path.Combine(dir, "uber-apk-signer.jar");
-            string lemonPatcher = Path.Combine(dir, "lemon_patcher", "lemon_patcher.exe");
+            string lemonCore = Path.Combine(dir, "lemon_patcher", "MelonLoader.Installer.Core.dll");
             string melonData = Path.Combine(dir, "melon_data.zip");
             string cachedModDll = Path.Combine(dir, "UnpluggedCustomSongs.dll");
 
             if (File.Exists(apktool)) _apktoolJar = apktool;
             if (File.Exists(signer)) _signerJar = signer;
-            if (File.Exists(lemonPatcher)) _lemonPatcherExe = lemonPatcher;
+            if (File.Exists(lemonCore)) _lemonPatcherDir = Path.GetDirectoryName(lemonCore);
             if (File.Exists(melonData)) _melonDataZip = melonData;
 
             // Keep the PC and Quest builds separate. The generic DLL is the PC build;
@@ -212,91 +211,81 @@ namespace USM.Core.Services.Quest
             catch { return false; }
         }
 
+        /// <summary>Fast check (existence + size, no hashing); safe to call from UI property getters.</summary>
         public bool AreToolsReady()
         {
+            string cacheDir = GetQuestToolsCacheDirectory();
+            if (!_installer.IsInstalled(cacheDir)) return false;
+            if (string.IsNullOrEmpty(_apktoolJar) || string.IsNullOrEmpty(_lemonPatcherDir) || string.IsNullOrEmpty(_modDllPath))
+                ResolveToolPaths(cacheDir);
             return !string.IsNullOrEmpty(_apktoolJar) && File.Exists(_apktoolJar) &&
                    !string.IsNullOrEmpty(_signerJar) && File.Exists(_signerJar) &&
-                   !string.IsNullOrEmpty(_lemonPatcherExe) && File.Exists(_lemonPatcherExe) &&
+                   !string.IsNullOrEmpty(_lemonPatcherDir) &&
                    !string.IsNullOrEmpty(_melonDataZip) && File.Exists(_melonDataZip) &&
                    !string.IsNullOrEmpty(_modDllPath) && File.Exists(_modDllPath);
         }
 
-        private void SeedCacheFromLocalIfAvailable(string cacheDir)
-        {
-            try
-            {
-                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-                string[] searchDirs =
-                {
-                    Path.Combine(baseDir, "tools", "quest"),
-                    Path.Combine(baseDir, @"..\..\..\..\tools\quest"),
-                    Path.Combine(Directory.GetCurrentDirectory(), "tools", "quest")
-                };
-
-                foreach (var dir in searchDirs)
-                {
-                    if (Directory.Exists(dir) && File.Exists(Path.Combine(dir, "apktool.jar")))
-                    {
-                        Directory.CreateDirectory(cacheDir);
-                        foreach (var file in Directory.GetFiles(dir, "*.*", SearchOption.AllDirectories))
-                        {
-                            string rel = Path.GetRelativePath(dir, file);
-                            string target = Path.Combine(cacheDir, rel);
-                            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                            if (!File.Exists(target))
-                            {
-                                File.Copy(file, target, true);
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
-            catch { }
-        }
-
+        /// <summary>
+        /// Verifies (SHA-256) and, if needed, downloads the Quest patching tools. On failure
+        /// <see cref="LastToolsError"/> holds the user-facing message and one line is logged.
+        /// </summary>
         public async Task<(bool Success, string Message)> EnsureToolsReadyAsync(
             IProgress<(double Progress, string Status)>? progress = null,
             Action<string>? log = null)
         {
             string cacheDir = GetQuestToolsCacheDirectory();
+            LastToolsError = null;
+
+            QuestToolsInstallResult result;
+            DiagnosticLog.Info("Quest tools download", "Starting Quest tools check/download.");
+            try
+            {
+                result = await Task.Run(() => _installer.InstallAsync(cacheDir, progress)).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                DiagnosticLog.Failure("Quest tools download", "Unexpected error: " + ex.Message, ex);
+                string msg = LocalizationService.T("QuestTools_ErrUnexpected", ex.Message);
+                LastToolsError = msg;
+                log?.Invoke(LocalizationService.T("QuestTools_FailedLog", "Unexpected", "-", ex.ToString()));
+                return (false, msg);
+            }
+
+            if (!result.Success)
+            {
+                ReportToolsInstallFailure(result);
+                LastToolsError = result.Message;
+                log?.Invoke(LocalizationService.T("QuestTools_FailedLog", result.Kind,
+                    $"{result.Component} ({result.Url}{(result.HttpStatus is int st ? ", HTTP " + st : "")})", result.Detail ?? ""));
+                return (false, result.Message);
+            }
+
             ResolveToolPaths(cacheDir);
-
-            if (AreToolsReady())
+            if (string.IsNullOrEmpty(_modDllPath) || !File.Exists(_modDllPath))
             {
-                return (true, LocalizationService.T("Log_QuestToolsCached", cacheDir));
+                DiagnosticLog.Failure("Quest tools download", "Mod DLL missing after tools install.", null, "Kind=ModMissing");
+                string msg = LocalizationService.T("QuestTools_ModMissing");
+                LastToolsError = msg;
+                log?.Invoke(LocalizationService.T("QuestTools_FailedLog", "ModMissing", "UnpluggedCustomSongs.Quest.dll", msg));
+                return (false, msg);
             }
 
-            SeedCacheFromLocalIfAvailable(cacheDir);
-            ResolveToolPaths(cacheDir);
+            DiagnosticLog.Info("Quest tools download", "Quest tools ready.");
+            return (true, LocalizationService.T("QuestTools_Ready"));
+        }
 
-            if (AreToolsReady())
-            {
-                return (true, LocalizationService.T("Log_QuestToolsCached", cacheDir));
-            }
-
-            log?.Invoke(LocalizationService.T("Log_QuestToolsDownloading", 0));
-            var (dlSuccess, dlMsg) = await _updateService.DownloadAndCacheQuestToolsAsync(cacheDir, null, progress);
-            if (!dlSuccess)
-            {
-                log?.Invoke(LocalizationService.T("Log_QuestToolsFailed", dlMsg));
-                return (false, dlMsg);
-            }
-
-            ResolveToolPaths(cacheDir);
-            if (AreToolsReady())
-            {
-                log?.Invoke(LocalizationService.T("Log_QuestToolsCached", cacheDir));
-                return (true, dlMsg);
-            }
-
-            return (false, "Some Quest tools components are missing after download.");
+        /// <summary>Records a failed tools install in the diagnostic log (operation "Quest tools download").</summary>
+        public static void ReportToolsInstallFailure(QuestToolsInstallResult result)
+        {
+            DiagnosticLog.Failure("Quest tools download", result.Message, null,
+                "Kind=" + result.Kind, "Component=" + result.Component, "Url=" + result.Url,
+                "HttpStatus=" + (result.HttpStatus?.ToString() ?? "-"), "Detail=" + result.Detail);
         }
 
         public string GetAdbPath() => _adbPath ?? "adb";
         public string? GetApktoolJar() => _apktoolJar;
         public string? GetSignerJar() => _signerJar;
-        public string? GetLemonPatcherExe() => _lemonPatcherExe;
+        public string? GetLemonPatcherDir() => _lemonPatcherDir;
         public string? GetMelonDataZip() => _melonDataZip;
         public string? GetModDllPath() => _modDllPath;
 
@@ -314,6 +303,7 @@ namespace USM.Core.Services.Quest
                 if (parts.Length >= 2)
                 {
                     string serial = parts[0];
+                    DiagnosticRedactor.RegisterSensitiveValue(serial);
                     string status = parts[1];
                     string model = "Meta Quest";
 
@@ -1128,19 +1118,12 @@ namespace USM.Core.Services.Quest
             }
             Directory.CreateDirectory(workDir);
 
-            if (!AreToolsReady())
-            {
-                progress.Report((2, LocalizationService.T("Log_QuestToolsDownloading", 0)));
-                var (toolsReady, toolsMsg) = await EnsureToolsReadyAsync(
-                    new Progress<(double Progress, string Status)>(p => progress.Report(((int)(p.Progress * 0.05), p.Status))),
-                    log);
-
-                if (!toolsReady)
-                {
-                    log($"ERROR: {toolsMsg}");
-                    return false;
-                }
-            }
+            progress.Report((2, LocalizationService.T("QuestTools_Verifying")));
+            var (toolsReady, _) = await EnsureToolsReadyAsync(
+                new Progress<(double Progress, string Status)>(p => progress.Report(((int)(p.Progress * 0.05), p.Status))),
+                log);
+            if (!toolsReady)
+                return false; // EnsureToolsReadyAsync already logged the failure; LastToolsError has the message.
 
             progress.Report((5, LocalizationService.T("Log_VerifyTools")));
             log(LocalizationService.T("Log_StartingPipeline"));
@@ -1203,6 +1186,7 @@ namespace USM.Core.Services.Quest
             var (dCode, dOut, dErr) = await RunProcessAsync("java", $"-jar \"{_apktoolJar}\" d -f -o \"{decompiledDir}\" \"{sourceApk}\"", 300000);
             if (dCode != 0)
             {
+                LogToolFailure("Quest patch", "apktool decompile", dCode, dOut, dErr);
                 log($"Decompilation error: {dOut} {dErr}");
                 return false;
             }
@@ -1268,6 +1252,7 @@ namespace USM.Core.Services.Quest
             var (bCode, bOut, bErr) = await RunProcessAsync("java", $"-jar \"{_apktoolJar}\" b \"{decompiledDir}\" -o \"{unsignedApk}\"", 300000);
             if (bCode != 0)
             {
+                LogToolFailure("Quest patch", "apktool rebuild", bCode, bOut, bErr);
                 log($"Rebuild error: {bOut} {bErr}");
                 return false;
             }
@@ -1283,11 +1268,16 @@ namespace USM.Core.Services.Quest
             string lemonTempDir = Path.Combine(workDir, "lemon_temp");
             string? signedApk = null;
 
-            if (!string.IsNullOrEmpty(_lemonPatcherExe) && File.Exists(_lemonPatcherExe) &&
+            string? usmExe = Environment.ProcessPath;
+            if (string.IsNullOrEmpty(usmExe))
+            {
+                log("LemonLoader patch note: cannot determine the USM executable path.");
+            }
+            else if (!string.IsNullOrEmpty(_lemonPatcherDir) &&
                 !string.IsNullOrEmpty(_melonDataZip) && File.Exists(_melonDataZip))
             {
-                var (lCode, lOut, lErr) = await RunProcessAsync(_lemonPatcherExe,
-                    $"\"{unsignedApk}\" \"{lemonOutDir}\" \"{lemonTempDir}\" \"{_melonDataZip}\" \"{ModdedPackage}\"", 300000);
+                var (lCode, lOut, lErr) = await RunProcessAsync(usmExe,
+                    $"{LemonPatcherBridge.CommandLineSwitch} \"{unsignedApk}\" \"{lemonOutDir}\" \"{lemonTempDir}\" \"{_melonDataZip}\" \"{ModdedPackage}\" \"{_lemonPatcherDir}\"", 300000);
 
                 if (lCode == 0)
                 {
@@ -1299,6 +1289,7 @@ namespace USM.Core.Services.Quest
                 }
                 else
                 {
+                    LogToolFailure("Quest patch", "lemon patcher", lCode, lOut, lErr);
                     log($"LemonLoader patch note ({lCode}): {lOut} {lErr}");
                 }
             }
@@ -1334,6 +1325,7 @@ namespace USM.Core.Services.Quest
                 300000);
             if (stableSignCode != 0)
             {
+                LogToolFailure("Quest patch", "uber-apk-signer", stableSignCode, stableSignOut, stableSignErr);
                 log($"Persistent APK signing failed: {stableSignOut} {stableSignErr}".Trim());
                 return false;
             }
@@ -1847,6 +1839,14 @@ namespace USM.Core.Services.Quest
             return psi;
         }
 
+        private static void LogToolFailure(string operation, string tool, int exitCode, string? stdout, string? stderr)
+        {
+            string output = ((stdout ?? "") + Environment.NewLine + (stderr ?? "")).Trim();
+            if (output.Length > 4000) output = output.Substring(output.Length - 4000);
+            DiagnosticLog.Failure(operation, tool + " failed with exit code " + exitCode, null,
+                "Tool=" + tool, "ExitCode=" + exitCode, "Output=" + output);
+        }
+
         public static Task<(int ExitCode, string StdOut, string StdErr)> RunProcessAsync(string fileName, string arguments, int timeoutMs = 60000)
         {
             var psi = CreateProcessStartInfo(fileName);
@@ -1863,6 +1863,7 @@ namespace USM.Core.Services.Quest
             }
             catch (Exception ex)
             {
+                DiagnosticLog.Failure("Quest process start", "Could not start " + Path.GetFileName(psi.FileName), ex, "Win32Code=" + (ex as System.ComponentModel.Win32Exception)?.NativeErrorCode);
                 return (-1, string.Empty, ex.Message);
             }
 
@@ -1899,6 +1900,7 @@ namespace USM.Core.Services.Quest
             }
             catch (Exception ex)
             {
+                DiagnosticLog.Failure("Quest process start", "Could not start " + Path.GetFileName(psi.FileName), ex, "Win32Code=" + (ex as System.ComponentModel.Win32Exception)?.NativeErrorCode);
                 return (-1, string.Empty, ex.Message);
             }
 

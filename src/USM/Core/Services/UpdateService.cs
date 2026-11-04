@@ -42,7 +42,6 @@ namespace USM.Core.Services
         public GitHubAssetInfo? ModAsset { get; set; }
         public GitHubAssetInfo? QuestModAsset { get; set; }
         public GitHubAssetInfo? UsmAsset { get; set; }
-        public GitHubAssetInfo? QuestToolsAsset { get; set; }
         public string Message { get; set; } = string.Empty;
     }
 
@@ -131,19 +130,18 @@ namespace USM.Core.Services
 
                 result.UsmAsset = release.Assets.FirstOrDefault(a =>
                     (a.Name.Contains("USM", StringComparison.OrdinalIgnoreCase) || a.Name.Contains("Unplugged", StringComparison.OrdinalIgnoreCase)) &&
-                    (a.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) &&
-                    !a.Name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
-                    ?? release.Assets.FirstOrDefault(a => a.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase));
+                    a.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                    ?? release.Assets.FirstOrDefault(a =>
+                        a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) &&
+                        a.Name.Contains("USM", StringComparison.OrdinalIgnoreCase));
 
-                result.QuestToolsAsset = release.Assets.FirstOrDefault(a =>
-                    a.Name.Contains("quest-tools", StringComparison.OrdinalIgnoreCase) ||
-                    a.Name.Contains("quest_tools", StringComparison.OrdinalIgnoreCase));
                 result.QuestModAsset = release.Assets.FirstOrDefault(a =>
                     a.Name.Equals("UnpluggedCustomSongs.Quest.dll", StringComparison.OrdinalIgnoreCase));
                 await Task.WhenAll(ReadReleaseModVersionAsync(result.ModAsset, cancellationToken),
                     ReadReleaseModVersionAsync(result.QuestModAsset, cancellationToken));
 
-                result.IsUpdateAvailable = CompareVersions(result.LatestVersion, result.CurrentVersion) > 0;
+                result.IsUpdateAvailable = result.UsmAsset != null &&
+                    CompareVersions(result.LatestVersion, result.CurrentVersion) > 0;
 
                 if (result.IsUpdateAvailable)
                 {
@@ -300,22 +298,30 @@ namespace USM.Core.Services
                     }
                 }
 
-                // If standalone installer .exe
-                if (ext.Equals(".exe", StringComparison.OrdinalIgnoreCase))
-                {
-                    var psiInstaller = new ProcessStartInfo
-                    {
-                        FileName = tempFile,
-                        UseShellExecute = true
-                    };
-                    Process.Start(psiInstaller);
-                    return (true, "Installer launched.", null);
-                }
-
-                // If .zip archive
                 stagingDir = Path.Combine(Path.GetTempPath(), $"USM_Extracted_{Guid.NewGuid():N}");
                 Directory.CreateDirectory(stagingDir);
-                ZipFile.ExtractToDirectory(tempFile, stagingDir, overwriteFiles: true);
+                string exeName = "USM.exe";
+                try
+                {
+                    string? runningName = Process.GetCurrentProcess().MainModule?.ModuleName;
+                    if (!string.IsNullOrEmpty(runningName)) exeName = runningName;
+                }
+                catch { }
+
+                if (ext.Equals(".exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    // The portable executable is the update payload, not an installer.
+                    // Stage it for the same replace-and-restart flow as a ZIP release.
+                    File.Copy(tempFile, Path.Combine(stagingDir, exeName));
+                }
+                else if (ext.Equals(".zip", StringComparison.OrdinalIgnoreCase))
+                {
+                    ZipFile.ExtractToDirectory(tempFile, stagingDir, overwriteFiles: true);
+                }
+                else
+                {
+                    throw new InvalidDataException($"Unsupported USM update file: {fileName}");
+                }
 
                 string sourceDir = stagingDir;
                 var subDirs = Directory.GetDirectories(stagingDir);
@@ -326,13 +332,8 @@ namespace USM.Core.Services
                 }
 
                 string targetAppDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                string exeName = "USM.exe";
-                try
-                {
-                    string? mod = Process.GetCurrentProcess().MainModule?.ModuleName;
-                    if (!string.IsNullOrEmpty(mod)) exeName = mod;
-                }
-                catch { }
+                if (!File.Exists(Path.Combine(sourceDir, exeName)))
+                    throw new InvalidDataException($"USM update does not contain {exeName}.");
 
                 string batchFile = Path.Combine(Path.GetTempPath(), $"usm_updater_{Guid.NewGuid():N}.bat");
                 int pid = Environment.ProcessId;
@@ -585,86 +586,6 @@ namespace USM.Core.Services
             catch (Exception ex)
             {
                 return (false, ex.Message);
-            }
-        }
-
-        public async Task<(bool Success, string Message)> DownloadAndCacheQuestToolsAsync(
-            string cacheDir,
-            string? overrideUrl = null,
-            IProgress<(double Progress, string Status)>? progress = null,
-            CancellationToken cancellationToken = default)
-        {
-            try
-            {
-                Directory.CreateDirectory(cacheDir);
-
-                string downloadUrl = overrideUrl ?? string.Empty;
-                if (string.IsNullOrEmpty(downloadUrl))
-                {
-                    try
-                    {
-                        var updateRes = await CheckForUpdatesAsync(cancellationToken: cancellationToken);
-                        if (updateRes.QuestToolsAsset != null && !string.IsNullOrEmpty(updateRes.QuestToolsAsset.BrowserDownloadUrl))
-                        {
-                            downloadUrl = updateRes.QuestToolsAsset.BrowserDownloadUrl;
-                        }
-                    }
-                    catch { }
-                }
-
-                if (string.IsNullOrEmpty(downloadUrl))
-                {
-                    downloadUrl = "https://github.com/TheLucXas/UnpluggedSongManager/releases/download/v2.0.0/quest-tools.zip";
-                }
-
-                progress?.Report((5, LocalizationService.T("Log_QuestToolsDownloading", 5)));
-
-                string tempZip = Path.Combine(Path.GetTempPath(), $"QuestTools_{Guid.NewGuid():N}.zip");
-                try
-                {
-                    using var request = new HttpRequestMessage(HttpMethod.Get, downloadUrl);
-                    request.Headers.Add("User-Agent", "USM-SongManager/2.0");
-
-                    using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-                    if (!response.IsSuccessStatusCode)
-                    {
-                        return (false, $"Download failed: HTTP {(int)response.StatusCode}");
-                    }
-
-                    long totalBytes = response.Content.Headers.ContentLength ?? 55000000L;
-                    await using (var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken))
-                    await using (var fileStream = new FileStream(tempZip, FileMode.Create, FileAccess.Write, FileShare.None))
-                    {
-                        byte[] buffer = new byte[81920];
-                        long totalRead = 0;
-                        int bytesRead;
-
-                        while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
-                        {
-                            await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
-                            totalRead += bytesRead;
-                            if (totalBytes > 0 && progress != null)
-                            {
-                                double pct = Math.Min(80.0, ((double)totalRead / totalBytes) * 80.0);
-                                progress.Report((pct, LocalizationService.T("Log_QuestToolsDownloading", pct)));
-                            }
-                        }
-                    }
-
-                    progress?.Report((85, LocalizationService.T("Log_QuestToolsExtracting")));
-                    ZipFile.ExtractToDirectory(tempZip, cacheDir, overwriteFiles: true);
-
-                    progress?.Report((100, LocalizationService.T("Log_QuestToolsCached", cacheDir)));
-                    return (true, LocalizationService.T("Log_QuestToolsCached", cacheDir));
-                }
-                finally
-                {
-                    try { if (File.Exists(tempZip)) File.Delete(tempZip); } catch { }
-                }
-            }
-            catch (Exception ex)
-            {
-                return (false, LocalizationService.T("Log_QuestToolsFailed", ex.Message));
             }
         }
     }

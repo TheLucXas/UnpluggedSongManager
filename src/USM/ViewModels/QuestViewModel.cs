@@ -11,6 +11,7 @@ using System.Windows.Input;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using USM.Core.Services;
+using USM.Core.Services.Diagnostics;
 using USM.Core.Services.Localization;
 using USM.Core.Services.Quest;
 
@@ -317,9 +318,10 @@ namespace USM.ViewModels
             {
                 var result = await _questService.LaunchModdedGameAsync(SelectedDevice.Serial);
                 AppendLog(result.Message);
+                if (!result.Success) DiagnosticLog.Failure("Quest launch game", result.Message);
                 _notifyCallback(result.Message);
             }
-            catch (Exception ex) { AppendLog(ex.Message); _notifyCallback(ex.Message); }
+            catch (Exception ex) { DiagnosticLog.Failure("Quest launch game", ex.Message, ex); AppendLog(ex.Message); _notifyCallback(ex.Message); }
             finally { IsBusy = false; }
         }
 
@@ -339,6 +341,7 @@ namespace USM.ViewModels
                 ProgressPercent = result.Success ? 100 : 0;
                 ProgressStatus = result.Message;
                 AppendLog(result.Message);
+                if (!result.Success) DiagnosticLog.Failure("Quest mod update", result.Message);
                 _notifyCallback(result.Message);
                 await CheckInstalledPackagesAsync();
                 if (showDialog)
@@ -348,6 +351,7 @@ namespace USM.ViewModels
             }
             catch (Exception ex)
             {
+                DiagnosticLog.Failure("Quest mod update", ex.Message, ex);
                 AppendLog(ex.Message);
                 _notifyCallback(LocalizationService.T("Quest_ModUpdateFailed"));
                 return false;
@@ -366,6 +370,7 @@ namespace USM.ViewModels
             {
                 var result = await _questService.UninstallModOnlyAsync(SelectedDevice.Serial, AppendLog);
                 AppendLog(result.Message);
+                if (!result.Success) DiagnosticLog.Failure("Quest mod uninstall", result.Message);
                 _notifyCallback(result.Message);
                 await CheckInstalledPackagesAsync();
                 MessageBox.Show(result.Message, LocalizationService.T("Quest_ModMaintenanceTitle"),
@@ -373,6 +378,7 @@ namespace USM.ViewModels
             }
             catch (Exception ex)
             {
+                DiagnosticLog.Failure("Quest mod uninstall", ex.Message, ex);
                 AppendLog(ex.Message);
                 MessageBox.Show(ex.Message, LocalizationService.T("Quest_ModMaintenanceTitle"),
                     MessageBoxButton.OK, MessageBoxImage.Error);
@@ -395,7 +401,23 @@ namespace USM.ViewModels
                 OnPropertyChanged(nameof(AreQuestToolsReady));
                 OnPropertyChanged(nameof(NeedsQuestTools));
                 OnPropertyChanged(nameof(QuestToolsStatusText));
-                _notifyCallback?.Invoke(msg);
+                if (success)
+                {
+                    _notifyCallback?.Invoke(msg);
+                }
+                else
+                {
+                    _notifyCallback?.Invoke(LocalizationService.T("QuestTools_ToastFailed"));
+                    MessageBox.Show(msg, LocalizationService.T("QuestTools_DialogTitle"), MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                DiagnosticLog.Failure("Quest tools", ex.Message, ex);
+                AppendLog($"Quest tools error: {ex}");
+                _notifyCallback?.Invoke(LocalizationService.T("QuestTools_ToastFailed"));
+                MessageBox.Show(LocalizationService.T("QuestTools_ErrUnexpected", ex.Message),
+                    LocalizationService.T("QuestTools_DialogTitle"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
@@ -410,6 +432,7 @@ namespace USM.ViewModels
             string time = DateTime.Now.ToString("HH:mm:ss");
             string line = $"[{time}] {message}\n";
             _logBuilder.Append(line);
+            DiagnosticLog.Info("Quest", message);
 
             // Cap logs at 100,000 characters
             if (_logBuilder.Length > 100000)
@@ -484,6 +507,7 @@ namespace USM.ViewModels
             }
             catch (Exception ex)
             {
+                DiagnosticLog.Failure("Quest device discovery", ex.Message, ex);
                 AppendLog($"Error discovering devices: {ex.Message}");
             }
             finally
@@ -510,6 +534,7 @@ namespace USM.ViewModels
                 }
                 else
                 {
+                    DiagnosticLog.Failure("Quest wireless connection", msg);
                     AppendLog(LocalizationService.T("Log_WirelessFailed", msg));
                     _notifyCallback($"Wireless connection failed: {msg}");
                 }
@@ -649,6 +674,7 @@ namespace USM.ViewModels
             }
             catch (Exception ex)
             {
+                DiagnosticLog.Failure("Quest package check", ex.Message, ex);
                 if (!StillConnected()) return;
                 InstalledModInfo = null;
                 PackageStatusText = $"Error checking packages: {ex.Message}";
@@ -735,13 +761,21 @@ namespace USM.ViewModels
                 }
                 else
                 {
+                    DiagnosticLog.Failure("Quest patch", "Patch did not complete.", null, "ToolsError=" + _questService.LastToolsError);
                     ProgressStatus = LocalizationService.T("Ui_Failed");
                     _notifyCallback(LocalizationService.T("Ui_QuestPatchFailed"));
-                    MessageBox.Show(LocalizationService.T("Quest_Dialog_PatchErrorMsg"), LocalizationService.T("Quest_Dialog_PatchErrorTitle"), MessageBoxButton.OK, MessageBoxImage.Error);
+                    OnPropertyChanged(nameof(AreQuestToolsReady));
+                    OnPropertyChanged(nameof(NeedsQuestTools));
+                    OnPropertyChanged(nameof(QuestToolsStatusText));
+                    if (!string.IsNullOrEmpty(_questService.LastToolsError))
+                        MessageBox.Show(_questService.LastToolsError, LocalizationService.T("QuestTools_DialogTitle"), MessageBoxButton.OK, MessageBoxImage.Error);
+                    else
+                        MessageBox.Show(LocalizationService.T("Quest_Dialog_PatchErrorMsg"), LocalizationService.T("Quest_Dialog_PatchErrorTitle"), MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
             catch (Exception ex)
             {
+                DiagnosticLog.Failure("Quest patch", ex.Message, ex);
                 AppendLog($"FATAL ERROR: {ex.Message}");
                 ProgressStatus = LocalizationService.T("Ui_FatalError");
                 _notifyCallback($"Error: {ex.Message}");
@@ -783,6 +817,7 @@ namespace USM.ViewModels
                 }
                 else
                 {
+                    DiagnosticLog.Failure("Quest uninstall", msg);
                     ProgressStatus = LocalizationService.T("Ui_UninstallFailed");
                     _notifyCallback($"Error: {msg}");
                     MessageBox.Show(LocalizationService.T("Quest_Dialog_UninstallErrorMsg", msg), LocalizationService.T("Quest_Dialog_UninstallErrorTitle"), MessageBoxButton.OK, MessageBoxImage.Error);
@@ -790,6 +825,7 @@ namespace USM.ViewModels
             }
             catch (Exception ex)
             {
+                DiagnosticLog.Failure("Quest uninstall", ex.Message, ex);
                 AppendLog($"Uninstall Error: {ex.Message}");
             }
             finally
@@ -856,6 +892,7 @@ namespace USM.ViewModels
             }
             catch (Exception ex)
             {
+                DiagnosticLog.Failure("Quest save import", ex.Message, ex);
                 AppendLog($"PC save import failed: {ex.Message}");
                 MessageBox.Show(
                     LocalizationService.T("Quest_Dialog_ImportPcSaveErrorMsg", ex.Message),
@@ -933,6 +970,7 @@ namespace USM.ViewModels
                 }
                 catch (Exception ex)
                 {
+                    DiagnosticLog.Failure("Quest hand charts", ex.Message, ex);
                     AppendLog($"Could not prepare Quest hand charts for {Path.GetFileName(songPath)}: {ex.Message}");
                     MessageBox.Show(LocalizationService.T("Ui_QuestPreparingSongFailed", Path.GetFileName(songPath), ex.Message),
                         LocalizationService.T("Quest_CustomSongsSyncTitle"), MessageBoxButton.OK, MessageBoxImage.Error);
@@ -1031,6 +1069,7 @@ namespace USM.ViewModels
             }
             catch (Exception ex)
             {
+                DiagnosticLog.Failure("Quest song sync check", ex.Message, ex);
                 AppendLog($"Error checking Quest songs: {ex.Message}");
                 songsToSync = allSongDirs.ToList();
             }
@@ -1071,6 +1110,7 @@ namespace USM.ViewModels
             }
             catch (Exception ex)
             {
+                DiagnosticLog.Failure("Quest song sync", ex.Message, ex);
                 AppendLog($"Song Sync Error: {ex.Message}");
                 _notifyCallback($"Song sync failed: {ex.Message}");
             }

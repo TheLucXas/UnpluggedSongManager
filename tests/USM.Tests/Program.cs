@@ -13,6 +13,16 @@ namespace USM.Tests
     {
         static async Task Main(string[] args)
         {
+            if (args.Contains("--diagnostics"))
+            {
+                Environment.ExitCode = await DiagnosticsTests.RunAsync(args);
+                return;
+            }
+            if (args.Contains("--quest-tools"))
+            {
+                Environment.ExitCode = await QuestToolsTests.RunAsync(args);
+                return;
+            }
             Console.WriteLine("=== USM C# Offline Conversion Verification Tests ===");
 
             string testOutDir = Path.Combine(Path.GetTempPath(), $"usm_offline_test_{Guid.NewGuid():N}");

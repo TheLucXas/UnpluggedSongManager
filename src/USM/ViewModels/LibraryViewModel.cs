@@ -21,6 +21,7 @@ using System.Windows.Media.Imaging;
 using USM.Core.Models;
 using USM.Core.Parsers;
 using USM.Core.Services;
+using USM.Core.Services.Diagnostics;
 using USM.Core.Services.Localization;
 using USM.Core.Services.Quest;
 
@@ -328,6 +329,7 @@ namespace USM.ViewModels
             }
             catch (Exception ex)
             {
+                DiagnosticLog.Failure("Library Quest sync", ex.Message, ex);
                 _questChartAuditRevision++;
                 _questHashesSerial = null;
                 _questSongHashes.Clear();
@@ -485,6 +487,7 @@ namespace USM.ViewModels
                 }
                 else
                 {
+                    DiagnosticLog.Failure("Library Quest delete", result.Message);
                     _notifyCallback(LocalizationService.T("Library_QuestDeleteFailed", result.Message));
                 }
                 await RefreshQuestSongsAsync();
@@ -698,6 +701,7 @@ namespace USM.ViewModels
                     }
                     catch (Exception ex)
                     {
+                        DiagnosticLog.Failure("Library resync", ex.Message, ex);
                         issues.Add($"{song.Artist} - {song.Title}: {ex.Message}");
                     }
                     finally

@@ -61,7 +61,7 @@
 
 ## 🚀 Install
 
-Download USM and the separate PC / Quest mod DLLs from [Releases](https://github.com/TheLucXas/UnpluggedSongManager/releases). The Windows app still needs the .NET Desktop Runtime above.
+Download the USM `.zip` package and the separate PC / Quest mod DLLs from [Releases](https://github.com/TheLucXas/UnpluggedSongManager/releases). Extract the package and run `USM.exe`; USM updates itself from that same package. The Windows app still needs the .NET Desktop Runtime above.
 
 ### Windows PC
 
@@ -133,13 +133,13 @@ If references are stored elsewhere:
 
 `-GameDir` is optional when `UNPLUGGED_GAME_DIR` is set, USM has saved the game's location, or the script finds a standard Steam library. The script builds both mod variants and publishes `dist/USM-CSharp/USM.exe`, embedding both mods for installation through USM and producing separate `UnpluggedCustomSongs.PC.dll` and `UnpluggedCustomSongs.Quest.dll` files.
 
-Runtime Quest patching also needs Java, ADB, Apktool, uber-apk-signer, and LemonLoader patching assets. The two JAR tools are under `tools/quest/`; USM can obtain a compatible Quest tool bundle into its local cache. FFmpeg is acquired separately on first use.
+Runtime Quest patching also needs Java, ADB, Apktool, uber-apk-signer, and LemonLoader patching assets. USM downloads Apktool, uber-apk-signer, and the LemonLoader files from their official upstream releases, checks them against pinned SHA-256 hashes, and keeps them in its local cache (`%LOCALAPPDATA%\USM\tools\quest`, about 100 MB). FFmpeg is acquired separately on first use.
 
 ```text
 src/USM/                    Windows app, converter, library, Quest patcher
 mod/UnpluggedCustomSongs/  PC and Quest mod source
 tools/Build-USM.ps1         Local build entry point
-tools/quest/               Quest tools and local build references
+tools/quest/               Local build references for the Quest mod
 tests/                     Optional development checks
 ```
 

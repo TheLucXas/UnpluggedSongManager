@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Input;
 using Microsoft.Win32;
 using USM.Core.Services;
+using USM.Core.Services.Diagnostics;
 using USM.Core.Services.Localization;
 
 namespace USM.ViewModels
@@ -448,6 +449,7 @@ namespace USM.ViewModels
             }
             catch (Exception ex)
             {
+                DiagnosticLog.Failure("Update check", ex.Message, ex);
                 UpdateStatusMessage = LocalizationService.T("Settings_UpdateCheckFailed", ex.Message);
             }
             finally
@@ -517,6 +519,7 @@ namespace USM.ViewModels
             }
             catch (Exception ex)
             {
+                DiagnosticLog.Failure("App update", ex.Message, ex);
                 UpdateStatusMessage = LocalizationService.T("Settings_UpdateAppFailed", ex.Message);
                 MessageBox.Show(UpdateStatusMessage, LocalizationService.T("Settings_UpdateAppConfirmTitle"), MessageBoxButton.OK, MessageBoxImage.Error);
                 IsUpdatingApp = false;
@@ -540,6 +543,7 @@ namespace USM.ViewModels
                 try { PcSteamVrBindings.Prepare(_gameDetector.GamePath!); }
                 catch (Exception ex)
                 {
+                    DiagnosticLog.Failure("PC mod install", ex.Message, ex);
                     UpdateStatusMessage = ex.Message;
                     _notifyCallback?.Invoke(ex.Message);
                     MessageBox.Show(ex.Message, LocalizationService.T("Settings_ModInstallFailed"), MessageBoxButton.OK, MessageBoxImage.Error);
@@ -615,6 +619,7 @@ namespace USM.ViewModels
             }
             catch (Exception ex)
             {
+                DiagnosticLog.Failure("PC mod update", ex.Message, ex);
                 UpdateStatusMessage = ex.Message;
                 _notifyCallback(ex.Message);
                 return false;
@@ -660,6 +665,7 @@ namespace USM.ViewModels
             }
             else
             {
+                DiagnosticLog.Failure("PC mod install", msg);
                 ModStatusMessage = msg;
                 MessageBox.Show(msg, LocalizationService.T("Settings_ModInstallFailed"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
@@ -739,6 +745,7 @@ namespace USM.ViewModels
                 }
                 else
                 {
+                    DiagnosticLog.Failure("MelonLoader install", msg);
                     MessageBox.Show(
                         msg,
                         "MelonLoader Error",
@@ -748,6 +755,7 @@ namespace USM.ViewModels
             }
             catch (Exception ex)
             {
+                DiagnosticLog.Failure("MelonLoader install", ex.Message, ex);
                 MelonInstallStatusMessage = LocalizationService.T("Settings_MelonFailed", ex.Message);
                 MessageBox.Show(
                     MelonInstallStatusMessage,

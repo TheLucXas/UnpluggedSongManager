@@ -597,7 +597,21 @@ namespace USM.Core.Services.Localization
                 ["Log_QuestToolsDownloading"] = "Downloading Quest patching tools from GitHub ({0:F0}%)...",
                 ["Log_QuestToolsExtracting"] = "Extracting Quest tools to local cache...",
                 ["Log_QuestToolsCached"] = "Quest patching tools ready in local cache ({0}).",
-                ["Log_QuestToolsFailed"] = "Failed to download Quest patching tools: {0}"
+                ["Log_QuestToolsFailed"] = "Failed to download Quest patching tools: {0}",
+                ["QuestTools_Verifying"] = "Verifying Quest patching tools...",
+                ["QuestTools_Downloading"] = "Downloading {0} ({1:F0}%)...",
+                ["QuestTools_Extracting"] = "Extracting {0}...",
+                ["QuestTools_Ready"] = "Quest patching tools are ready.",
+                ["QuestTools_ToastFailed"] = "Quest patching tools could not be installed.",
+                ["QuestTools_DialogTitle"] = "Quest patching tools",
+                ["QuestTools_FailedLog"] = "Quest tools install failed [{0}] {1}: {2}",
+                ["QuestTools_ErrNotFound"] = "USM could not download \"{0}\": the file no longer exists at its official download address (HTTP 404/410). It was probably moved or removed upstream. Update USM to the latest version; if you are already up to date, please report a bug on the USM GitHub page.",
+                ["QuestTools_ErrHttp"] = "The download server refused to send \"{0}\" (HTTP {1}). This is usually temporary: wait a few minutes and try again.",
+                ["QuestTools_ErrNetwork"] = "USM could not download \"{0}\" because the connection to the server failed or stalled. Check your internet connection, VPN, firewall or antivirus, then try again.",
+                ["QuestTools_ErrIntegrity"] = "\"{0}\" was downloaded but did not match the expected checksum, so USM discarded it. Try again; if it keeps failing, please report a bug on the USM GitHub page.",
+                ["QuestTools_ErrDisk"] = "USM could not save \"{0}\" in the folder {1}. Check that the folder is writable and that at least 250 MB of disk space is free, then try again.",
+                ["QuestTools_ErrUnexpected"] = "The Quest patching tools could not be prepared: {0}",
+                ["QuestTools_ModMissing"] = "This copy of USM does not include the Quest mod (UnpluggedCustomSongs.Quest.dll). Reinstall USM from an official release."
             },
             ["es"] = new Dictionary<string, string>
             {

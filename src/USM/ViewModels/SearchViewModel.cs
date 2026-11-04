@@ -9,6 +9,7 @@ using System.Windows.Input;
 using USM.Core.Models;
 using USM.Core.Parsers;
 using USM.Core.Services;
+using USM.Core.Services.Diagnostics;
 using USM.Core.Services.Localization;
 
 namespace USM.ViewModels
@@ -230,6 +231,7 @@ namespace USM.ViewModels
             catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
             catch (Exception ex)
             {
+                DiagnosticLog.Failure("Search charts", ex.Message, ex);
                 StatusText = LocalizationService.T("Search_Error", ex.Message);
             }
             finally
@@ -571,6 +573,7 @@ namespace USM.ViewModels
             catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
             catch (Exception ex)
             {
+                DiagnosticLog.Failure("Search charts (page)", ex.Message, ex);
                 StatusText = LocalizationService.T("Search_Error", ex.Message);
             }
             finally
@@ -703,6 +706,7 @@ namespace USM.ViewModels
             }
             catch (Exception ex)
             {
+                DiagnosticLog.Failure("Chart download", ex.Message, ex);
                 chart.IsQueued = false;
                 chart.StatusText = LocalizationService.T("Search_DownloadButton");
                 MessageBox.Show(
@@ -796,12 +800,14 @@ namespace USM.ViewModels
                     }
                     else
                     {
+                        DiagnosticLog.Failure("Chart convert", "Conversion returned failure.");
                         chart.StatusText = LocalizationService.T("Search_ConversionFailed");
                     }
                 });
             }
             catch (Exception ex)
             {
+                DiagnosticLog.Failure("Chart convert", ex.Message, ex);
                 Application.Current?.Dispatcher?.Invoke(() =>
                 {
                     chart.StatusText = LocalizationService.T("Search_UnexpectedError", ex.Message);

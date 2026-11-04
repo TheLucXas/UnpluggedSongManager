@@ -8,6 +8,7 @@ using System.Windows.Input;
 using Microsoft.Win32;
 using USM.Core.Models;
 using USM.Core.Services;
+using USM.Core.Services.Diagnostics;
 using USM.Core.Services.Localization;
 
 namespace USM.ViewModels
@@ -239,6 +240,7 @@ namespace USM.ViewModels
             }
             catch (Exception ex)
             {
+                DiagnosticLog.Failure("Song conversion", ex.Message, ex);
                 AppendLog($"[FATAL ERROR] {ex.Message}");
                 SetLocalizedStatus("Converter_StatusError");
             }
