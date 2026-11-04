@@ -28,6 +28,11 @@ namespace USM.Tests
                 Environment.ExitCode = await QuestToolsTests.RunAsync(args);
                 return;
             }
+            if (args.Contains("--localization"))
+            {
+                Environment.ExitCode = LocalizationTests.Run(args);
+                return;
+            }
             Console.WriteLine("=== USM C# Offline Conversion Verification Tests ===");
 
             string testOutDir = Path.Combine(Path.GetTempPath(), $"usm_offline_test_{Guid.NewGuid():N}");
