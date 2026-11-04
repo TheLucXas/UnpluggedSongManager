@@ -43,6 +43,8 @@ namespace USM.Core.Services
         public GitHubAssetInfo? QuestModAsset { get; set; }
         public GitHubAssetInfo? UsmAsset { get; set; }
         public string Message { get; set; } = string.Empty;
+        /// <summary>The check failed because GitHub could not be reached, so retrying may help.</summary>
+        public bool IsNetworkError { get; set; }
     }
 
     public class UpdateService
@@ -157,6 +159,7 @@ namespace USM.Core.Services
             catch (Exception ex)
             {
                 result.Success = false;
+                result.IsNetworkError = ex is HttpRequestException or IOException;
                 result.Message = LocalizationService.T("Settings_UpdateCheckFailed", ex.Message);
                 return result;
             }

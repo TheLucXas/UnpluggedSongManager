@@ -82,6 +82,7 @@ namespace USM.Core.Services.Quest
             new HttpClient(new SocketsHttpHandler { AllowAutoRedirect = true, ConnectTimeout = TimeSpan.FromSeconds(30) })
             { Timeout = Timeout.InfiniteTimeSpan });
 
+        private const int MaxAttempts = 3;
         private static readonly TimeSpan HeaderTimeout = TimeSpan.FromSeconds(60);
         private static readonly TimeSpan IdleTimeout = TimeSpan.FromSeconds(60);
 
@@ -98,7 +99,7 @@ namespace USM.Core.Services.Quest
                 ? new HttpClient(handler, disposeHandler: false) { Timeout = Timeout.InfiniteTimeSpan }
                 : SharedClient.Value;
             _sources = sources ?? DefaultSources;
-            _retryDelay = retryDelay ?? TimeSpan.FromSeconds(2);
+            _retryDelay = retryDelay ?? TimeSpan.FromSeconds(5);
         }
 
         private static string FullPath(string dir, string rel) => Path.Combine(dir, rel.Replace('/', Path.DirectorySeparatorChar));
@@ -219,10 +220,11 @@ namespace USM.Core.Services.Quest
                             await DownloadAsync(source, tmpDownload, n => { done += n; Report(source.Name); }, ct).ConfigureAwait(false);
                             break;
                         }
-                        catch (InstallException e) when (e.Transient && attempt == 1)
+                        catch (InstallException e) when (e.Transient && attempt < MaxAttempts)
                         {
+                            // Also gives the user time to accept a firewall prompt.
                             done = attemptStart;
-                            await Task.Delay(_retryDelay, ct).ConfigureAwait(false);
+                            await Task.Delay(_retryDelay * attempt, ct).ConfigureAwait(false);
                         }
                     }
 

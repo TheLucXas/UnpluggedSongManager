@@ -1276,21 +1276,32 @@ namespace USM.Core.Services.Quest
             else if (!string.IsNullOrEmpty(_lemonPatcherDir) &&
                 !string.IsNullOrEmpty(_melonDataZip) && File.Exists(_melonDataZip))
             {
-                var (lCode, lOut, lErr) = await RunProcessAsync(usmExe,
-                    $"{LemonPatcherBridge.CommandLineSwitch} \"{unsignedApk}\" \"{lemonOutDir}\" \"{lemonTempDir}\" \"{_melonDataZip}\" \"{ModdedPackage}\" \"{_lemonPatcherDir}\"", 300000);
+                const int maxLemonAttempts = 3;
+                for (int attempt = 1; attempt <= maxLemonAttempts; attempt++)
+                {
+                    try { if (Directory.Exists(lemonOutDir)) Directory.Delete(lemonOutDir, true); } catch { }
 
-                if (lCode == 0)
-                {
-                    signedApk = Directory.GetFiles(lemonOutDir, "*.apk").FirstOrDefault();
-                    if (!string.IsNullOrEmpty(signedApk))
+                    var (lCode, lOut, lErr) = await RunProcessAsync(usmExe,
+                        $"{LemonPatcherBridge.CommandLineSwitch} \"{unsignedApk}\" \"{lemonOutDir}\" \"{lemonTempDir}\" \"{_melonDataZip}\" \"{ModdedPackage}\" \"{_lemonPatcherDir}\"", 300000);
+
+                    if (lCode == 0)
                     {
-                        log(LocalizationService.T("Log_LemonLoaderSuccess"));
+                        signedApk = Directory.GetFiles(lemonOutDir, "*.apk").FirstOrDefault();
+                        if (!string.IsNullOrEmpty(signedApk))
+                        {
+                            log(LocalizationService.T("Log_LemonLoaderSuccess"));
+                        }
+                        break;
                     }
-                }
-                else
-                {
+
                     LogToolFailure("Quest patch", "lemon patcher", lCode, lOut, lErr);
                     log($"LemonLoader patch note ({lCode}): {lOut} {lErr}");
+
+                    // The patcher downloads Unity files; a firewall may block it until the user allows USM.
+                    if (attempt == maxLemonAttempts || !LemonPatcherBridge.IsNetworkFailure(lOut + lErr)) break;
+                    int waitSeconds = 5 * attempt;
+                    log($"LemonLoader could not reach the network. Retrying in {waitSeconds} seconds ({attempt + 1}/{maxLemonAttempts}). If your firewall asks, allow USM.");
+                    await Task.Delay(TimeSpan.FromSeconds(waitSeconds), cancellationToken);
                 }
             }
 

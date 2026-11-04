@@ -431,6 +431,12 @@ namespace USM.ViewModels
             try
             {
                 var result = await _updateService.CheckForUpdatesAsync();
+                // A firewall may block the first attempt until the user allows USM.
+                for (int attempt = 1; attempt <= 2 && result.IsNetworkError; attempt++)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(5 * attempt));
+                    result = await _updateService.CheckForUpdatesAsync();
+                }
                 IsUpdateAvailable = result.IsUpdateAvailable;
                 _updateCheckSucceeded = result.Success;
                 OnPropertyChanged(nameof(CurrentAppVersionText));

@@ -115,13 +115,16 @@ namespace USM.Tests
                 Directory.Delete(d, true);
             }
 
-            Console.WriteLine("\n[OFFLINE] network exception -> Network (one retry)");
+            Console.WriteLine("\n[OFFLINE] network exception -> Network (three attempts)");
             {
                 var d = NewDir(work);
                 var h = new FakeHandler(_ => throw new HttpRequestException("boom"));
                 var r = await new QuestToolsInstaller(h, sources, noDelay).InstallAsync(d);
                 Check(!r.Success && r.Kind == QuestToolsFailureKind.Network, "Network, no success", $"{r.Kind}");
-                Check(h.Calls == 2, "retried exactly once", h.Calls.ToString());
+                Check(h.Calls == 3, "tried three times", h.Calls.ToString());
+                Check(LemonPatcherBridge.IsNetworkFailure("System.Net.Sockets.SocketException (10013): denied"), "patcher socket error counts as network");
+                Check(LemonPatcherBridge.IsNetworkFailure("System.Net.Http.HttpRequestException: failed (github.com:443)"), "patcher HTTP error counts as network");
+                Check(!LemonPatcherBridge.IsNetworkFailure("System.IO.IOException: bad apk"), "other patcher errors are not retried");
                 Check(Clean(d), "no file left behind");
                 Directory.Delete(d, true);
             }

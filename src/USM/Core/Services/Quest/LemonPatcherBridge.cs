@@ -17,6 +17,11 @@ namespace USM.Core.Services.Quest
         public const string CommandLineSwitch = "--usm-lemon-patch";
         private const string CoreDll = "MelonLoader.Installer.Core.dll";
 
+        /// <summary>True when the patcher's output shows it could not reach the network.</summary>
+        public static bool IsNetworkFailure(string output) =>
+            output.Contains("SocketException", StringComparison.Ordinal) ||
+            output.Contains("HttpRequestException", StringComparison.Ordinal);
+
         public class LoggerProxy : DispatchProxy
         {
             protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)

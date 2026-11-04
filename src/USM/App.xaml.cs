@@ -104,6 +104,23 @@ public partial class App : Application
     // Completes when the startup "What's new" dialog is closed (or was never shown).
     private static Task _startupDialogGate = Task.CompletedTask;
 
+    // A firewall may block the first attempt until the user allows USM.
+    private static async Task EnsureFfmpegWithRetryAsync()
+    {
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await AudioPipeline.EnsureFfmpegInstalledAsync();
+                return;
+            }
+            catch (System.Net.Http.HttpRequestException) when (attempt < 3)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5 * attempt));
+            }
+        }
+    }
+
     private static async Task PrepareFfmpegAsync(MainWindow window)
     {
         if (window.DataContext is MainViewModel viewModel)
@@ -111,7 +128,7 @@ public partial class App : Application
 
         try
         {
-            await AudioPipeline.EnsureFfmpegInstalledAsync();
+            await EnsureFfmpegWithRetryAsync();
             if (window.DataContext is MainViewModel vm)
                 vm.Notify("Audio tools are ready.");
         }
