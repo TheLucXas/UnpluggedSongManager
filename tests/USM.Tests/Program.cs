@@ -13,6 +13,17 @@ namespace USM.Tests
     {
         static async Task Main(string[] args)
         {
+            // QuestService starts the current process in this mode for the LemonLoader step.
+            if (args.Length > 0 && args[0] == USM.Core.Services.Quest.LemonPatcherBridge.CommandLineSwitch)
+            {
+                Environment.ExitCode = USM.Core.Services.Quest.LemonPatcherBridge.Run(args[1..]);
+                return;
+            }
+            if (args.Contains("--patch-apk"))
+            {
+                Environment.ExitCode = await PatchApkTest.RunAsync(args);
+                return;
+            }
             if (args.Contains("--diagnostics"))
             {
                 Environment.ExitCode = await DiagnosticsTests.RunAsync(args);
