@@ -55,17 +55,35 @@ public partial class App : Application
                 var detector = mvm.GameDetector;
                 string current = new UpdateService().CurrentAppVersion;
                 bool show = WhatsNewService.ShouldShowNow(detector.LastSeenVersion, current, detector.ConfigExistedAtStartup);
-                // Record first so a crash can never make it reappear; fresh installs are recorded silently.
-                if (show || (!detector.ConfigExistedAtStartup && string.IsNullOrWhiteSpace(detector.LastSeenVersion)))
+                DiagnosticLog.Info("WhatsNew", $"Startup decision: show={show}, lastSeen={detector.LastSeenVersion ?? "none"}, current={current}, configExisted={detector.ConfigExistedAtStartup}");
+                // Fresh installs are recorded silently.
+                if (!show && !detector.ConfigExistedAtStartup && string.IsNullOrWhiteSpace(detector.LastSeenVersion))
                     detector.SaveLastSeenVersion(current);
                 if (show)
                 {
-                    window.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
+                    // Open once the main window has rendered. Mark it as seen only when the dialog
+                    // really opens, so a dialog that never appears is offered again next time.
+                    EventHandler? onRendered = null;
+                    onRendered = (_, _) =>
                     {
-                        try { new WhatsNewWindow { Owner = window }.ShowDialog(); }
-                        catch (Exception ex) { DiagnosticLog.Failure("WhatsNew", ex.Message, ex); }
-                        finally { startupDialog.TrySetResult(); }
-                    }));
+                        window.ContentRendered -= onRendered;
+                        window.Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(() =>
+                        {
+                            try
+                            {
+                                var dialog = new WhatsNewWindow { Owner = window };
+                                dialog.Loaded += (_, _) =>
+                                {
+                                    detector.SaveLastSeenVersion(current);
+                                    DiagnosticLog.Info("WhatsNew", "Dialog opened.");
+                                };
+                                dialog.ShowDialog();
+                            }
+                            catch (Exception ex) { DiagnosticLog.Failure("WhatsNew", ex.Message, ex); }
+                            finally { startupDialog.TrySetResult(); }
+                        }));
+                    };
+                    window.ContentRendered += onRendered;
                 }
                 else startupDialog.TrySetResult();
             }
