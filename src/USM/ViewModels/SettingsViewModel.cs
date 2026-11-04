@@ -59,7 +59,11 @@ namespace USM.ViewModels
         }
 
         public string CurrentAppVersion => _updateService.CurrentAppVersion;
-        public string CurrentAppVersionText => $"{CurrentAppVersion} · {LocalizationService.T(IsUpdateAvailable ? "Settings_ModOutdated" : "Settings_ModCurrent")}";
+        // Say "up to date" only after a check that actually succeeded.
+        private bool _updateCheckSucceeded;
+        public string CurrentAppVersionText => IsUpdateAvailable || _updateCheckSucceeded
+            ? $"{CurrentAppVersion} · {LocalizationService.T(IsUpdateAvailable ? "Settings_ModOutdated" : "Settings_ModCurrent")}"
+            : CurrentAppVersion;
 
         private string? _installedModVersion;
         public string InstalledModVersion
@@ -352,7 +356,7 @@ namespace USM.ViewModels
                 OnPropertyChanged(nameof(CurrentAppVersionText));
                 if (_lastUpdateStatusKey != null)
                     UpdateStatusMessage = LocalizationService.T(_lastUpdateStatusKey);
-                if (LatestReleaseVersion == "—" || _lastUpdateStatusKey == "Settings_NoReleasesFound")
+                if (_lastUpdateStatusKey == "Settings_NoReleasesFound")
                     LatestReleaseVersion = LocalizationService.T("Settings_NoReleasesFound");
             };
             _ = CheckForUpdatesAsync();
@@ -428,8 +432,12 @@ namespace USM.ViewModels
             {
                 var result = await _updateService.CheckForUpdatesAsync();
                 IsUpdateAvailable = result.IsUpdateAvailable;
+                _updateCheckSucceeded = result.Success;
+                OnPropertyChanged(nameof(CurrentAppVersionText));
+                if (!result.Success) DiagnosticLog.Failure("Update check", result.Message);
                 UpdateStatusMessage = result.Message;
-                _lastUpdateStatusKey = result.Release == null ? "Settings_NoReleasesFound"
+                _lastUpdateStatusKey = !result.Success ? null
+                    : result.Release == null ? "Settings_NoReleasesFound"
                     : result.IsUpdateAvailable ? null : "Settings_UpToDate";
 
                 if (result.Release != null)
@@ -442,7 +450,8 @@ namespace USM.ViewModels
                 }
                 else
                 {
-                    LatestReleaseVersion = LocalizationService.T("Settings_NoReleasesFound");
+                    // A failed check says nothing about what is published.
+                    LatestReleaseVersion = result.Success ? LocalizationService.T("Settings_NoReleasesFound") : "—";
                 }
 
                 _modAsset = result.ModAsset;
@@ -456,6 +465,9 @@ namespace USM.ViewModels
             catch (Exception ex)
             {
                 DiagnosticLog.Failure("Update check", ex.Message, ex);
+                _updateCheckSucceeded = false;
+                _lastUpdateStatusKey = null;
+                OnPropertyChanged(nameof(CurrentAppVersionText));
                 UpdateStatusMessage = LocalizationService.T("Settings_UpdateCheckFailed", ex.Message);
             }
             finally
