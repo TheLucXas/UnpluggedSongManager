@@ -1,7 +1,9 @@
 using System;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Threading;
 using USM.Core.Services;
+using USM.Views;
 using USM.Core.Services.Diagnostics;
 using USM.ViewModels;
 
@@ -43,11 +45,46 @@ public partial class App : Application
         MainWindow = window;
         window.Show();
 
+        // "What's new": decided now (before anything else writes the config), shown once the window is idle.
+        var startupDialog = new TaskCompletionSource();
+        _startupDialogGate = startupDialog.Task;
+        try
+        {
+            if (window.DataContext is MainViewModel mvm)
+            {
+                var detector = mvm.GameDetector;
+                string current = new UpdateService().CurrentAppVersion;
+                bool show = WhatsNewService.ShouldShowNow(detector.LastSeenVersion, current, detector.ConfigExistedAtStartup);
+                // Record first so a crash can never make it reappear; fresh installs are recorded silently.
+                if (show || (!detector.ConfigExistedAtStartup && string.IsNullOrWhiteSpace(detector.LastSeenVersion)))
+                    detector.SaveLastSeenVersion(current);
+                if (show)
+                {
+                    window.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
+                    {
+                        try { new WhatsNewWindow { Owner = window }.ShowDialog(); }
+                        catch (Exception ex) { DiagnosticLog.Failure("WhatsNew", ex.Message, ex); }
+                        finally { startupDialog.TrySetResult(); }
+                    }));
+                }
+                else startupDialog.TrySetResult();
+            }
+            else startupDialog.TrySetResult();
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLog.Failure("WhatsNew", ex.Message, ex);
+            startupDialog.TrySetResult();
+        }
+
         // Prepare audio tools at startup once. The executable remains cached in
         // LocalAppData, so subsequent starts and conversions do not download it.
         if (!AudioPipeline.IsFfmpegAvailable)
             _ = PrepareFfmpegAsync(window);
     }
+
+    // Completes when the startup "What's new" dialog is closed (or was never shown).
+    private static Task _startupDialogGate = Task.CompletedTask;
 
     private static async Task PrepareFfmpegAsync(MainWindow window)
     {
@@ -66,6 +103,8 @@ public partial class App : Application
             if (window.DataContext is MainViewModel vm)
                 vm.Notify("FFmpeg could not be downloaded. USM will retry when audio conversion is used.");
 
+            // Do not stack this warning on top of the startup "What's new" dialog.
+            await _startupDialogGate;
             MessageBox.Show(
                 $"USM could not download FFmpeg. Audio conversion will retry when used.\n\n{ex.Message}",
                 "Audio tools unavailable",

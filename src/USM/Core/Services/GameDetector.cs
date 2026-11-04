@@ -67,8 +67,24 @@ namespace USM.Core.Services
             }
         }
 
+        /// <summary>True when the config file already existed before this instance touched it (false on a fresh install).</summary>
+        public bool ConfigExistedAtStartup { get; }
+
+        /// <summary>Last app version whose "What's new" was shown, or null if never recorded.</summary>
+        public string? LastSeenVersion
+        {
+            get
+            {
+                string v = ReadConfigString("last_seen_version", string.Empty);
+                return string.IsNullOrWhiteSpace(v) ? null : v;
+            }
+        }
+
+        public void SaveLastSeenVersion(string version) => SaveConfig("last_seen_version", version);
+
         public GameDetector()
         {
+            ConfigExistedAtStartup = File.Exists(ConfigPath);
             _config = LoadConfig();
             if (_config.TryGetValue("language", out var langObj))
             {

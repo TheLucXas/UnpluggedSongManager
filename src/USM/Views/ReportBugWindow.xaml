@@ -1,0 +1,56 @@
+<Window x:Class="USM.Views.ReportBugWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:USM.Core.Services.Localization"
+        Title="{DynamicResource Loc_ReportBug_Title}"
+        Icon="pack://application:,,,/USM;component/assets/icon.png"
+        Width="780"
+        Height="620"
+        MinWidth="520"
+        MinHeight="420"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        FontFamily="{StaticResource FontGlory}"
+        FlowDirection="{Binding UiFlowDirection, Source={x:Static loc:LocalizationService.Instance}}"
+        Foreground="{StaticResource BrushTextPrimary}"
+        Background="{StaticResource BrushBgMain}">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Background="{StaticResource BrushWarningSubtle}" BorderBrush="{StaticResource BrushWarning}"
+                BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0,0,0,12">
+            <TextBlock Text="{DynamicResource Loc_ReportBug_Notice}" TextWrapping="Wrap"
+                       Foreground="{StaticResource BrushTextPrimary}" />
+        </Border>
+
+        <TextBox x:Name="ReportBox" Grid.Row="1"
+                 IsReadOnly="True"
+                 AcceptsReturn="True"
+                 TextWrapping="NoWrap"
+                 FlowDirection="LeftToRight"
+                 FontFamily="Consolas"
+                 FontSize="12"
+                 VerticalScrollBarVisibility="Auto"
+                 HorizontalScrollBarVisibility="Auto"
+                 Background="{StaticResource BrushBgInput}"
+                 BorderBrush="{StaticResource BrushBorder}"
+                 Foreground="{StaticResource BrushTextPrimary}"
+                 Padding="8" />
+
+        <TextBlock x:Name="StatusText" Grid.Row="2" Margin="0,10,0,0" TextWrapping="Wrap" Visibility="Collapsed" />
+
+        <WrapPanel Grid.Row="3" Margin="0,12,0,0" HorizontalAlignment="Right">
+            <Button x:Name="CopyButton" Content="{DynamicResource Loc_ReportBug_Copy}"
+                    Click="CopyButton_Click" IsEnabled="False" Margin="0,0,8,0" />
+            <Button x:Name="IssueButton" Content="{DynamicResource Loc_ReportBug_OpenIssue}"
+                    Click="IssueButton_Click" Style="{StaticResource SecondaryButton}" Margin="0,0,8,0" />
+            <Button Content="{DynamicResource Loc_ReportBug_Close}" Click="CloseButton_Click"
+                    Style="{StaticResource SecondaryButton}" IsCancel="True" />
+        </WrapPanel>
+    </Grid>
+</Window>

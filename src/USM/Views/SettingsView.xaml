@@ -242,7 +242,12 @@
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" Text="{DynamicResource Loc_Settings_CurrentAppVersion}" Foreground="{StaticResource BrushTextSecondary}" />
-                        <TextBlock Grid.Column="1" Text="{Binding CurrentAppVersionText}" Foreground="{StaticResource BrushTextPrimary}" FontWeight="Bold" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <TextBlock Text="{Binding CurrentAppVersionText}" Foreground="{StaticResource BrushTextPrimary}" FontWeight="Bold" VerticalAlignment="Center" />
+                            <Button Content="{DynamicResource Loc_Settings_WhatsNew}" Command="{Binding ShowWhatsNewCommand}"
+                                    ToolTip="{DynamicResource Loc_Settings_WhatsNew_Tooltip}"
+                                    Style="{StaticResource SecondaryButton}" Padding="8,1" Margin="12,0,0,0" VerticalAlignment="Center" FontSize="12" />
+                        </StackPanel>
                     </Grid>
 
                     <Grid Margin="0,4">

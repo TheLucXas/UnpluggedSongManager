@@ -1,0 +1,35 @@
+<Window x:Class="USM.Views.WhatsNewWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:USM.Core.Services.Localization"
+        Title="{DynamicResource Loc_WhatsNew_Title}"
+        Icon="pack://application:,,,/USM;component/assets/icon.png"
+        Width="560"
+        Height="520"
+        MinWidth="380"
+        MinHeight="300"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        FontFamily="{StaticResource FontGlory}"
+        FlowDirection="{Binding UiFlowDirection, Source={x:Static loc:LocalizationService.Instance}}"
+        Foreground="{StaticResource BrushTextPrimary}"
+        Background="{StaticResource BrushBgMain}">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="{DynamicResource Loc_WhatsNew_Title}" FontSize="22" FontWeight="Bold"
+                   TextWrapping="Wrap" Margin="0,0,0,12" />
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel x:Name="EntriesPanel" />
+        </ScrollViewer>
+
+        <Button Grid.Row="2" Content="{DynamicResource Loc_WhatsNew_Close}" Click="CloseButton_Click"
+                Style="{StaticResource SecondaryButton}" IsCancel="True" IsDefault="True"
+                HorizontalAlignment="Right" Margin="0,12,0,0" />
+    </Grid>
+</Window>

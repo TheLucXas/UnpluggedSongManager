@@ -314,6 +314,7 @@ namespace USM.ViewModels
         public ICommand DecrementDownloadsCommand { get; }
         public ICommand CheckUpdatesCommand { get; }
         public ICommand OpenReleaseCommand { get; }
+        public ICommand ShowWhatsNewCommand { get; }
         public ICommand DownloadModAssetCommand { get; }
         public ICommand UpdateAppCommand { get; }
 
@@ -336,6 +337,11 @@ namespace USM.ViewModels
 
             CheckUpdatesCommand = new AsyncRelayCommand(CheckForUpdatesAsync);
             OpenReleaseCommand = new RelayCommand(() => UpdateService.OpenUrlInBrowser(ReleaseUrl));
+            ShowWhatsNewCommand = new RelayCommand(() =>
+            {
+                try { new USM.Views.WhatsNewWindow { Owner = Application.Current?.MainWindow }.ShowDialog(); }
+                catch (Exception ex) { DiagnosticLog.Failure("WhatsNew", ex.Message, ex); }
+            });
             DownloadModAssetCommand = new AsyncRelayCommand(_ => DownloadModAssetAsync(), _ => !IsUpdatingMod);
             UpdateAppCommand = new AsyncRelayCommand(UpdateAppAsync);
 

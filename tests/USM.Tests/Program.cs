@@ -18,6 +18,11 @@ namespace USM.Tests
                 Environment.ExitCode = await DiagnosticsTests.RunAsync(args);
                 return;
             }
+            if (args.Contains("--ui"))
+            {
+                Environment.ExitCode = UiTests.Run(args);
+                return;
+            }
             if (args.Contains("--quest-tools"))
             {
                 Environment.ExitCode = await QuestToolsTests.RunAsync(args);
